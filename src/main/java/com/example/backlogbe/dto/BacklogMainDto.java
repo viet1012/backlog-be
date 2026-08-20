@@ -50,4 +50,5 @@ public record BacklogMainDto(
 		String cKeycontrol3,
 		String updater,
 		@JsonSerialize(using = SmartDateTimeSerializer.class) LocalDateTime updatedAt
-) {}
+) {
+}
