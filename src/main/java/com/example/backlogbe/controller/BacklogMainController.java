@@ -1,5 +1,7 @@
 package com.example.backlogbe.controller;
 
+
+import com.example.backlogbe.dto.BacklogFilterRequest;
 import com.example.backlogbe.dto.BacklogMainDto;
 import com.example.backlogbe.dto.PageResponse;
 import com.example.backlogbe.service.BacklogMainService;
@@ -17,8 +19,13 @@ public class BacklogMainController {
     @GetMapping
     public PageResponse<BacklogMainDto> getAll(
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size
+            @RequestParam(defaultValue = "20") int size,
+            @ModelAttribute BacklogFilterRequest filter
     ) {
-        return service.getAll(page, size);
+        return service.getAll(
+                page,
+                size,
+                filter
+        );
     }
 }

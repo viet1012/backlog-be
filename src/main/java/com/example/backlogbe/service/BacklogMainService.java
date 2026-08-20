@@ -1,5 +1,6 @@
 package com.example.backlogbe.service;
 
+import com.example.backlogbe.dto.BacklogFilterRequest;
 import com.example.backlogbe.dto.BacklogMainDto;
 import com.example.backlogbe.dto.PageResponse;
 import com.example.backlogbe.repository.BacklogMainRepository;
@@ -16,13 +17,33 @@ public class BacklogMainService {
     private final BacklogMainRepository repository;
 
     @Transactional(readOnly = true)
-    public PageResponse<BacklogMainDto> getAll(int page, int size) {
+    public PageResponse<BacklogMainDto> getAll(
+            int page,
+            int size,
+            BacklogFilterRequest filter
+    ) {
+
         int safePage = Math.max(page, 0);
-        int safeSize = Math.min(Math.max(size, 1), 200);
+        int safeSize = Math.min(
+                Math.max(size, 1),
+                200
+        );
 
-        long total = repository.countAll();
-        List<BacklogMainDto> content = repository.findAll(safePage, safeSize);
+        long total =
+                repository.countAll(filter);
 
-        return PageResponse.of(content, safePage, safeSize, total);
+        List<BacklogMainDto> content =
+                repository.findAll(
+                        safePage,
+                        safeSize,
+                        filter
+                );
+
+        return PageResponse.of(
+                content,
+                safePage,
+                safeSize,
+                total
+        );
     }
 }
