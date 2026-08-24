@@ -2,6 +2,7 @@ package com.example.backlogbe.repository;
 
 import com.example.backlogbe.dto.BacklogFilterRequest;
 import com.example.backlogbe.dto.BacklogMainDto;
+import com.example.backlogbe.dto.ShipmentDetailFilter;
 import lombok.RequiredArgsConstructor;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
@@ -109,6 +110,141 @@ public class BacklogMainRepository {
         );
     }
 
+    public List<BacklogMainDto> findShipmentDetail(
+            ShipmentDetailFilter filter
+    ) {
+
+        StringBuilder where =
+                new StringBuilder(
+                        " WHERE 1 = 1 "
+                );
+
+        List<Object> params =
+                new ArrayList<>();
+
+
+        // =====================================================
+        // CUSTOMER
+        // =====================================================
+
+        if (hasText(filter.cusId())) {
+
+            if ("STOCK".equalsIgnoreCase(
+                    filter.cusId().trim()
+            )) {
+
+                where.append("""
+                        
+                        AND RRONYU1 IS NULL
+                        """);
+
+            } else {
+
+                where.append("""
+                        
+                        AND RRONYU1 = ?
+                        """);
+
+                params.add(
+                        filter.cusId().trim()
+                );
+            }
+        }
+
+
+        // =====================================================
+        // SHIP BY
+        // =====================================================
+
+        if (hasText(filter.shipBy())) {
+
+            String shipBy =
+                    filter.shipBy().trim();
+
+            if ("N/A".equalsIgnoreCase(shipBy)) {
+
+                where.append("""
+                        
+                        AND ShipBy IS NULL
+                        """);
+
+            } else if (
+                    "EXP".equalsIgnoreCase(shipBy)
+                            || "EXPRESS".equalsIgnoreCase(shipBy)
+            ) {
+
+                // Heatmap đang normalize EXP và Express
+                // thành cùng một nhóm EXPRESS.
+                where.append("""
+                        
+                        AND UPPER(LTRIM(RTRIM(ShipBy)))
+                            IN ('EXP', 'EXPRESS')
+                        """);
+
+            } else {
+
+                where.append("""
+                        
+                        AND UPPER(LTRIM(RTRIM(ShipBy))) = ?
+                        """);
+
+                params.add(
+                        shipBy.toUpperCase()
+                );
+            }
+        }
+
+
+        // =====================================================
+        // EXPORT DATE
+        // =====================================================
+
+        if (filter.exportDate() != null) {
+
+            LocalDateTime from =
+                    filter.exportDate()
+                            .atStartOfDay();
+
+            LocalDateTime to =
+                    filter.exportDate()
+                            .plusDays(1)
+                            .atStartOfDay();
+
+            where.append("""
+                    
+                    AND ExportD >= ?
+                    AND ExportD < ?
+                    """);
+
+            params.add(
+                    Timestamp.valueOf(from)
+            );
+
+            params.add(
+                    Timestamp.valueOf(to)
+            );
+        }
+
+
+        String sql =
+                SELECT_COLUMNS
+                        + where
+                        + """
+                        
+                        ORDER BY
+                            ExportD,
+                            RRONYU1,
+                            ShipBy,
+                            VBELN,
+                            AUFNR
+                        """;
+
+        return jdbcTemplate.query(
+                sql,
+                this::mapRow,
+                params.toArray()
+        );
+    }
 
     // =========================================================
     // COUNT
