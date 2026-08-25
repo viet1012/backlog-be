@@ -5,20 +5,14 @@ import org.springframework.format.annotation.DateTimeFormat;
 
 import java.time.LocalDate;
 
-public record BacklogFilterRequest(
+public record ShipmentDetailFilter(
 
-		String search,
-
-		String status,
-
-		String div,
-
-		String currentProcess,
+		String cusId,
 
 		String shipBy,
 
 		@DateTimeFormat(iso = DateTimeFormat.ISO.DATE)
-		LocalDate productionDate
+		LocalDate exportDate
 
 ) {
 }

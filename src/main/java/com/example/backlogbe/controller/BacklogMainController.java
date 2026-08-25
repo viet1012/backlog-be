@@ -1,8 +1,7 @@
 package com.example.backlogbe.controller;
 
-
-import com.example.backlogbe.dto.BacklogFilterRequest;
-import com.example.backlogbe.dto.BacklogMainDto;
+import com.example.backlogbe.dto.backlog.BacklogFilterRequest;
+import com.example.backlogbe.dto.backlog.BacklogMainDto;
 import com.example.backlogbe.dto.PageResponse;
 import com.example.backlogbe.service.BacklogMainService;
 import lombok.RequiredArgsConstructor;
@@ -16,12 +15,18 @@ public class BacklogMainController {
 
     private final BacklogMainService service;
 
-    @GetMapping
-    public PageResponse<BacklogMainDto> getAll(
+
+    // =========================================================
+    // GENERIC FILTER API
+    // =========================================================
+
+    @PostMapping("/search")
+    public PageResponse<BacklogMainDto> search(
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size,
-            @ModelAttribute BacklogFilterRequest filter
+            @RequestBody BacklogFilterRequest filter
     ) {
+
         return service.getAll(
                 page,
                 size,

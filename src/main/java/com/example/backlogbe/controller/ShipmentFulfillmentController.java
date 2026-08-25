@@ -1,5 +1,7 @@
 package com.example.backlogbe.controller;
 
+import com.example.backlogbe.dto.backlog.BacklogMainDto;
+import com.example.backlogbe.dto.ShipmentDetailFilter;
 import com.example.backlogbe.dto.ShipmentFulfillmentDto;
 import com.example.backlogbe.service.ShipmentFulfillmentService;
 import lombok.RequiredArgsConstructor;
@@ -28,6 +30,16 @@ public class ShipmentFulfillmentController {
 
 		return ResponseEntity.ok(
 				service.getShipmentFulfillment(fromD, toD)
+		);
+	}
+
+	@GetMapping("/detail")
+	public ResponseEntity<List<BacklogMainDto>> getDetail(
+			@ModelAttribute ShipmentDetailFilter filter
+	) {
+
+		return ResponseEntity.ok(
+				service.getDetail(filter)
 		);
 	}
 }
