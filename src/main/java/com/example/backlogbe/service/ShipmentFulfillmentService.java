@@ -1,10 +1,9 @@
 package com.example.backlogbe.service;
 
-
-import com.example.backlogbe.dto.BacklogMainDto;
 import com.example.backlogbe.dto.ShipmentDetailFilter;
 import com.example.backlogbe.dto.ShipmentFulfillmentDto;
-import com.example.backlogbe.repository.BacklogMainRepository;
+import com.example.backlogbe.dto.backlog.BacklogMainDto;
+import com.example.backlogbe.repository.ShipmentDetailRepository;
 import com.example.backlogbe.repository.ShipmentFulfillmentRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -18,14 +17,23 @@ import java.util.List;
 public class ShipmentFulfillmentService {
 
 	private final ShipmentFulfillmentRepository shipmentFulfillmentRepository;
-	private final BacklogMainRepository backlogMainRepository;
+
+	private final ShipmentDetailRepository shipmentDetailRepository;
+
 
 	@Transactional(readOnly = true)
-	public List<ShipmentFulfillmentDto> getShipmentFulfillment(LocalDate fromD,
-	                                                           LocalDate toD) {
+	public List<ShipmentFulfillmentDto> getShipmentFulfillment(
+			LocalDate fromD,
+			LocalDate toD
+	) {
 
-		return shipmentFulfillmentRepository.findByDateRange(fromD, toD);
+		return shipmentFulfillmentRepository
+				.findByDateRange(
+						fromD,
+						toD
+				);
 	}
+
 
 	@Transactional(readOnly = true)
 	public List<BacklogMainDto> getDetail(
@@ -43,18 +51,20 @@ public class ShipmentFulfillmentService {
 		boolean noExportDate =
 				filter.exportDate() == null;
 
+
 		if (
 				noCustomer
 						&& noShipBy
 						&& noExportDate
 		) {
+
 			throw new IllegalArgumentException(
 					"At least one filter is required: cusId, shipBy or exportDate"
 			);
 		}
 
-		return backlogMainRepository.findShipmentDetail(
-				filter
-		);
+
+		return shipmentDetailRepository
+				.findDetail(filter);
 	}
 }

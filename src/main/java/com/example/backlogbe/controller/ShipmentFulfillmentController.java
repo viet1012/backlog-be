@@ -1,6 +1,6 @@
 package com.example.backlogbe.controller;
 
-import com.example.backlogbe.dto.BacklogMainDto;
+import com.example.backlogbe.dto.backlog.BacklogMainDto;
 import com.example.backlogbe.dto.ShipmentDetailFilter;
 import com.example.backlogbe.dto.ShipmentFulfillmentDto;
 import com.example.backlogbe.service.ShipmentFulfillmentService;

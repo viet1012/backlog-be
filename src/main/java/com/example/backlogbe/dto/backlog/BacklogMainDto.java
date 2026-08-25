@@ -1,4 +1,4 @@
-package com.example.backlogbe.dto;
+package com.example.backlogbe.dto.backlog;
 
 import com.example.backlogbe.utils.SmartDateTimeSerializer;
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
