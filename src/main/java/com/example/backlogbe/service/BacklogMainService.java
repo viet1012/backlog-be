@@ -1,8 +1,9 @@
 package com.example.backlogbe.service;
 
+import com.example.backlogbe.dto.PageResponse;
+import com.example.backlogbe.dto.backlog.BacklogFilterOptionsRequest;
 import com.example.backlogbe.dto.backlog.BacklogFilterRequest;
 import com.example.backlogbe.dto.backlog.BacklogMainDto;
-import com.example.backlogbe.dto.PageResponse;
 import com.example.backlogbe.repository.backlog.BacklogMainRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -18,19 +19,16 @@ public class BacklogMainService {
 
 
     // =========================================================
-    // GET FILTERED BACKLOG
+    // SEARCH / FILTER / PAGINATION
     // =========================================================
 
     @Transactional(readOnly = true)
     public PageResponse<BacklogMainDto> getAll(
             int page,
             int size,
-            BacklogFilterRequest filter
+            BacklogFilterRequest filter,
+            String sort
     ) {
-
-        // =========================
-        // SAFE PAGINATION
-        // =========================
 
         int safePage =
                 Math.max(
@@ -48,10 +46,6 @@ public class BacklogMainService {
                 );
 
 
-        // =========================
-        // SAFE FILTER REQUEST
-        // =========================
-
         BacklogFilterRequest safeFilter =
                 filter == null
                         ? new BacklogFilterRequest(
@@ -61,37 +55,105 @@ public class BacklogMainService {
                         : filter;
 
 
-        // =========================
-        // COUNT
-        // =========================
-
         long total =
                 repository.countFiltered(
                         safeFilter
                 );
 
 
-        // =========================
-        // DATA
-        // =========================
-
         List<BacklogMainDto> content =
                 repository.findFiltered(
                         safePage,
                         safeSize,
-                        safeFilter
+                        safeFilter,
+                        sort
                 );
 
-
-        // =========================
-        // RESPONSE
-        // =========================
 
         return PageResponse.of(
                 content,
                 safePage,
                 safeSize,
                 total
+        );
+    }
+
+
+    // =========================================================
+    // EXCEL FILTER OPTIONS
+    // =========================================================
+
+    @Transactional(readOnly = true)
+    public List<String> getFilterOptions(
+            BacklogFilterOptionsRequest request
+    ) {
+
+        // -----------------------------------------------------
+        // VALIDATE
+        // -----------------------------------------------------
+
+        if (
+                request == null
+                        || request.field() == null
+                        || request.field().isBlank()
+        ) {
+            throw new IllegalArgumentException(
+                    "Filter field is required"
+            );
+        }
+
+
+        // -----------------------------------------------------
+        // SAFE SEARCH
+        // -----------------------------------------------------
+
+        String search =
+                request.search() == null
+                        ? ""
+                        : request.search().trim();
+
+
+        // -----------------------------------------------------
+        // SAFE LIMIT
+        // -----------------------------------------------------
+
+        int limit =
+                request.limit() == null
+                        ? 100
+                        : Math.min(
+                        Math.max(
+                                request.limit(),
+                                1
+                        ),
+                        500
+                );
+
+
+        // -----------------------------------------------------
+        // ACTIVE FILTERS
+        // -----------------------------------------------------
+
+        BacklogFilterRequest activeFilters =
+                new BacklogFilterRequest(
+                        request.filters() == null
+                                ? List.of()
+                                : request.filters(),
+
+                        request.logicOperator() == null
+                                ? "and"
+                                : request.logicOperator()
+                );
+
+
+        // -----------------------------------------------------
+        // DISTINCT VALUES
+        // -----------------------------------------------------
+
+        return repository.findDistinctValues(
+                request.field().trim(),
+                search,
+                limit,
+                activeFilters
         );
     }
 }

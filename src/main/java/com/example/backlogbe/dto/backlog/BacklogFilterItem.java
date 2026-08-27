@@ -1,5 +1,6 @@
 package com.example.backlogbe.dto.backlog;
 
+import java.util.List;
 
 public record BacklogFilterItem(
 
@@ -7,7 +8,9 @@ public record BacklogFilterItem(
 
 		String operator,
 
-		String value
+		String value,
+
+		List<String> values
 
 ) {
 }

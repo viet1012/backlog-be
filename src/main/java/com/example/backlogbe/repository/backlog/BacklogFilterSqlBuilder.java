@@ -118,21 +118,111 @@ public class BacklogFilterSqlBuilder {
 	) {
 
 		String operator =
-				normalize(
-						filter.operator()
-				);
+				normalize(filter.operator());
 
 		String value =
 				filter.value() == null
 						? ""
 						: filter.value().trim();
 
+
 		return switch (operator) {
+
+			// =====================================================
+			// EXCEL CHECKBOX FILTER
+			// =====================================================
+
+			case "in", "isanyof" -> {
+
+				List<String> values =
+						filter.values() == null
+								? List.of()
+								: filter.values()
+								.stream()
+								.filter(v -> v != null)
+								.map(String::trim)
+								.distinct()
+								.toList();
+
+
+				if (values.isEmpty()) {
+					yield null;
+				}
+
+
+				boolean includeBlank =
+						values.stream()
+								.anyMatch(String::isEmpty);
+
+
+				List<String> nonBlankValues =
+						values.stream()
+								.filter(v -> !v.isEmpty())
+								.toList();
+
+
+				List<String> parts =
+						new ArrayList<>();
+
+
+				if (!nonBlankValues.isEmpty()) {
+
+					String placeholders =
+							String.join(
+									",",
+									java.util.Collections.nCopies(
+											nonBlankValues.size(),
+											"?"
+									)
+							);
+
+					parts.add(
+							column
+									+ " IN ("
+									+ placeholders
+									+ ")"
+					);
+
+					params.addAll(nonBlankValues);
+				}
+
+
+				if (includeBlank) {
+
+					parts.add(
+							"("
+									+ column
+									+ " IS NULL OR "
+									+ column
+									+ " = '')"
+					);
+				}
+
+
+				if (parts.isEmpty()) {
+					yield null;
+				}
+
+
+				yield "("
+						+ String.join(
+						" OR ",
+						parts
+				)
+						+ ")";
+			}
+
+
+			// =====================================================
+			// NORMAL TEXT FILTER
+			// =====================================================
 
 			case "contains" -> {
 				params.add("%" + value + "%");
+
 				yield column + " LIKE ?";
 			}
+
 
 			case "doesnotcontain" -> {
 				params.add("%" + value + "%");
@@ -144,10 +234,13 @@ public class BacklogFilterSqlBuilder {
 						+ " IS NULL)";
 			}
 
+
 			case "equals", "is", "=" -> {
 				params.add(value);
+
 				yield column + " = ?";
 			}
+
 
 			case "doesnotequal", "not", "!=" -> {
 				params.add(value);
@@ -159,15 +252,20 @@ public class BacklogFilterSqlBuilder {
 						+ " IS NULL)";
 			}
 
+
 			case "startswith" -> {
 				params.add(value + "%");
+
 				yield column + " LIKE ?";
 			}
 
+
 			case "endswith" -> {
 				params.add("%" + value);
+
 				yield column + " LIKE ?";
 			}
+
 
 			case "isempty" -> "("
 					+ column
@@ -175,11 +273,13 @@ public class BacklogFilterSqlBuilder {
 					+ column
 					+ " = '')";
 
+
 			case "isnotempty" -> "("
 					+ column
 					+ " IS NOT NULL AND "
 					+ column
 					+ " <> '')";
+
 
 			default -> throw unsupported(
 					"text",
@@ -187,7 +287,6 @@ public class BacklogFilterSqlBuilder {
 			);
 		};
 	}
-
 
 	private String buildNumber(
 			String column,
@@ -199,7 +298,101 @@ public class BacklogFilterSqlBuilder {
 				normalize(
 						filter.operator()
 				);
+		// =========================================================
+		// EXCEL MULTI VALUE FILTER
+		// =========================================================
 
+		if (
+				"in".equals(operator)
+						|| "isanyof".equals(operator)
+		) {
+
+			if (
+					filter.values() == null
+							|| filter.values().isEmpty()
+			) {
+				return null;
+			}
+
+
+			List<BigDecimal> values =
+					filter.values()
+							.stream()
+							.filter(v ->
+									v != null
+											&& !v.isBlank()
+							)
+							.map(String::trim)
+							.map(v -> {
+								try {
+									return new BigDecimal(v);
+								} catch (NumberFormatException ex) {
+									throw new IllegalArgumentException(
+											"Invalid number for "
+													+ filter.field()
+													+ ": "
+													+ v
+									);
+								}
+							})
+							.distinct()
+							.toList();
+
+
+			boolean includeNull =
+					filter.values()
+							.stream()
+							.anyMatch(v ->
+									v == null
+											|| v.isBlank()
+							);
+
+
+			List<String> parts =
+					new ArrayList<>();
+
+
+			if (!values.isEmpty()) {
+
+				String placeholders =
+						String.join(
+								",",
+								java.util.Collections.nCopies(
+										values.size(),
+										"?"
+								)
+						);
+
+				parts.add(
+						column
+								+ " IN ("
+								+ placeholders
+								+ ")"
+				);
+
+				params.addAll(values);
+			}
+
+
+			if (includeNull) {
+				parts.add(
+						column + " IS NULL"
+				);
+			}
+
+
+			if (parts.isEmpty()) {
+				return null;
+			}
+
+
+			return "("
+					+ String.join(
+					" OR ",
+					parts
+			)
+					+ ")";
+		}
 		if ("isempty".equals(operator)) {
 			return column + " IS NULL";
 		}
@@ -283,6 +476,112 @@ public class BacklogFilterSqlBuilder {
 				normalize(
 						filter.operator()
 				);
+		// =========================================================
+		// EXCEL DATE MULTI VALUE FILTER
+		// =========================================================
+
+		if (
+				"in".equals(operator)
+						|| "isanyof".equals(operator)
+		) {
+
+			if (
+					filter.values() == null
+							|| filter.values().isEmpty()
+			) {
+				return null;
+			}
+
+
+			List<String> parts =
+					new ArrayList<>();
+
+
+			for (String raw : filter.values()) {
+
+				// BLANK
+				if (
+						raw == null
+								|| raw.isBlank()
+				) {
+
+					parts.add(
+							column + " IS NULL"
+					);
+
+					continue;
+				}
+
+
+				LocalDate selectedDate;
+
+				try {
+
+					// hỗ trợ cả:
+					// 2026-08-26
+					// 2026-08-26T08:30:00
+
+					String normalizedValue =
+							raw.length() >= 10
+									? raw.substring(0, 10)
+									: raw;
+
+					selectedDate =
+							LocalDate.parse(
+									normalizedValue
+							);
+
+				} catch (Exception ex) {
+
+					throw new IllegalArgumentException(
+							"Invalid date for "
+									+ filter.field()
+									+ ": "
+									+ raw
+					);
+				}
+
+
+				LocalDateTime start =
+						selectedDate.atStartOfDay();
+
+				LocalDateTime next =
+						selectedDate
+								.plusDays(1)
+								.atStartOfDay();
+
+
+				parts.add(
+						"("
+								+ column
+								+ " >= ? AND "
+								+ column
+								+ " < ?)"
+				);
+
+
+				params.add(
+						Timestamp.valueOf(start)
+				);
+
+				params.add(
+						Timestamp.valueOf(next)
+				);
+			}
+
+
+			if (parts.isEmpty()) {
+				return null;
+			}
+
+
+			return "("
+					+ String.join(
+					" OR ",
+					parts
+			)
+					+ ")";
+		}
 
 		if ("isempty".equals(operator)) {
 			return column + " IS NULL";
