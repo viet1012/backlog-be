@@ -1,8 +1,8 @@
 package com.example.backlogbe.service;
 
 import com.example.backlogbe.dto.PageResponse;
-import com.example.backlogbe.dto.facconfirm.FacConfirmDto;
-import com.example.backlogbe.dto.facconfirm.FacConfirmProcessGroupDto;
+import com.example.backlogbe.dto.facconfirm.*;
+import com.example.backlogbe.repository.facconfirm.FacConfirmFilterField;
 import com.example.backlogbe.repository.facconfirm.FacConfirmRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -12,9 +12,15 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.Set;
 
+
 @Service
 @RequiredArgsConstructor
 public class FacConfirmService {
+
+
+	// =========================================================
+	// CONFIG
+	// =========================================================
 
 	private static final Set<String> VALID_PROCESS_GROUPS =
 			Set.of(
@@ -24,11 +30,18 @@ public class FacConfirmService {
 			);
 
 
+	private static final int DEFAULT_PAGE_SIZE = 20;
+
+	private static final int MAX_PAGE_SIZE = 200;
+
+	private static final int MAX_FILTERS = 50;
+
+
 	private final FacConfirmRepository repository;
 
 
 	// =========================================================
-	// DETAIL
+	// DETAIL - OLD GET API
 	// =========================================================
 
 	@Transactional(readOnly = true)
@@ -45,9 +58,11 @@ public class FacConfirmService {
 						div
 				);
 
+
 		validateExportDate(
 				expD
 		);
+
 
 		String safeProcGrp =
 				normalizeProcessGroup(
@@ -55,29 +70,21 @@ public class FacConfirmService {
 				);
 
 
-		// ================================================
-		// SAFE PAGINATION
-		// ================================================
-
 		int safePage =
-				Math.max(
-						page,
-						0
+				normalizePage(
+						page
 				);
+
 
 		int safeSize =
-				Math.min(
-						Math.max(
-								size,
-								1
-						),
-						200
+				normalizeSize(
+						size
 				);
 
 
-		// ================================================
+		// =====================================================
 		// COUNT
-		// ================================================
+		// =====================================================
 
 		long total =
 				repository.count(
@@ -87,9 +94,9 @@ public class FacConfirmService {
 				);
 
 
-		// ================================================
+		// =====================================================
 		// DATA
-		// ================================================
+		// =====================================================
 
 		List<FacConfirmDto> content =
 				repository.findPage(
@@ -101,15 +108,221 @@ public class FacConfirmService {
 				);
 
 
-		// ================================================
+		// =====================================================
 		// RESPONSE
-		// ================================================
+		// =====================================================
 
 		return PageResponse.of(
 				content,
 				safePage,
 				safeSize,
 				total
+		);
+	}
+
+
+	// =========================================================
+	// SEARCH - SERVER SIDE EXCEL FILTER
+	// =========================================================
+
+	@Transactional(readOnly = true)
+	public PageResponse<FacConfirmDto> search(
+			FacConfirmSearchRequest request
+	) {
+
+		// =====================================================
+		// REQUEST
+		// =====================================================
+
+		if (request == null) {
+			throw new IllegalArgumentException(
+					"request is required"
+			);
+		}
+
+
+		// =====================================================
+		// BASE FILTERS
+		// =====================================================
+
+		String safeDiv =
+				normalizeDiv(
+						request.div()
+				);
+
+
+		validateExportDate(
+				request.expD()
+		);
+
+
+		String safeProcGrp =
+				normalizeProcessGroup(
+						request.procGrp()
+				);
+
+
+		// =====================================================
+		// PAGINATION
+		// =====================================================
+
+		int safePage =
+				normalizePage(
+						request.page()
+				);
+
+
+		int safeSize =
+				normalizeSize(
+						request.size()
+				);
+
+
+		// =====================================================
+		// LOGIC OPERATOR
+		// =====================================================
+
+		String safeLogicOperator =
+				normalizeLogicOperator(
+						request.logicOperator()
+				);
+
+
+		// =====================================================
+		// VALIDATE FILTERS
+		// =====================================================
+
+		List<FacConfirmFilterItem> safeFilters =
+				normalizeFilters(
+						request.filters()
+				);
+
+
+		// =====================================================
+		// COUNT
+		// =====================================================
+
+		long total =
+				repository.countSearch(
+						safeDiv,
+						request.expD(),
+						safeProcGrp,
+						safeFilters,
+						safeLogicOperator
+				);
+
+
+		// =====================================================
+		// DATA
+		// =====================================================
+
+		List<FacConfirmDto> content =
+				repository.search(
+						safeDiv,
+						request.expD(),
+						safeProcGrp,
+						safePage,
+						safeSize,
+						safeFilters,
+						safeLogicOperator
+				);
+
+
+		// =====================================================
+		// RESPONSE
+		// =====================================================
+
+		return PageResponse.of(
+				content,
+				safePage,
+				safeSize,
+				total
+		);
+	}
+
+
+	// =========================================================
+	// FILTER OPTIONS
+	// =========================================================
+
+	@Transactional(readOnly = true)
+	public List<String> getFilterOptions(
+			FacConfirmFilterOptionsRequest request
+	) {
+
+		// =====================================================
+		// REQUEST
+		// =====================================================
+
+		if (request == null) {
+			throw new IllegalArgumentException(
+					"request is required"
+			);
+		}
+
+
+		// =====================================================
+		// FIELD
+		// =====================================================
+
+		String field =
+				normalizeFilterField(
+						request.field()
+				);
+
+
+		// =====================================================
+		// BASE FILTERS
+		// =====================================================
+
+		String safeDiv =
+				normalizeDiv(
+						request.div()
+				);
+
+
+		validateExportDate(
+				request.expD()
+		);
+
+
+		String safeProcGrp =
+				normalizeProcessGroup(
+						request.procGrp()
+				);
+
+
+		// =====================================================
+		// ACTIVE FILTERS
+		// =====================================================
+
+		List<FacConfirmFilterItem> safeFilters =
+				normalizeFilters(
+						request.filters()
+				);
+
+
+		// =====================================================
+		// SEARCH TEXT
+		// =====================================================
+
+		String safeSearch =
+				request.search() == null
+						? ""
+						: request.search().trim();
+
+
+		// =====================================================
+		// DATA
+		// =====================================================
+
+		return repository.findFilterOptions(
+				field,
+				safeSearch,
+				safeDiv,
+				request.expD(),
+				safeProcGrp,
+				safeFilters
 		);
 	}
 
@@ -129,9 +342,11 @@ public class FacConfirmService {
 						div
 				);
 
+
 		validateExportDate(
 				expD
 		);
+
 
 		return repository.findProcessGroups(
 				safeDiv,
@@ -141,7 +356,7 @@ public class FacConfirmService {
 
 
 	// =========================================================
-	// VALIDATE DIV
+	// NORMALIZE DIV
 	// =========================================================
 
 	private String normalizeDiv(
@@ -152,10 +367,12 @@ public class FacConfirmService {
 				div == null
 						|| div.isBlank()
 		) {
+
 			throw new IllegalArgumentException(
 					"div is required"
 			);
 		}
+
 
 		return div.trim();
 	}
@@ -170,6 +387,7 @@ public class FacConfirmService {
 	) {
 
 		if (expD == null) {
+
 			throw new IllegalArgumentException(
 					"expD is required"
 			);
@@ -178,7 +396,7 @@ public class FacConfirmService {
 
 
 	// =========================================================
-	// VALIDATE PROCESS GROUP
+	// NORMALIZE PROCESS GROUP
 	// =========================================================
 
 	private String normalizeProcessGroup(
@@ -189,6 +407,7 @@ public class FacConfirmService {
 				value == null
 						|| value.isBlank()
 		) {
+
 			throw new IllegalArgumentException(
 					"procGrp is required"
 			);
@@ -201,13 +420,16 @@ public class FacConfirmService {
 
 		return VALID_PROCESS_GROUPS
 				.stream()
+
 				.filter(
 						item ->
 								item.equalsIgnoreCase(
 										input
 								)
 				)
+
 				.findFirst()
+
 				.orElseThrow(
 						() ->
 								new IllegalArgumentException(
@@ -216,5 +438,201 @@ public class FacConfirmService {
 												+ ". Allowed values: Fine, Heat, Rough"
 								)
 				);
+	}
+
+
+	// =========================================================
+	// NORMALIZE PAGE
+	// =========================================================
+
+	private int normalizePage(
+			Integer page
+	) {
+
+		return Math.max(
+				page == null
+						? 0
+						: page,
+				0
+		);
+	}
+
+
+	// =========================================================
+	// NORMALIZE SIZE
+	// =========================================================
+
+	private int normalizeSize(
+			Integer size
+	) {
+
+		int value =
+				size == null
+						? DEFAULT_PAGE_SIZE
+						: size;
+
+
+		return Math.min(
+				Math.max(
+						value,
+						1
+				),
+				MAX_PAGE_SIZE
+		);
+	}
+
+
+	// =========================================================
+	// NORMALIZE LOGIC OPERATOR
+	// =========================================================
+
+	private String normalizeLogicOperator(
+			String value
+	) {
+
+		if (
+				value != null
+						&& value.equalsIgnoreCase(
+						"or"
+				)
+		) {
+
+			return "or";
+		}
+
+
+		return "and";
+	}
+
+
+	// =========================================================
+	// NORMALIZE FILTER FIELD
+	// =========================================================
+
+	private String normalizeFilterField(
+			String field
+	) {
+
+		if (
+				field == null
+						|| field.isBlank()
+		) {
+
+			throw new IllegalArgumentException(
+					"field is required"
+			);
+		}
+
+
+		String safeField =
+				field.trim();
+
+
+		if (
+				!FacConfirmFilterField.supports(
+						safeField
+				)
+		) {
+
+			throw new IllegalArgumentException(
+					"Unsupported Fac Confirm filter field: "
+							+ safeField
+			);
+		}
+
+
+		return safeField;
+	}
+
+
+	// =========================================================
+	// NORMALIZE FILTERS
+	// =========================================================
+
+	private List<FacConfirmFilterItem> normalizeFilters(
+			List<FacConfirmFilterItem> filters
+	) {
+
+		if (
+				filters == null
+						|| filters.isEmpty()
+		) {
+
+			return List.of();
+		}
+
+
+		if (
+				filters.size()
+						> MAX_FILTERS
+		) {
+
+			throw new IllegalArgumentException(
+					"Too many filters. Maximum allowed: "
+							+ MAX_FILTERS
+			);
+		}
+
+
+		for (
+				FacConfirmFilterItem filter
+				: filters
+		) {
+
+			if (filter == null) {
+				throw new IllegalArgumentException(
+						"Filter item cannot be null"
+				);
+			}
+
+
+			String field =
+					filter.field();
+
+
+			if (
+					field == null
+							|| field.isBlank()
+			) {
+
+				throw new IllegalArgumentException(
+						"Filter field is required"
+				);
+			}
+
+
+			if (
+					!FacConfirmFilterField.supports(
+							field.trim()
+					)
+			) {
+
+				throw new IllegalArgumentException(
+						"Unsupported Fac Confirm filter field: "
+								+ field
+				);
+			}
+
+
+			String operator =
+					filter.operator();
+
+
+			if (
+					operator == null
+							|| operator.isBlank()
+			) {
+
+				throw new IllegalArgumentException(
+						"Filter operator is required for field: "
+								+ field
+				);
+			}
+		}
+
+
+		return List.copyOf(
+				filters
+		);
 	}
 }
