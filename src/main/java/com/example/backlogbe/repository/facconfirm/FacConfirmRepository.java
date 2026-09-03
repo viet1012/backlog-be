@@ -574,15 +574,28 @@ public class FacConfirmRepository {
 		 * Fine:
 		 *   ProcessGrp2 IN (Fine, Heat, Rough)
 		 *
+		 * Confirm mapping:
+		 *
+		 * Rough:
+		 *   To Drill
+		 *   To Heat
+		 *
+		 * Heat:
+		 *   Heat Start
+		 *   Heat Finish
+		 *
+		 * Fine:
+		 *   To Packing
+		 *
 		 * Display:
 		 * Rough -> Heat -> Fine
 		 */
-
 
 		String sql = """
 				WITH Base AS (
 				
 				    SELECT
+				        bl.AUFNR,
 				        bl.ProcessGrp2,
 				
 				        ISNULL(
@@ -686,20 +699,123 @@ public class FacConfirmRepository {
 				        ) AS TotalFinalQty
 				
 				    FROM Base
+				),
+				
+				ConfirmSummary AS (
+				
+				    -- =========================================
+				    -- ROUGH CONFIRM
+				    -- =========================================
+				
+				    SELECT
+				        'Rough' AS ProcessGroup,
+				
+				        COUNT_BIG(*) AS ConfirmCount
+				
+				    FROM F2Database.dbo.F2_Backlog_Fac_Confirm fc
+				
+				    WHERE fc.ConfirmFnTime IS NOT NULL
+				
+				      AND fc.ProcessGrp IN (
+				          'To Drill',
+				          'To Heat'
+				      )
+				
+				      AND EXISTS (
+				          SELECT 1
+				
+				          FROM Base b
+				
+				          WHERE b.AUFNR = fc.AUNFR
+				
+				            AND b.ProcessGrp2 = 'Rough'
+				      )
+				
+				
+				    UNION ALL
+				
+				
+				    -- =========================================
+				    -- HEAT CONFIRM
+				    -- =========================================
+				
+				    SELECT
+				        'Heat' AS ProcessGroup,
+				
+				        COUNT_BIG(*) AS ConfirmCount
+				
+				    FROM F2Database.dbo.F2_Backlog_Fac_Confirm fc
+				
+				    WHERE fc.ConfirmFnTime IS NOT NULL
+				
+				      AND fc.ProcessGrp IN (
+				          'Heat Start',
+				          'Heat Finish'
+				      )
+				
+				      AND EXISTS (
+				          SELECT 1
+				
+				          FROM Base b
+				
+				          WHERE b.AUFNR = fc.AUNFR
+				
+				            AND b.ProcessGrp2 IN (
+				                'Heat',
+				                'Rough'
+				            )
+				      )
+				
+				
+				    UNION ALL
+				
+				
+				    -- =========================================
+				    -- FINE CONFIRM
+				    -- =========================================
+				
+				    SELECT
+				        'Fine' AS ProcessGroup,
+				
+				        COUNT_BIG(*) AS ConfirmCount
+				
+				    FROM F2Database.dbo.F2_Backlog_Fac_Confirm fc
+				
+				    WHERE fc.ConfirmFnTime IS NOT NULL
+				
+				      AND fc.ProcessGrp = 'To Packing'
+				
+				      AND EXISTS (
+				          SELECT 1
+				
+				          FROM Base b
+				
+				          WHERE b.AUFNR = fc.AUNFR
+				      )
 				)
 				
 				SELECT
-				    ProcessGroup,
-				    OrderCount,
+				    s.ProcessGroup,
+				
+				    s.OrderCount,
 				
 				    ISNULL(
-				        TotalFinalQty,
+				        s.TotalFinalQty,
 				        0
-				    ) AS TotalFinalQty
+				    ) AS TotalFinalQty,
 				
-				FROM Summary
+				    ISNULL(
+				        c.ConfirmCount,
+				        0
+				    ) AS ConfirmCount
 				
-				ORDER BY SortOrder
+				FROM Summary s
+				
+				LEFT JOIN ConfirmSummary c
+				    ON c.ProcessGroup = s.ProcessGroup
+				
+				ORDER BY
+				    s.SortOrder
 				""";
 
 
@@ -713,13 +829,11 @@ public class FacConfirmRepository {
 				)
 		);
 
-
 		params.add(div);
 		params.add(div);
 
 
 		return jdbcTemplate.query(
-
 				sql,
 
 				(rs, rowNum) ->
@@ -735,6 +849,10 @@ public class FacConfirmRepository {
 
 								rs.getBigDecimal(
 										"TotalFinalQty"
+								),
+
+								rs.getLong(
+										"ConfirmCount"
 								)
 						),
 
