@@ -2,6 +2,7 @@ package com.example.backlogbe.controller;
 
 import com.example.backlogbe.dto.PageResponse;
 import com.example.backlogbe.dto.facconfirm.*;
+import com.example.backlogbe.service.ClientMachineService;
 import com.example.backlogbe.service.FacConfirmProcessTimeService;
 import com.example.backlogbe.service.FacConfirmService;
 import jakarta.servlet.http.HttpServletRequest;
@@ -27,6 +28,7 @@ public class FacConfirmController {
 	private final FacConfirmProcessTimeService
 			processTimeService;
 
+	private final ClientMachineService clientMachineService;
 
 	// =========================================================
 	// DETAIL
@@ -160,19 +162,17 @@ public class FacConfirmController {
 
 	@PatchMapping("/process-times")
 	public ResponseEntity<Map<String, Object>> saveProcessTimes(
-
-			@RequestBody
-			FacConfirmProcessTimeRequest request,
-
+			@RequestBody FacConfirmProcessTimeRequest request,
 			HttpServletRequest httpRequest
-
 	) {
 
 		String clientIp =
 				getClientIp(httpRequest);
 
 		String machineName =
-				resolveMachineName(clientIp);
+				clientMachineService.resolveMachineName(
+						clientIp
+				);
 
 		int updated =
 				processTimeService.save(
