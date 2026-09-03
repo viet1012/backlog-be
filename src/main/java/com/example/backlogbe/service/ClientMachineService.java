@@ -12,32 +12,51 @@ public class ClientMachineService {
 			HttpServletRequest request
 	) {
 
-		// Reverse proxy chu?n
 		String forwardedFor =
-				request.getHeader("X-Forwarded-For");
+				request.getHeader(
+						"X-Forwarded-For"
+				);
 
 		if (
-				forwardedFor != null
-						&& !forwardedFor.isBlank()
-						&& !"unknown".equalsIgnoreCase(forwardedFor)
+				isValidHeader(
+						forwardedFor
+				)
 		) {
+
 			return forwardedFor
 					.split(",")[0]
 					.trim();
 		}
 
+
 		String realIp =
-				request.getHeader("X-Real-IP");
+				request.getHeader(
+						"X-Real-IP"
+				);
 
 		if (
-				realIp != null
-						&& !realIp.isBlank()
-						&& !"unknown".equalsIgnoreCase(realIp)
+				isValidHeader(
+						realIp
+				)
 		) {
+
 			return realIp.trim();
 		}
 
-		return request.getRemoteAddr();
+
+		String remoteAddr =
+				request.getRemoteAddr();
+
+		if (
+				remoteAddr == null
+						|| remoteAddr.isBlank()
+		) {
+
+			return "UNKNOWN";
+		}
+
+
+		return remoteAddr.trim();
 	}
 
 
@@ -45,40 +64,166 @@ public class ClientMachineService {
 			String ip
 	) {
 
-		if (ip == null || ip.isBlank()) {
+		if (
+				ip == null
+						|| ip.isBlank()
+						|| "UNKNOWN".equalsIgnoreCase(ip)
+		) {
+
 			return "UNKNOWN";
 		}
 
-		try {
-			InetAddress address =
-					InetAddress.getByName(ip);
 
-			String hostName =
-					address.getCanonicalHostName();
+		try {
+
+			InetAddress address =
+					InetAddress.getByName(
+							ip
+					);
+
+
+			// =============================================
+			// LOCALHOST
+			// =============================================
 
 			if (
-					hostName == null
-							|| hostName.isBlank()
-							|| hostName.equals(ip)
+					address.isLoopbackAddress()
 			) {
+
+				String localHostName =
+						InetAddress
+								.getLocalHost()
+								.getHostName();
+
+				return normalizeHostName(
+						localHostName,
+						ip
+				);
+			}
+
+
+			// =============================================
+			// REMOTE CLIENT
+			// =============================================
+
+			String hostName =
+					address.getHostName();
+
+
+			// getHostName() không resolve được
+			// thì thử canonical
+			if (
+					isUnresolvedHostName(
+							hostName,
+							ip
+					)
+			) {
+
+				hostName =
+						address
+								.getCanonicalHostName();
+			}
+
+
+			// Vẫn không resolve được
+			// thì fallback IP
+			if (
+					isUnresolvedHostName(
+							hostName,
+							ip
+					)
+			) {
+
 				return ip;
 			}
 
-			int dotIndex =
-					hostName.indexOf('.');
 
-			if (dotIndex > 0) {
-				hostName =
-						hostName.substring(
-								0,
-								dotIndex
-						);
-			}
+			return normalizeHostName(
+					hostName,
+					ip
+			);
 
-			return hostName.toUpperCase();
 
 		} catch (Exception e) {
+
 			return ip;
 		}
+	}
+
+
+	private boolean isValidHeader(
+			String value
+	) {
+
+		return value != null
+				&& !value.isBlank()
+				&& !"unknown".equalsIgnoreCase(
+				value
+		)
+				&& !"null".equalsIgnoreCase(
+				value
+		);
+	}
+
+
+	private boolean isUnresolvedHostName(
+			String hostName,
+			String ip
+	) {
+
+		return hostName == null
+				|| hostName.isBlank()
+				|| hostName.equalsIgnoreCase(ip);
+	}
+
+
+	private String normalizeHostName(
+			String hostName,
+			String fallbackIp
+	) {
+
+		if (
+				hostName == null
+						|| hostName.isBlank()
+		) {
+
+			return fallbackIp;
+		}
+
+
+		String result =
+				hostName.trim();
+
+
+		// Ví dụ:
+		//
+		// PC001.company.local
+		// ->
+		// PC001
+		//
+		int dotIndex =
+				result.indexOf('.');
+
+		if (
+				dotIndex > 0
+		) {
+
+			result =
+					result.substring(
+							0,
+							dotIndex
+					);
+		}
+
+
+		if (
+				result.isBlank()
+		) {
+
+			return fallbackIp;
+		}
+
+
+		return result.toUpperCase();
 	}
 }
