@@ -562,35 +562,6 @@ public class FacConfirmRepository {
 			LocalDate expD
 	) {
 
-		/*
-		 * Business hierarchy:
-		 *
-		 * Rough:
-		 *   ProcessGrp2 = Rough
-		 *
-		 * Heat:
-		 *   ProcessGrp2 IN (Heat, Rough)
-		 *
-		 * Fine:
-		 *   ProcessGrp2 IN (Fine, Heat, Rough)
-		 *
-		 * Confirm mapping:
-		 *
-		 * Rough:
-		 *   To Drill
-		 *   To Heat
-		 *
-		 * Heat:
-		 *   Heat Start
-		 *   Heat Finish
-		 *
-		 * Fine:
-		 *   To Packing
-		 *
-		 * Display:
-		 * Rough -> Heat -> Fine
-		 */
-
 		String sql = """
 				WITH Base AS (
 				
@@ -601,7 +572,11 @@ public class FacConfirmRepository {
 				        ISNULL(
 				            bl.FinalQty,
 				            0
-				        ) AS FinalQty
+				        ) AS FinalQty,
+				
+				        bl.ToHeat,
+				        bl.TimeFHeat,
+				        bl.ToPK
 				
 				    FROM F2_Backlog_Main bl
 				
@@ -623,199 +598,236 @@ public class FacConfirmRepository {
 				      )
 				),
 				
-				Summary AS (
 				
-				    -- =========================================
+				-- =================================================
+				-- CONFIRM DATA
+				-- Chỉ giữ process cuối của từng group
+				-- =================================================
+				
+				Confirmed AS (
+				
+				    SELECT DISTINCT
+				        fc.AUNFR,
+				        fc.ProcessGrp
+				
+				    FROM F2Database.dbo.F2_Backlog_Fac_Confirm fc
+				
+				    WHERE fc.ConfirmFnTime IS NOT NULL
+				
+				      AND fc.ProcessGrp IN (
+				          'To Heat',
+				          'Heat Finish',
+				          'To Packing'
+				      )
+				),
+				
+				
+				-- =================================================
+				-- PROCESS SCOPE
+				--
+				-- Chỉ đưa PO vào scope Fac Confirm khi:
+				--
+				-- 1. Cột cuối đang NULL
+				-- HOẶC
+				-- 2. PO đã có record Fac Confirm
+				--
+				-- Những PO vốn đã có final process từ hệ thống
+				-- và chưa từng Fac Confirm sẽ KHÔNG tính.
+				-- =================================================
+				
+				ProcessScope AS (
+				
+				    -- =============================================
 				    -- ROUGH
-				    -- =========================================
+				    -- Final column = ToHeat
+				    -- =============================================
 				
 				    SELECT
 				        'Rough' AS ProcessGroup,
-				
 				        1 AS SortOrder,
 				
-				        COUNT_BIG(*) AS OrderCount,
+				        b.AUFNR,
+				        b.FinalQty,
 				
-				        SUM(
-				            CAST(
-				                FinalQty
-				                AS DECIMAL(18, 2)
-				            )
-				        ) AS TotalFinalQty
+				        'To Heat' AS FinalConfirmProcess
 				
-				    FROM Base
+				    FROM Base b
 				
-				    WHERE ProcessGrp2 = 'Rough'
+				    WHERE b.ProcessGrp2 = 'Rough'
+				
+				      AND (
+				             b.ToHeat IS NULL
+				
+				          OR EXISTS (
+				              SELECT 1
+				
+				              FROM Confirmed c
+				
+				              WHERE c.AUNFR = b.AUFNR
+				                AND c.ProcessGrp = 'To Heat'
+				          )
+				      )
 				
 				
 				    UNION ALL
 				
 				
-				    -- =========================================
+				    -- =============================================
 				    -- HEAT
-				    -- =========================================
+				    -- Final column = Heat Finish
+				    -- =============================================
 				
 				    SELECT
 				        'Heat' AS ProcessGroup,
-				
 				        2 AS SortOrder,
 				
-				        COUNT_BIG(*) AS OrderCount,
+				        b.AUFNR,
+				        b.FinalQty,
 				
-				        SUM(
-				            CAST(
-				                FinalQty
-				                AS DECIMAL(18, 2)
-				            )
-				        ) AS TotalFinalQty
+				        'Heat Finish' AS FinalConfirmProcess
 				
-				    FROM Base
+				    FROM Base b
 				
-				    WHERE ProcessGrp2 IN (
+				    WHERE b.ProcessGrp2 IN (
 				        'Heat',
 				        'Rough'
 				    )
 				
+				      AND (
+				             b.TimeFHeat IS NULL
+				
+				          OR EXISTS (
+				              SELECT 1
+				
+				              FROM Confirmed c
+				
+				              WHERE c.AUNFR = b.AUFNR
+				                AND c.ProcessGrp = 'Heat Finish'
+				          )
+				      )
+				
 				
 				    UNION ALL
 				
 				
-				    -- =========================================
+				    -- =============================================
 				    -- FINE
-				    -- =========================================
+				    -- Final column = ToPK
+				    -- =============================================
 				
 				    SELECT
 				        'Fine' AS ProcessGroup,
-				
 				        3 AS SortOrder,
 				
-				        COUNT_BIG(*) AS OrderCount,
+				        b.AUFNR,
+				        b.FinalQty,
+				
+				        'To Packing' AS FinalConfirmProcess
+				
+				    FROM Base b
+				
+				    WHERE (
+				             b.ToPK IS NULL
+				
+				          OR EXISTS (
+				              SELECT 1
+				
+				              FROM Confirmed c
+				
+				              WHERE c.AUNFR = b.AUFNR
+				                AND c.ProcessGrp = 'To Packing'
+				          )
+				    )
+				),
+				
+				
+				-- =================================================
+				-- SUMMARY
+				-- =================================================
+				
+				Summary AS (
+				
+				    SELECT
+				        ps.ProcessGroup,
+				        ps.SortOrder,
+				
+				
+				        -- =========================================
+				        -- CẦN XÁC NHẬN
+				        -- =========================================
+				
+				        COUNT_BIG(*) AS RequiredOrderCount,
 				
 				        SUM(
 				            CAST(
-				                FinalQty
+				                ps.FinalQty
 				                AS DECIMAL(18, 2)
 				            )
-				        ) AS TotalFinalQty
-				
-				    FROM Base
-				),
-				
-				ConfirmSummary AS (
-				
-				    -- =========================================
-				    -- ROUGH CONFIRM
-				    -- =========================================
-				
-				    SELECT
-				        'Rough' AS ProcessGroup,
-				
-				        COUNT_BIG(*) AS ConfirmCount
-				
-				    FROM F2Database.dbo.F2_Backlog_Fac_Confirm fc
-				
-				    WHERE fc.ConfirmFnTime IS NOT NULL
-				
-				      AND fc.ProcessGrp IN (
-				          'To Drill',
-				          'To Heat'
-				      )
-				
-				      AND EXISTS (
-				          SELECT 1
-				
-				          FROM Base b
-				
-				          WHERE b.AUFNR = fc.AUNFR
-				
-				            AND b.ProcessGrp2 = 'Rough'
-				      )
+				        ) AS RequiredTotalQty,
 				
 				
-				    UNION ALL
+				        -- =========================================
+				        -- ĐÃ XÁC NHẬN
+				        -- =========================================
+				
+				        COUNT_BIG(
+				            c.AUNFR
+				        ) AS ConfirmedOrderCount,
+				
+				        SUM(
+				            CASE
+				                WHEN c.AUNFR IS NOT NULL
+				                THEN CAST(
+				                    ps.FinalQty
+				                    AS DECIMAL(18, 2)
+				                )
+				
+				                ELSE CAST(
+				                    0
+				                    AS DECIMAL(18, 2)
+				                )
+				            END
+				        ) AS ConfirmedTotalQty
 				
 				
-				    -- =========================================
-				    -- HEAT CONFIRM
-				    -- =========================================
+				    FROM ProcessScope ps
 				
-				    SELECT
-				        'Heat' AS ProcessGroup,
+				    LEFT JOIN Confirmed c
 				
-				        COUNT_BIG(*) AS ConfirmCount
+				        ON c.AUNFR =
+				           ps.AUFNR
 				
-				    FROM F2Database.dbo.F2_Backlog_Fac_Confirm fc
-				
-				    WHERE fc.ConfirmFnTime IS NOT NULL
-				
-				      AND fc.ProcessGrp IN (
-				          'Heat Start',
-				          'Heat Finish'
-				      )
-				
-				      AND EXISTS (
-				          SELECT 1
-				
-				          FROM Base b
-				
-				          WHERE b.AUFNR = fc.AUNFR
-				
-				            AND b.ProcessGrp2 IN (
-				                'Heat',
-				                'Rough'
-				            )
-				      )
+				       AND c.ProcessGrp =
+				           ps.FinalConfirmProcess
 				
 				
-				    UNION ALL
-				
-				
-				    -- =========================================
-				    -- FINE CONFIRM
-				    -- =========================================
-				
-				    SELECT
-				        'Fine' AS ProcessGroup,
-				
-				        COUNT_BIG(*) AS ConfirmCount
-				
-				    FROM F2Database.dbo.F2_Backlog_Fac_Confirm fc
-				
-				    WHERE fc.ConfirmFnTime IS NOT NULL
-				
-				      AND fc.ProcessGrp = 'To Packing'
-				
-				      AND EXISTS (
-				          SELECT 1
-				
-				          FROM Base b
-				
-				          WHERE b.AUFNR = fc.AUNFR
-				      )
+				    GROUP BY
+				        ps.ProcessGroup,
+				        ps.SortOrder
 				)
 				
+				
 				SELECT
-				    s.ProcessGroup,
+				    ProcessGroup,
 				
-				    s.OrderCount,
-				
-				    ISNULL(
-				        s.TotalFinalQty,
-				        0
-				    ) AS TotalFinalQty,
+				    RequiredOrderCount,
 				
 				    ISNULL(
-				        c.ConfirmCount,
+				        RequiredTotalQty,
 				        0
-				    ) AS ConfirmCount
+				    ) AS RequiredTotalQty,
 				
-				FROM Summary s
+				    ConfirmedOrderCount,
 				
-				LEFT JOIN ConfirmSummary c
-				    ON c.ProcessGroup = s.ProcessGroup
+				    ISNULL(
+				        ConfirmedTotalQty,
+				        0
+				    ) AS ConfirmedTotalQty
+				
+				FROM Summary
 				
 				ORDER BY
-				    s.SortOrder
+				    SortOrder
 				""";
 
 
@@ -844,15 +856,19 @@ public class FacConfirmRepository {
 								),
 
 								rs.getLong(
-										"OrderCount"
+										"RequiredOrderCount"
 								),
 
 								rs.getBigDecimal(
-										"TotalFinalQty"
+										"RequiredTotalQty"
 								),
 
 								rs.getLong(
-										"ConfirmCount"
+										"ConfirmedOrderCount"
+								),
+
+								rs.getBigDecimal(
+										"ConfirmedTotalQty"
 								)
 						),
 
