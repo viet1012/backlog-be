@@ -1,6 +1,6 @@
 package com.example.backlogbe.service;
 
-
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.stereotype.Service;
 
 import java.net.InetAddress;
@@ -8,7 +8,42 @@ import java.net.InetAddress;
 @Service
 public class ClientMachineService {
 
-	public String resolveMachineName(String ip) {
+	public String getClientIp(
+			HttpServletRequest request
+	) {
+
+		// Reverse proxy chu?n
+		String forwardedFor =
+				request.getHeader("X-Forwarded-For");
+
+		if (
+				forwardedFor != null
+						&& !forwardedFor.isBlank()
+						&& !"unknown".equalsIgnoreCase(forwardedFor)
+		) {
+			return forwardedFor
+					.split(",")[0]
+					.trim();
+		}
+
+		String realIp =
+				request.getHeader("X-Real-IP");
+
+		if (
+				realIp != null
+						&& !realIp.isBlank()
+						&& !"unknown".equalsIgnoreCase(realIp)
+		) {
+			return realIp.trim();
+		}
+
+		return request.getRemoteAddr();
+	}
+
+
+	public String resolveMachineName(
+			String ip
+	) {
 
 		if (ip == null || ip.isBlank()) {
 			return "UNKNOWN";
@@ -29,14 +64,15 @@ public class ClientMachineService {
 				return ip;
 			}
 
-			// Nếu DNS trả dạng:
-			// PC001.company.local
-			// và bạn chỉ muốn PC001
-			int dotIndex = hostName.indexOf('.');
+			int dotIndex =
+					hostName.indexOf('.');
 
 			if (dotIndex > 0) {
 				hostName =
-						hostName.substring(0, dotIndex);
+						hostName.substring(
+								0,
+								dotIndex
+						);
 			}
 
 			return hostName.toUpperCase();
