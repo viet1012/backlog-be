@@ -4,6 +4,7 @@ import com.example.backlogbe.dto.PageResponse;
 import com.example.backlogbe.dto.backlog.BacklogFilterOptionsRequest;
 import com.example.backlogbe.dto.backlog.BacklogFilterRequest;
 import com.example.backlogbe.dto.backlog.BacklogMainDto;
+import com.example.backlogbe.dto.backlog.BacklogStatusSummaryDto;
 import com.example.backlogbe.repository.backlog.BacklogMainRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -154,6 +155,17 @@ public class BacklogMainService {
                 search,
                 limit,
                 activeFilters
+        );
+    }
+
+
+    @Transactional(readOnly = true)
+    public BacklogStatusSummaryDto getStatusSummary(
+            BacklogFilterRequest request
+    ) {
+
+        return repository.findStatusSummary(
+                request
         );
     }
 }

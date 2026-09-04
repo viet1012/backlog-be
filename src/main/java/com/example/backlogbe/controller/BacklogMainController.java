@@ -4,6 +4,7 @@ import com.example.backlogbe.dto.PageResponse;
 import com.example.backlogbe.dto.backlog.BacklogFilterOptionsRequest;
 import com.example.backlogbe.dto.backlog.BacklogFilterRequest;
 import com.example.backlogbe.dto.backlog.BacklogMainDto;
+import com.example.backlogbe.dto.backlog.BacklogStatusSummaryDto;
 import com.example.backlogbe.service.BacklogMainService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
@@ -70,6 +71,25 @@ public class BacklogMainController {
 
         return service.getFilterOptions(
                 request
+        );
+    }
+
+    @PostMapping("/summary/status")
+    public BacklogStatusSummaryDto getStatusSummary(
+            @RequestBody(required = false)
+            BacklogFilterRequest request
+    ) {
+
+        BacklogFilterRequest safeRequest =
+                request != null
+                        ? request
+                        : new BacklogFilterRequest(
+                        List.of(),
+                        "and"
+                );
+
+        return service.getStatusSummary(
+                safeRequest
         );
     }
 }

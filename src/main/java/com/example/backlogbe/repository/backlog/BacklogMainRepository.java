@@ -2,14 +2,16 @@ package com.example.backlogbe.repository.backlog;
 
 import com.example.backlogbe.dto.backlog.BacklogFilterRequest;
 import com.example.backlogbe.dto.backlog.BacklogMainDto;
+import com.example.backlogbe.dto.backlog.BacklogStatusSummaryDto;
+import com.example.backlogbe.dto.backlog.BacklogStatusSummaryItemDto;
 import lombok.RequiredArgsConstructor;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
-
 @Repository
 @RequiredArgsConstructor
 public class BacklogMainRepository {
@@ -735,5 +737,199 @@ public class BacklogMainRepository {
 		);
 	}
 
+
+	// =========================================================
+// STATUS SUMMARY
+// =========================================================
+
+	public BacklogStatusSummaryDto findStatusSummary(
+			BacklogFilterRequest request
+	) {
+
+		// Summary được group theo Status.
+		// Vì vậy bỏ filter Status để các status card
+		// luôn hiển thị và có thể click chuyển qua lại.
+		BacklogFilterRequest summaryRequest =
+				removeCurrentFieldFilter(
+						request,
+						"Status"
+				);
+
+		var queryParts =
+				filterBuilder.build(
+						summaryRequest
+				);
+
+
+		// =====================================================
+		// TOTAL
+		// =====================================================
+
+		String totalSql = """
+				SELECT
+				    COUNT_BIG(*) AS TotalPoCount,
+				    COALESCE(
+				        SUM(
+				            CAST(
+				                COALESCE(KWMENG, 0)
+				                AS DECIMAL(38, 4)
+				            )
+				        ),
+				        0
+				    ) AS TotalQty
+				FROM F2_Backlog_Main
+				"""
+				+ queryParts.where();
+
+
+		BacklogStatusSummaryDto total =
+				jdbcTemplate.queryForObject(
+						totalSql,
+
+						(rs, rowNum) ->
+								new BacklogStatusSummaryDto(
+										rs.getLong(
+												"TotalPoCount"
+										),
+										rs.getBigDecimal(
+												"TotalQty"
+										),
+										List.of()
+								),
+
+						queryParts.params()
+								.toArray()
+				);
+
+
+		// =====================================================
+		// STATUS GROUP
+		// =====================================================
+
+		String statusSql = """
+				SELECT
+				    COALESCE(
+				        NULLIF(
+				            LTRIM(RTRIM(Status)),
+				            ''
+				        ),
+				        '(Blank)'
+				    ) AS Status,
+				
+				    COUNT_BIG(*) AS PoCount,
+				
+				    COALESCE(
+				        SUM(
+				            CAST(
+				                COALESCE(KWMENG, 0)
+				                AS DECIMAL(38, 4)
+				            )
+				        ),
+				        0
+				    ) AS TotalQty
+				
+				FROM F2_Backlog_Main
+				"""
+				+ queryParts.where()
+				+ """
+				
+				GROUP BY
+				    COALESCE(
+				        NULLIF(
+				            LTRIM(RTRIM(Status)),
+				            ''
+				        ),
+				        '(Blank)'
+				    )
+				
+				ORDER BY
+				    CASE
+				        WHEN COALESCE(
+				            NULLIF(
+				                LTRIM(RTRIM(Status)),
+				                ''
+				            ),
+				            '(Blank)'
+				        ) = 'NY Process'
+				            THEN 1
+				
+				        WHEN COALESCE(
+				            NULLIF(
+				                LTRIM(RTRIM(Status)),
+				                ''
+				            ),
+				            '(Blank)'
+				        ) = 'NYI'
+				            THEN 2
+				
+				        WHEN COALESCE(
+				            NULLIF(
+				                LTRIM(RTRIM(Status)),
+				                ''
+				            ),
+				            '(Blank)'
+				        ) = 'WIP'
+				            THEN 3
+				
+				        WHEN COALESCE(
+				            NULLIF(
+				                LTRIM(RTRIM(Status)),
+				                ''
+				            ),
+				            '(Blank)'
+				        ) = 'WIP_FG'
+				            THEN 4
+				
+				        ELSE 99
+				    END,
+				
+				    Status
+				""";
+
+
+		List<BacklogStatusSummaryItemDto> statuses =
+				jdbcTemplate.query(
+						statusSql,
+
+						(rs, rowNum) ->
+								new BacklogStatusSummaryItemDto(
+										rs.getString(
+												"Status"
+										),
+										rs.getLong(
+												"PoCount"
+										),
+										rs.getBigDecimal(
+												"TotalQty"
+										)
+								),
+
+						queryParts.params()
+								.toArray()
+				);
+
+
+		// =====================================================
+		// RESULT
+		// =====================================================
+
+		if (total == null) {
+
+			return new BacklogStatusSummaryDto(
+					0L,
+					BigDecimal.ZERO,
+					statuses
+			);
+		}
+
+
+		return new BacklogStatusSummaryDto(
+				total.totalPoCount(),
+				total.totalQty() == null
+						? BigDecimal.ZERO
+						: total.totalQty(),
+				statuses
+		);
+	}
 
 }
