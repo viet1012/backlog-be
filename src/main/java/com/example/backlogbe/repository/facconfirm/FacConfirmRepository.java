@@ -18,31 +18,243 @@ import java.util.List;
 public class FacConfirmRepository {
 
 
-	private static final String DETAIL_SELECT = """
-			SELECT
-			    bl.FERTH,
-			    bl.ProductGrp,
-			    bl.AUFNR,
-			    bl.ZGLOBAL_CODE,
-			    bl.PNAME,
-			    bl.IssueD,
-			    bl.ExportD,
-			    bl.RRONYU1 AS CusId,
-			    bl.ShipBy,
-			    bl.MTO_ID,
-			    bl.PRT_ADDCMT2,
-			    bl.CurrentProcess,
-			    bl.FinalQty,
-			    bl.ToDrill,
-			    bl.ToHeat,
-			    bl.TimeSQuenching AS Heat_Start,
-			    bl.TimeFHeat AS Heat_Finish,
-			    bl.ToPK
+	private static final String FAC_DATA_CTE = """
 			
-			FROM F2_Backlog_Main bl
+			WITH LatestConfirm AS (
+			
+			    SELECT
+			        fc.AUNFR,
+			        fc.ProcessGrp,
+			        fc.ConfirmFnTime,
+			
+			        ROW_NUMBER() OVER (
+			
+			            PARTITION BY
+			                fc.AUNFR,
+			                fc.ProcessGrp
+			
+			            ORDER BY
+			                fc.UpdatedAt DESC
+			
+			        ) AS rn
+			
+			    FROM F2Database.dbo.F2_Backlog_Fac_Confirm fc
+			
+			    WHERE fc.ConfirmFnTime IS NOT NULL
+			
+			      AND fc.ProcessGrp IN (
+			          'To Drill',
+			          'To Heat',
+			          'Heat Start',
+			          'Heat Finish',
+			          'To Packing'
+			      )
+			),
+			
+			
+			ConfirmPivot AS (
+			
+			    SELECT
+			        AUNFR,
+			
+			
+			        MAX(
+			            CASE
+			                WHEN ProcessGrp = 'To Drill'
+			                THEN ConfirmFnTime
+			            END
+			        ) AS Confirm_ToDrill,
+			
+			
+			        MAX(
+			            CASE
+			                WHEN ProcessGrp = 'To Heat'
+			                THEN ConfirmFnTime
+			            END
+			        ) AS Confirm_ToHeat,
+			
+			
+			        MAX(
+			            CASE
+			                WHEN ProcessGrp = 'Heat Start'
+			                THEN ConfirmFnTime
+			            END
+			        ) AS Confirm_HeatStart,
+			
+			
+			        MAX(
+			            CASE
+			                WHEN ProcessGrp = 'Heat Finish'
+			                THEN ConfirmFnTime
+			            END
+			        ) AS Confirm_HeatFinish,
+			
+			
+			        MAX(
+			            CASE
+			                WHEN ProcessGrp = 'To Packing'
+			                THEN ConfirmFnTime
+			            END
+			        ) AS Confirm_ToPacking
+			
+			
+			    FROM LatestConfirm
+			
+			    WHERE rn = 1
+			
+			    GROUP BY
+			        AUNFR
+			),
+			
+			
+			FacData AS (
+			
+			    SELECT
+			        bl.FERTH,
+			        bl.ProductGrp,
+			        bl.AUFNR,
+			        bl.ZGLOBAL_CODE,
+			        bl.PNAME,
+			
+			        bl.IssueD,
+			        bl.ExportD,
+			
+			        bl.RRONYU1 AS CusId,
+			
+			        bl.ShipBy,
+			        bl.MTO_ID,
+			        bl.PRT_ADDCMT2,
+			        bl.CurrentProcess,
+			        bl.FinalQty,
+			
+			        -- needed for business filtering
+			        bl.ProcessGrp2,
+			        bl.Div,
+			
+			
+			        -- =========================================
+			        -- TO DRILL
+			        -- Confirm exists -> use ConfirmFnTime
+			        -- Otherwise     -> use backlog value
+			        -- =========================================
+			        COALESCE(
+			            cp.Confirm_ToDrill,
+			            bl.ToDrill
+			        ) AS ToDrill,
+			
+			
+			        -- =========================================
+			        -- TO HEAT
+			        -- =========================================
+			        COALESCE(
+			            cp.Confirm_ToHeat,
+			            bl.ToHeat
+			        ) AS ToHeat,
+			
+			
+			        -- =========================================
+			        -- HEAT START
+			        -- =========================================
+			        COALESCE(
+			            cp.Confirm_HeatStart,
+			            bl.TimeSQuenching
+			        ) AS Heat_Start,
+			
+			
+			        -- =========================================
+			        -- HEAT FINISH
+			        -- =========================================
+			        COALESCE(
+			            cp.Confirm_HeatFinish,
+			            bl.TimeFHeat
+			        ) AS Heat_Finish,
+			
+			
+			        -- =========================================
+			        -- TO PACKING
+			        -- =========================================
+			        COALESCE(
+			            cp.Confirm_ToPacking,
+			            bl.ToPK
+			        ) AS ToPK
+			
+			
+			    FROM F2_Backlog_Main bl
+			
+			    LEFT JOIN ConfirmPivot cp
+			        ON cp.AUNFR = bl.AUFNR
+			)
+			
+			""";
+
+	private static final String DETAIL_COLUMNS = """
+			
+			SELECT
+			
+			    d.FERTH,
+			
+			    d.ProductGrp,
+			
+			    d.AUFNR,
+			
+			    d.ZGLOBAL_CODE,
+			
+			    d.PNAME,
+			
+			    d.IssueD,
+			
+			    d.ExportD,
+			
+			    d.CusId,
+			
+			    d.ShipBy,
+			
+			    d.MTO_ID,
+			
+			    d.PRT_ADDCMT2,
+			
+			    d.CurrentProcess,
+			
+			    d.FinalQty,
+			
+			    d.ToDrill,
+			
+			    d.ToHeat,
+			
+			    d.Heat_Start,
+			
+			    d.Heat_Finish,
+			
+			    d.ToPK
+			
+			FROM FacData d
+			
 			""";
 	private final JdbcTemplate jdbcTemplate;
 	private final FacConfirmFilterSqlBuilder filterBuilder;
+
+
+	// =========================================================
+	// COMMON DATA SOURCE
+	//
+	// F2_Backlog_Main
+	//
+	//          +
+	//
+	// F2_Backlog_Fac_Confirm
+	//
+	//          ↓
+	//
+	// FacData
+	//
+	// Đây là nguồn duy nhất cho:
+	//
+	// - detail
+	// - search
+	// - count
+	// - Excel filter
+	//
+	// =========================================================
 	private final FacConfirmColumnMetadataProvider metadataProvider;
 
 
@@ -63,6 +275,10 @@ public class FacConfirmRepository {
 			List<Object> params
 	) {
 
+		// =====================================================
+		// EXPORT DATE
+		// =====================================================
+
 		params.add(
 				Timestamp.valueOf(
 						expD.atStartOfDay()
@@ -70,58 +286,85 @@ public class FacConfirmRepository {
 		);
 
 
-		// procGrp xuất hiện 3 lần trong SQL
+		// =====================================================
+		// PROCESS GROUP
+		//
+		// dùng 3 lần trong SQL
+		// =====================================================
 
 		params.add(procGrp);
+
 		params.add(procGrp);
+
 		params.add(procGrp);
 
 
-		// div xuất hiện 2 lần
+		// =====================================================
+		// DIV
+		//
+		// dùng 2 lần
+		// =====================================================
 
 		params.add(div);
+
 		params.add(div);
 
 
 		return """
-				WHERE bl.ExportD <= ?
+				
+				WHERE d.ExportD <= ?
 				
 				  AND (
-				         (? = 'Fine'
-				             AND bl.ProcessGrp2 IN (
+				
+				         (
+				             ? = 'Fine'
+				
+				             AND d.ProcessGrp2 IN (
 				                 'Fine',
 				                 'Heat',
 				                 'Rough'
 				             )
 				         )
 				
-				      OR (? = 'Heat'
-				             AND bl.ProcessGrp2 IN (
+				
+				      OR (
+				
+				             ? = 'Heat'
+				
+				             AND d.ProcessGrp2 IN (
 				                 'Heat',
 				                 'Rough'
 				             )
 				         )
 				
-				      OR (? = 'Rough'
-				             AND bl.ProcessGrp2 = 'Rough'
-				         )
-				  )
-				
-				  AND (
-				         bl.Div = ?
 				
 				      OR (
-				             ? = 'GU'
-				             AND bl.Div LIKE '%G'
+				
+				             ? = 'Rough'
+				
+				             AND d.ProcessGrp2 = 'Rough'
 				         )
 				  )
+				
+				
+				  AND (
+				
+				         d.Div = ?
+				
+				      OR (
+				
+				             ? = 'GU'
+				
+				             AND d.Div LIKE '%G'
+				         )
+				  )
+				
 				""";
 	}
 
 
 	// =========================================================
 	// FIND PAGE
-	// OLD GET API
 	// =========================================================
 
 	public List<FacConfirmDto> findPage(
@@ -150,22 +393,38 @@ public class FacConfirmRepository {
 
 
 		String sql =
-				DETAIL_SELECT
+				FAC_DATA_CTE
+
+						+ DETAIL_COLUMNS
+
 						+ baseWhere
+
 						+ """
 						
 						ORDER BY
-						    bl.ExportD,
-						    bl.ProductGrp,
-						    bl.AUFNR
+						
+						    d.ExportD,
+						
+						    d.ProductGrp,
+						
+						    d.AUFNR
+						
 						
 						OFFSET ? ROWS
+						
 						FETCH NEXT ? ROWS ONLY
+						
 						""";
 
 
-		params.add(offset);
-		params.add(size);
+		params.add(
+				offset
+		);
+
+
+		params.add(
+				size
+		);
 
 
 		return jdbcTemplate.query(
@@ -178,7 +437,6 @@ public class FacConfirmRepository {
 
 	// =========================================================
 	// COUNT
-	// OLD GET API
 	// =========================================================
 
 	public long count(
@@ -200,11 +458,19 @@ public class FacConfirmRepository {
 				);
 
 
-		String sql = """
-				SELECT COUNT_BIG(*)
-				FROM F2_Backlog_Main bl
-				"""
-				+ baseWhere;
+		String sql =
+				FAC_DATA_CTE
+
+						+ """
+						
+						SELECT
+						    COUNT_BIG(*)
+						
+						FROM FacData d
+						
+						"""
+
+						+ baseWhere;
 
 
 		Long total =
@@ -245,7 +511,7 @@ public class FacConfirmRepository {
 
 
 		// =====================================================
-		// BASE PARAMS
+		// BASE
 		// =====================================================
 
 		String baseWhere =
@@ -274,27 +540,48 @@ public class FacConfirmRepository {
 
 
 		// =====================================================
-		// PAGINATION
+		// SQL
 		// =====================================================
 
-		params.add(offset);
-		params.add(size);
-
-
 		String sql =
-				DETAIL_SELECT
+				FAC_DATA_CTE
+
+						+ DETAIL_COLUMNS
+
 						+ baseWhere
+
 						+ filterParts.sql()
+
 						+ """
 						
 						ORDER BY
-						    bl.ExportD,
-						    bl.ProductGrp,
-						    bl.AUFNR
+						
+						    d.ExportD,
+						
+						    d.ProductGrp,
+						
+						    d.AUFNR
+						
 						
 						OFFSET ? ROWS
+						
 						FETCH NEXT ? ROWS ONLY
+						
 						""";
+
+
+		// =====================================================
+		// PAGINATION
+		// =====================================================
+
+		params.add(
+				offset
+		);
+
+
+		params.add(
+				size
+		);
 
 
 		return jdbcTemplate.query(
@@ -342,12 +629,21 @@ public class FacConfirmRepository {
 		);
 
 
-		String sql = """
-				SELECT COUNT_BIG(*)
-				FROM F2_Backlog_Main bl
-				"""
-				+ baseWhere
-				+ filterParts.sql();
+		String sql =
+				FAC_DATA_CTE
+
+						+ """
+						
+						SELECT
+						    COUNT_BIG(*)
+						
+						FROM FacData d
+						
+						"""
+
+						+ baseWhere
+
+						+ filterParts.sql();
 
 
 		Long total =
@@ -378,10 +674,10 @@ public class FacConfirmRepository {
 	) {
 
 		// =====================================================
-		// SAFE COLUMN
+		// COLUMN
 		// =====================================================
 
-		FacConfirmColumnMetadataProvider.ColumnMeta columnMeta =
+		FacConfirmColumnMetadataProvider.ColumnMeta meta =
 				metadataProvider.get(
 						field
 				);
@@ -389,32 +685,87 @@ public class FacConfirmRepository {
 
 		String column =
 				"["
-						+ columnMeta.name()
+						+ meta.name()
 						+ "]";
 
 
+		boolean dateField =
+				meta.type()
+						== FacConfirmColumnMetadataProvider.ColumnType.DATE;
+
+
 		// =====================================================
-		// REMOVE FILTER OF CURRENT FIELD
+		// DISPLAY VALUE
 		//
-		// Ví dụ:
+		// DATE:
 		//
-		// đang mở CurrentProcess
+		// DB:
+		// 2026-09-03 14:26:37
 		//
-		// CurrentProcess = SG
-		// ShipBy = AIR
+		// Excel option:
+		// 2026-09-03
 		//
-		// Khi load options CurrentProcess:
+		// DB DATA KHÔNG BỊ THAY ĐỔI.
+		// =====================================================
+
+		String valueExpression;
+
+
+		if (dateField) {
+
+			valueExpression =
+					"""
+							
+							CASE
+							
+								WHEN %s IS NULL
+								THEN ''
+							
+								ELSE CONVERT(
+									VARCHAR(10),
+									%s,
+									23
+								)
+							
+							END
+							
+							""".formatted(
+							column,
+							column
+					);
+
+		} else {
+
+			valueExpression =
+					"""
+							
+							ISNULL(
+							
+								CAST(
+									%s
+									AS NVARCHAR(500)
+								),
+							
+								''
+							)
+							
+							""".formatted(
+							column
+					);
+		}
+
+
+		// =====================================================
+		// REMOVE CURRENT FILTER
 		//
-		// giữ ShipBy = AIR
-		// bỏ CurrentProcess = SG
-		//
-		// giống Excel
+		// Excel behavior
 		// =====================================================
 
 		List<FacConfirmFilterItem> otherFilters =
 				filters == null
 						? List.of()
-						: filters.stream()
+						: filters
+						.stream()
 
 						.filter(
 								item ->
@@ -473,27 +824,24 @@ public class FacConfirmRepository {
 				new StringBuilder();
 
 
-		sql.append("""
-				SELECT DISTINCT
-				
-				    ISNULL(
-				        CAST(
-				""");
-
-
 		sql.append(
-				column
+				FAC_DATA_CTE
 		);
 
 
-		sql.append("""
-				            AS NVARCHAR(500)
-				        ),
-				        ''
-				    ) AS FilterValue
-				
-				FROM F2_Backlog_Main bl
-				""");
+		sql.append(
+				"""
+						
+						SELECT DISTINCT
+						
+							%s AS FilterValue
+						
+						FROM FacData d
+						
+						""".formatted(
+						valueExpression
+				)
+		);
 
 
 		sql.append(
@@ -507,24 +855,29 @@ public class FacConfirmRepository {
 
 
 		// =====================================================
-		// SEARCH INSIDE FILTER OPTIONS
+		// SEARCH
 		// =====================================================
 
+		String safeSearch =
+				search == null
+						? ""
+						: search.trim();
+
+
 		if (
-				search != null
-						&& !search.isBlank()
+				!safeSearch.isBlank()
 		) {
 
 			sql.append(
-					" AND ISNULL(CAST("
-							+ column
-							+ " AS NVARCHAR(500)), '') LIKE ? "
+					" AND "
+							+ valueExpression
+							+ " LIKE ? "
 			);
 
 
 			params.add(
 					"%"
-							+ search.trim()
+							+ safeSearch
 							+ "%"
 			);
 		}
@@ -534,11 +887,19 @@ public class FacConfirmRepository {
 		// ORDER
 		// =====================================================
 
-		sql.append("""
-				
-				ORDER BY FilterValue
-				""");
+		sql.append(
+				"""
+						
+						ORDER BY
+							FilterValue
+						
+						"""
+		);
 
+
+		// =====================================================
+		// RESULT
+		// =====================================================
 
 		return jdbcTemplate.query(
 				sql.toString(),
@@ -562,11 +923,33 @@ public class FacConfirmRepository {
 			LocalDate expD
 	) {
 
+		/*
+		 * Summary business hiện tại:
+		 *
+		 * Rough:
+		 * final confirm = To Heat
+		 *
+		 * Heat:
+		 * final confirm = Heat Finish
+		 *
+		 * Fine:
+		 * final confirm = To Packing
+		 *
+		 * Required:
+		 *
+		 * final backlog column NULL
+		 * OR
+		 * đã từng có Fac Confirm record
+		 */
+
 		String sql = """
+				
 				WITH Base AS (
 				
 				    SELECT
+				
 				        bl.AUFNR,
+				
 				        bl.ProcessGrp2,
 				
 				        ISNULL(
@@ -575,21 +958,30 @@ public class FacConfirmRepository {
 				        ) AS FinalQty,
 				
 				        bl.ToHeat,
+				
 				        bl.TimeFHeat,
+				
 				        bl.ToPK
+				
 				
 				    FROM F2_Backlog_Main bl
 				
+				
 				    WHERE bl.ExportD <= ?
 				
+				
 				      AND (
+				
 				             bl.Div = ?
 				
 				          OR (
+				
 				                 ? = 'GU'
+				
 				                 AND bl.Div LIKE '%G'
 				             )
 				      )
+				
 				
 				      AND bl.ProcessGrp2 IN (
 				          'Fine',
@@ -599,20 +991,20 @@ public class FacConfirmRepository {
 				),
 				
 				
-				-- =================================================
-				-- CONFIRM DATA
-				-- Chỉ giữ process cuối của từng group
-				-- =================================================
-				
 				Confirmed AS (
 				
 				    SELECT DISTINCT
+				
 				        fc.AUNFR,
+				
 				        fc.ProcessGrp
+				
 				
 				    FROM F2Database.dbo.F2_Backlog_Fac_Confirm fc
 				
+				
 				    WHERE fc.ConfirmFnTime IS NOT NULL
+				
 				
 				      AND fc.ProcessGrp IN (
 				          'To Heat',
@@ -622,161 +1014,185 @@ public class FacConfirmRepository {
 				),
 				
 				
-				-- =================================================
-				-- PROCESS SCOPE
-				--
-				-- Chỉ đưa PO vào scope Fac Confirm khi:
-				--
-				-- 1. Cột cuối đang NULL
-				-- HOẶC
-				-- 2. PO đã có record Fac Confirm
-				--
-				-- Những PO vốn đã có final process từ hệ thống
-				-- và chưa từng Fac Confirm sẽ KHÔNG tính.
-				-- =================================================
-				
 				ProcessScope AS (
 				
-				    -- =============================================
+				
+				    -- =========================================
 				    -- ROUGH
-				    -- Final column = ToHeat
-				    -- =============================================
+				    -- =========================================
 				
 				    SELECT
-				        'Rough' AS ProcessGroup,
-				        1 AS SortOrder,
+				
+				        'Rough'
+				            AS ProcessGroup,
+				
+				        1
+				            AS SortOrder,
 				
 				        b.AUFNR,
+				
 				        b.FinalQty,
 				
-				        'To Heat' AS FinalConfirmProcess
+				        'To Heat'
+				            AS FinalConfirmProcess
+				
 				
 				    FROM Base b
 				
+				
 				    WHERE b.ProcessGrp2 = 'Rough'
 				
+				
 				      AND (
+				
 				             b.ToHeat IS NULL
 				
 				          OR EXISTS (
-				              SELECT 1
 				
-				              FROM Confirmed c
+				                 SELECT 1
 				
-				              WHERE c.AUNFR = b.AUFNR
-				                AND c.ProcessGrp = 'To Heat'
-				          )
+				                 FROM Confirmed c
+				
+				                 WHERE c.AUNFR =
+				                       b.AUFNR
+				
+				                   AND c.ProcessGrp =
+				                       'To Heat'
+				             )
 				      )
 				
 				
 				    UNION ALL
 				
 				
-				    -- =============================================
-				    -- HEAT
-				    -- Final column = Heat Finish
-				    -- =============================================
+				    -- =========================================
+				    --  HEAT
+				    -- =========================================
 				
 				    SELECT
-				        'Heat' AS ProcessGroup,
-				        2 AS SortOrder,
+				
+				        'Heat'
+				            AS ProcessGroup,
+				
+				        2
+				            AS SortOrder,
 				
 				        b.AUFNR,
+				
 				        b.FinalQty,
 				
-				        'Heat Finish' AS FinalConfirmProcess
+				        'Heat Finish'
+				            AS FinalConfirmProcess
+				
 				
 				    FROM Base b
+				
 				
 				    WHERE b.ProcessGrp2 IN (
 				        'Heat',
 				        'Rough'
 				    )
 				
+				
 				      AND (
+				
 				             b.TimeFHeat IS NULL
 				
 				          OR EXISTS (
-				              SELECT 1
 				
-				              FROM Confirmed c
+				                 SELECT 1
 				
-				              WHERE c.AUNFR = b.AUFNR
-				                AND c.ProcessGrp = 'Heat Finish'
-				          )
+				                 FROM Confirmed c
+				
+				                 WHERE c.AUNFR =
+				                       b.AUFNR
+				
+				                   AND c.ProcessGrp =
+				                       'Heat Finish'
+				             )
 				      )
 				
 				
 				    UNION ALL
 				
 				
-				    -- =============================================
+				    -- =========================================
 				    -- FINE
-				    -- Final column = ToPK
-				    -- =============================================
+				    -- =========================================
 				
 				    SELECT
-				        'Fine' AS ProcessGroup,
-				        3 AS SortOrder,
+				
+				        'Fine'
+				            AS ProcessGroup,
+				
+				        3
+				            AS SortOrder,
 				
 				        b.AUFNR,
+				
 				        b.FinalQty,
 				
-				        'To Packing' AS FinalConfirmProcess
+				        'To Packing'
+				            AS FinalConfirmProcess
+				
 				
 				    FROM Base b
 				
+				
 				    WHERE (
+				
 				             b.ToPK IS NULL
 				
 				          OR EXISTS (
-				              SELECT 1
 				
-				              FROM Confirmed c
+				                 SELECT 1
 				
-				              WHERE c.AUNFR = b.AUFNR
-				                AND c.ProcessGrp = 'To Packing'
-				          )
-				    )
+				                 FROM Confirmed c
+				
+				                 WHERE c.AUNFR =
+				                       b.AUFNR
+				
+				                   AND c.ProcessGrp =
+				                       'To Packing'
+				             )
+				      )
 				),
 				
-				
-				-- =================================================
-				-- SUMMARY
-				-- =================================================
 				
 				Summary AS (
 				
 				    SELECT
+				
 				        ps.ProcessGroup,
+				
 				        ps.SortOrder,
 				
 				
-				        -- =========================================
-				        -- CẦN XÁC NHẬN
-				        -- =========================================
+				        COUNT_BIG(*)
+				            AS RequiredOrderCount,
 				
-				        COUNT_BIG(*) AS RequiredOrderCount,
 				
 				        SUM(
+				
 				            CAST(
 				                ps.FinalQty
 				                AS DECIMAL(18, 2)
 				            )
+				
 				        ) AS RequiredTotalQty,
 				
-				
-				        -- =========================================
-				        -- ĐÃ XÁC NHẬN
-				        -- =========================================
 				
 				        COUNT_BIG(
 				            c.AUNFR
 				        ) AS ConfirmedOrderCount,
 				
+				
 				        SUM(
+				
 				            CASE
+				
 				                WHEN c.AUNFR IS NOT NULL
+				
 				                THEN CAST(
 				                    ps.FinalQty
 				                    AS DECIMAL(18, 2)
@@ -786,11 +1202,14 @@ public class FacConfirmRepository {
 				                    0
 				                    AS DECIMAL(18, 2)
 				                )
+				
 				            END
+				
 				        ) AS ConfirmedTotalQty
 				
 				
 				    FROM ProcessScope ps
+				
 				
 				    LEFT JOIN Confirmed c
 				
@@ -802,32 +1221,41 @@ public class FacConfirmRepository {
 				
 				
 				    GROUP BY
+				
 				        ps.ProcessGroup,
+				
 				        ps.SortOrder
 				)
 				
 				
 				SELECT
+				
 				    ProcessGroup,
 				
 				    RequiredOrderCount,
+				
 				
 				    ISNULL(
 				        RequiredTotalQty,
 				        0
 				    ) AS RequiredTotalQty,
 				
+				
 				    ConfirmedOrderCount,
+				
 				
 				    ISNULL(
 				        ConfirmedTotalQty,
 				        0
 				    ) AS ConfirmedTotalQty
 				
+				
 				FROM Summary
+				
 				
 				ORDER BY
 				    SortOrder
+				
 				""";
 
 
@@ -841,11 +1269,19 @@ public class FacConfirmRepository {
 				)
 		);
 
-		params.add(div);
-		params.add(div);
+
+		params.add(
+				div
+		);
+
+
+		params.add(
+				div
+		);
 
 
 		return jdbcTemplate.query(
+
 				sql,
 
 				(rs, rowNum) ->

@@ -612,9 +612,9 @@ public class FacConfirmFilterSqlBuilder {
 	}
 
 
-	// =========================================================
-	// DATE
-	// =========================================================
+// =========================================================
+// DATE
+// =========================================================
 
 	private String buildDate(
 			String column,
@@ -629,7 +629,16 @@ public class FacConfirmFilterSqlBuilder {
 
 
 		// =====================================================
-		// EXCEL DATE MULTI VALUE
+		// EXCEL DATE MULTI SELECT
+		//
+		// Frontend values:
+		//
+		// 2026-09-01
+		// 2026-09-02
+		// 2026-09-03
+		//
+		// SQL column:
+		// DATE / DATETIME / DATETIME2
 		// =====================================================
 
 		if (
@@ -641,6 +650,7 @@ public class FacConfirmFilterSqlBuilder {
 					filter.values() == null
 							|| filter.values().isEmpty()
 			) {
+
 				return null;
 			}
 
@@ -649,29 +659,46 @@ public class FacConfirmFilterSqlBuilder {
 					new ArrayList<>();
 
 
+			boolean blankAdded =
+					false;
+
+
 			for (
-					String raw
-					: filter.values()
+					String raw :
+					filter.values()
 			) {
+
+				// =================================================
+				// NULL / BLANK
+				// =================================================
 
 				if (
 						raw == null
 								|| raw.isBlank()
 				) {
 
-					parts.add(
-							column
-									+ " IS NULL"
-					);
+					if (!blankAdded) {
+
+						parts.add(
+								column
+										+ " IS NULL"
+						);
+
+						blankAdded = true;
+					}
 
 					continue;
 				}
 
 
+				// =================================================
+				// DATE
+				// =================================================
+
 				LocalDate selectedDate =
 						parseDate(
-								filter.field(),
-								raw
+								raw,
+								filter.field()
 						);
 
 
@@ -680,11 +707,23 @@ public class FacConfirmFilterSqlBuilder {
 								.atStartOfDay();
 
 
-				LocalDateTime next =
+				LocalDateTime nextDay =
 						selectedDate
 								.plusDays(1)
 								.atStartOfDay();
 
+
+				/*
+				 * Không CAST column trong WHERE.
+				 *
+				 * Giữ:
+				 *
+				 * [IssueD] >= ?
+				 * AND
+				 * [IssueD] < ?
+				 *
+				 * tốt hơn cho index.
+				 */
 
 				parts.add(
 						"("
@@ -704,13 +743,16 @@ public class FacConfirmFilterSqlBuilder {
 
 				params.add(
 						Timestamp.valueOf(
-								next
+								nextDay
 						)
 				);
 			}
 
 
-			if (parts.isEmpty()) {
+			if (
+					parts.isEmpty()
+			) {
+
 				return null;
 			}
 
@@ -724,34 +766,64 @@ public class FacConfirmFilterSqlBuilder {
 		}
 
 
-		if ("isempty".equals(operator)) {
+		// =====================================================
+		// EMPTY
+		// =====================================================
+
+		if (
+				"isempty".equals(
+						operator
+				)
+		) {
 
 			return column
 					+ " IS NULL";
 		}
 
 
-		if ("isnotempty".equals(operator)) {
+		// =====================================================
+		// NOT EMPTY
+		// =====================================================
+
+		if (
+				"isnotempty".equals(
+						operator
+				)
+		) {
 
 			return column
 					+ " IS NOT NULL";
 		}
 
 
-		if (blank(filter.value())) {
+		// =====================================================
+		// NO VALUE
+		// =====================================================
+
+		if (
+				blank(
+						filter.value()
+				)
+		) {
+
 			return null;
 		}
 
 
+		// =====================================================
+		// SINGLE DATE
+		// =====================================================
+
 		LocalDate date =
 				parseDate(
-						filter.field(),
-						filter.value()
+						filter.value(),
+						filter.field()
 				);
 
 
 		LocalDateTime start =
-				date.atStartOfDay();
+				date
+						.atStartOfDay();
 
 
 		LocalDateTime nextDay =
@@ -760,17 +832,40 @@ public class FacConfirmFilterSqlBuilder {
 						.atStartOfDay();
 
 
-		return switch (operator) {
+		// =====================================================
+		// OPERATORS
+		// =====================================================
 
-			case "is", "equals", "=" -> {
+		return switch (
+				operator
+				) {
+
+			// =================================================
+			// EQUAL DATE
+			//
+			// 2026-09-03:
+			//
+			// >= 2026-09-03 00:00
+			// <  2026-09-04 00:00
+			// =================================================
+
+			case "is",
+			     "equals",
+			     "=" -> {
 
 				params.add(
-						Timestamp.valueOf(start)
+						Timestamp.valueOf(
+								start
+						)
 				);
 
+
 				params.add(
-						Timestamp.valueOf(nextDay)
+						Timestamp.valueOf(
+								nextDay
+						)
 				);
+
 
 				yield "("
 						+ column
@@ -780,15 +875,27 @@ public class FacConfirmFilterSqlBuilder {
 			}
 
 
-			case "not", "doesnotequal", "!=" -> {
+			// =================================================
+			// NOT EQUAL
+			// =================================================
+
+			case "not",
+			     "doesnotequal",
+			     "!=" -> {
 
 				params.add(
-						Timestamp.valueOf(start)
+						Timestamp.valueOf(
+								start
+						)
 				);
 
+
 				params.add(
-						Timestamp.valueOf(nextDay)
+						Timestamp.valueOf(
+								nextDay
+						)
 				);
+
 
 				yield "("
 						+ column
@@ -800,6 +907,14 @@ public class FacConfirmFilterSqlBuilder {
 			}
 
 
+			// =================================================
+			// AFTER
+			//
+			// after 2026-09-03
+			// =>
+			// >= 2026-09-04 00:00
+			// =================================================
+
 			case "after" -> {
 
 				params.add(
@@ -808,10 +923,15 @@ public class FacConfirmFilterSqlBuilder {
 						)
 				);
 
+
 				yield column
 						+ " >= ?";
 			}
 
+
+			// =================================================
+			// ON OR AFTER
+			// =================================================
 
 			case "onorafter" -> {
 
@@ -821,10 +941,15 @@ public class FacConfirmFilterSqlBuilder {
 						)
 				);
 
+
 				yield column
 						+ " >= ?";
 			}
 
+
+			// =================================================
+			// BEFORE
+			// =================================================
 
 			case "before" -> {
 
@@ -834,10 +959,19 @@ public class FacConfirmFilterSqlBuilder {
 						)
 				);
 
+
 				yield column
 						+ " < ?";
 			}
 
+
+			// =================================================
+			// ON OR BEFORE
+			//
+			// <= toàn bộ ngày được chọn
+			// =>
+			// < đầu ngày kế tiếp
+			// =================================================
 
 			case "onorbefore" -> {
 
@@ -846,6 +980,7 @@ public class FacConfirmFilterSqlBuilder {
 								nextDay
 						)
 				);
+
 
 				yield column
 						+ " < ?";
@@ -860,47 +995,88 @@ public class FacConfirmFilterSqlBuilder {
 	}
 
 
-	// =========================================================
-	// DATE PARSE
-	// =========================================================
+// =========================================================
+// DATE PARSER
+// =========================================================
 
 	private LocalDate parseDate(
-			String field,
-			String raw
+			String raw,
+			String field
 	) {
 
-		try {
-
-			String value =
-					raw.trim();
-
-
-			String normalized =
-					value.length() >= 10
-							? value.substring(
-							0,
-							10
-					)
-							: value;
-
-
-			return LocalDate.parse(
-					normalized
-			);
-
-		} catch (
-				Exception ex
+		if (
+				raw == null
+						|| raw.isBlank()
 		) {
 
 			throw new IllegalArgumentException(
-					"Invalid date for "
+					"Date value is required for "
 							+ field
-							+ ": "
-							+ raw
 			);
 		}
-	}
 
+
+		String value =
+				raw.trim();
+
+
+		// =====================================================
+		// yyyy-MM-dd
+		// =====================================================
+
+		try {
+
+			return LocalDate.parse(
+					value
+			);
+
+		} catch (
+				Exception ignored
+		) {
+			// Try ISO DateTime below.
+		}
+
+
+		// =====================================================
+		// ISO DATETIME
+		//
+		// 2026-09-03T08:30:00
+		// 2026-09-03 08:30:00
+		//
+		// Chỉ lấy yyyy-MM-dd.
+		// =====================================================
+
+		if (
+				value.length() >= 10
+						&& value.charAt(4) == '-'
+						&& value.charAt(7) == '-'
+		) {
+
+			try {
+
+				return LocalDate.parse(
+						value.substring(
+								0,
+								10
+						)
+				);
+
+			} catch (
+					Exception ignored
+			) {
+				// Throw below.
+			}
+		}
+
+
+		throw new IllegalArgumentException(
+				"Invalid date for "
+						+ field
+						+ ": "
+						+ raw
+						+ ". Expected yyyy-MM-dd."
+		);
+	}
 
 	// =========================================================
 	// LOGIC

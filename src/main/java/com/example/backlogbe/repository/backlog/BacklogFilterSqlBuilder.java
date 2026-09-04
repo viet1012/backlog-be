@@ -473,11 +473,21 @@ public class BacklogFilterSqlBuilder {
 	) {
 
 		String operator =
-				normalize(
-						filter.operator()
-				);
+				normalize(filter.operator());
+
+
 		// =========================================================
-		// EXCEL DATE MULTI VALUE FILTER
+		// EXCEL MULTI VALUE DATE FILTER
+		//
+		// Frontend:
+		// [
+		//   "2026-09-01",
+		//   "2026-09-02",
+		//   "2026-09-03"
+		// ]
+		//
+		// DB:
+		// DATETIME / DATETIME2
 		// =========================================================
 
 		if (
@@ -497,59 +507,62 @@ public class BacklogFilterSqlBuilder {
 					new ArrayList<>();
 
 
+			boolean blankAdded =
+					false;
+
+
 			for (String raw : filter.values()) {
 
-				// BLANK
+				// =================================================
+				// BLANK / NULL
+				// =================================================
+
 				if (
 						raw == null
 								|| raw.isBlank()
 				) {
 
-					parts.add(
-							column + " IS NULL"
-					);
+					if (!blankAdded) {
+
+						parts.add(
+								column + " IS NULL"
+						);
+
+						blankAdded = true;
+					}
 
 					continue;
 				}
 
 
-				LocalDate selectedDate;
+				// =================================================
+				// PARSE yyyy-MM-dd
+				// =================================================
 
-				try {
-
-					// hỗ trợ cả:
-					// 2026-08-26
-					// 2026-08-26T08:30:00
-
-					String normalizedValue =
-							raw.length() >= 10
-									? raw.substring(0, 10)
-									: raw;
-
-					selectedDate =
-							LocalDate.parse(
-									normalizedValue
-							);
-
-				} catch (Exception ex) {
-
-					throw new IllegalArgumentException(
-							"Invalid date for "
-									+ filter.field()
-									+ ": "
-									+ raw
-					);
-				}
+				LocalDate selectedDate =
+						parseDate(
+								raw,
+								filter.field()
+						);
 
 
 				LocalDateTime start =
 						selectedDate.atStartOfDay();
 
-				LocalDateTime next =
+				LocalDateTime nextDay =
 						selectedDate
 								.plusDays(1)
 								.atStartOfDay();
 
+
+				// =================================================
+				// DO NOT CAST DB COLUMN
+				//
+				// Keeps index-friendly comparison:
+				//
+				// IssueD >= ?
+				// AND IssueD < ?
+				// =================================================
 
 				parts.add(
 						"("
@@ -565,7 +578,7 @@ public class BacklogFilterSqlBuilder {
 				);
 
 				params.add(
-						Timestamp.valueOf(next)
+						Timestamp.valueOf(nextDay)
 				);
 			}
 
@@ -583,44 +596,73 @@ public class BacklogFilterSqlBuilder {
 					+ ")";
 		}
 
+
+		// =========================================================
+		// EMPTY
+		// =========================================================
+
 		if ("isempty".equals(operator)) {
+
 			return column + " IS NULL";
 		}
 
+
+		// =========================================================
+		// NOT EMPTY
+		// =========================================================
+
 		if ("isnotempty".equals(operator)) {
+
 			return column + " IS NOT NULL";
 		}
+
+
+		// =========================================================
+		// NO VALUE
+		// =========================================================
 
 		if (blank(filter.value())) {
 			return null;
 		}
 
-		LocalDate date;
 
-		try {
-			date =
-					LocalDate.parse(
-							filter.value().trim()
-					);
-		} catch (Exception ex) {
-			throw new IllegalArgumentException(
-					"Invalid date for "
-							+ filter.field()
-							+ ": "
-							+ filter.value()
-			);
-		}
+		// =========================================================
+		// SINGLE DATE
+		// =========================================================
+
+		LocalDate date =
+				parseDate(
+						filter.value(),
+						filter.field()
+				);
+
 
 		LocalDateTime start =
 				date.atStartOfDay();
 
 		LocalDateTime nextDay =
-				date.plusDays(1)
+				date
+						.plusDays(1)
 						.atStartOfDay();
+
+
+		// =========================================================
+		// OPERATORS
+		// =========================================================
 
 		return switch (operator) {
 
+			// -----------------------------------------------------
+			// EQUAL DATE
+			//
+			// 2026-09-03 means:
+			//
+			// >= 2026-09-03 00:00:00
+			// <  2026-09-04 00:00:00
+			// -----------------------------------------------------
+
 			case "is", "equals", "=" -> {
+
 				params.add(
 						Timestamp.valueOf(start)
 				);
@@ -636,7 +678,15 @@ public class BacklogFilterSqlBuilder {
 						+ " < ?)";
 			}
 
-			case "not", "doesnotequal", "!=" -> {
+
+			// -----------------------------------------------------
+			// NOT EQUAL DATE
+			// -----------------------------------------------------
+
+			case "not",
+			     "doesnotequal",
+			     "!=" -> {
+
 				params.add(
 						Timestamp.valueOf(start)
 				);
@@ -654,15 +704,30 @@ public class BacklogFilterSqlBuilder {
 						+ " IS NULL)";
 			}
 
+
+			// -----------------------------------------------------
+			// AFTER
+			//
+			// after 2026-09-03
+			// => >= 2026-09-04 00:00
+			// -----------------------------------------------------
+
 			case "after" -> {
+
 				params.add(
 						Timestamp.valueOf(nextDay)
 				);
 
 				yield column + " >= ?";
 			}
+
+
+			// -----------------------------------------------------
+			// ON OR AFTER
+			// -----------------------------------------------------
 
 			case "onorafter" -> {
+
 				params.add(
 						Timestamp.valueOf(start)
 				);
@@ -670,7 +735,13 @@ public class BacklogFilterSqlBuilder {
 				yield column + " >= ?";
 			}
 
+
+			// -----------------------------------------------------
+			// BEFORE
+			// -----------------------------------------------------
+
 			case "before" -> {
+
 				params.add(
 						Timestamp.valueOf(start)
 				);
@@ -678,13 +749,23 @@ public class BacklogFilterSqlBuilder {
 				yield column + " < ?";
 			}
 
+
+			// -----------------------------------------------------
+			// ON OR BEFORE
+			//
+			// <= entire selected date
+			// implemented as < next day
+			// -----------------------------------------------------
+
 			case "onorbefore" -> {
+
 				params.add(
 						Timestamp.valueOf(nextDay)
 				);
 
 				yield column + " < ?";
 			}
+
 
 			default -> throw unsupported(
 					"date",
@@ -693,7 +774,86 @@ public class BacklogFilterSqlBuilder {
 		};
 	}
 
+	private LocalDate parseDate(
+			String raw,
+			String field
+	) {
 
+		if (
+				raw == null
+						|| raw.isBlank()
+		) {
+
+			throw new IllegalArgumentException(
+					"Date value is required for "
+							+ field
+			);
+		}
+
+
+		String value =
+				raw.trim();
+
+
+		// =========================================================
+		// CASE 1
+		// yyyy-MM-dd
+		//
+		// Example:
+		// 2026-09-03
+		// =========================================================
+
+		try {
+
+			return LocalDate.parse(
+					value
+			);
+
+		} catch (Exception ignored) {
+			// Try next supported format.
+		}
+
+
+		// =========================================================
+		// CASE 2
+		// ISO DATETIME
+		//
+		// Example:
+		// 2026-09-03T08:25:12
+		// 2026-09-03 08:25:12
+		//
+		// Only date portion matters for Excel date filtering.
+		// =========================================================
+
+		if (
+				value.length() >= 10
+						&& value.charAt(4) == '-'
+						&& value.charAt(7) == '-'
+		) {
+
+			try {
+
+				return LocalDate.parse(
+						value.substring(
+								0,
+								10
+						)
+				);
+
+			} catch (Exception ignored) {
+				// handled below
+			}
+		}
+
+
+		throw new IllegalArgumentException(
+				"Invalid date for "
+						+ field
+						+ ": "
+						+ raw
+						+ ". Expected yyyy-MM-dd."
+		);
+	}
 	private String resolveSeparator(
 			String logicOperator
 	) {

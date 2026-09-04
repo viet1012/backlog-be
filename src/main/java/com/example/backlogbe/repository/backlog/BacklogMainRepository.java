@@ -14,17 +14,6 @@ import java.util.Locale;
 @RequiredArgsConstructor
 public class BacklogMainRepository {
 
-	private final JdbcTemplate jdbcTemplate;
-
-	private final BacklogFilterSqlBuilder filterBuilder;
-
-	private final BacklogRowMapper rowMapper;
-
-
-	// =========================================================
-	// SELECT
-	// =========================================================
-
 	private static final String SELECT_COLUMNS = """
 			SELECT
 			    VBELN,
@@ -72,6 +61,13 @@ public class BacklogMainRepository {
 			    UpdatedAt
 			FROM F2_Backlog_Main
 			""";
+	private final JdbcTemplate jdbcTemplate;
+
+	private final BacklogFilterSqlBuilder filterBuilder;
+
+	private final BacklogColumnMetadataProvider metadataProvider;
+
+	private final BacklogRowMapper rowMapper;
 
 
 	// =========================================================
@@ -193,14 +189,44 @@ public class BacklogMainRepository {
 			BacklogFilterRequest activeFilters
 	) {
 
+		// =========================================================
+		// COLUMN
+		// =========================================================
+
 		String column =
-				resolveColumn(field);
+				resolveColumn(
+						field
+				);
+
+
+		// =========================================================
+		// COLUMN TYPE FROM DATABASE METADATA
+		// =========================================================
+
+		BacklogColumnMetadataProvider.ColumnMeta columnMeta =
+				metadataProvider.get(
+						field
+				);
+
+
+		boolean dateField =
+				columnMeta.type()
+						== BacklogColumnMetadataProvider.ColumnType.DATE;
+
+
+		// =========================================================
+		// SAFE LIMIT
+		// =========================================================
 
 		int safeLimit =
 				Math.min(
-						Math.max(limit, 1),
+						Math.max(
+								limit,
+								1
+						),
 						500
 				);
+
 
 		String safeSearch =
 				search == null
@@ -209,22 +235,7 @@ public class BacklogMainRepository {
 
 
 		// =========================================================
-		// 1. LOẠI FILTER CỦA CHÍNH COLUMN ĐANG MỞ
-		// =========================================================
-		//
-		// Ví dụ:
-		//
-		// Status = WIP
-		// Div    = PR
-		//
-		// Khi mở filter ShipBy:
-		//      giữ Status + Div
-		//
-		// Khi mở lại filter Status:
-		//      bỏ Status
-		//      giữ Div
-		//
-		// Đây là behavior giống Excel.
+		// REMOVE CURRENT COLUMN FILTER
 		// =========================================================
 
 		BacklogFilterRequest otherFilters =
@@ -235,7 +246,7 @@ public class BacklogMainRepository {
 
 
 		// =========================================================
-		// 2. BUILD WHERE TỪ CÁC FILTER KHÁC
+		// OTHER ACTIVE FILTERS
 		// =========================================================
 
 		var queryParts =
@@ -247,17 +258,12 @@ public class BacklogMainRepository {
 		List<String> conditions =
 				new ArrayList<>();
 
+
 		List<Object> params =
 				new ArrayList<>(
 						queryParts.params()
 				);
 
-
-		// queryParts.where() dạng:
-		//
-		// " WHERE [Status] = ? AND [Div] = ?"
-		//
-		// Ta lấy phần condition ra để có thể append search.
 
 		if (
 				queryParts.where() != null
@@ -265,7 +271,9 @@ public class BacklogMainRepository {
 		) {
 
 			String where =
-					queryParts.where().trim();
+					queryParts.where()
+							.trim();
+
 
 			if (
 					where.regionMatches(
@@ -276,36 +284,77 @@ public class BacklogMainRepository {
 							6
 					)
 			) {
+
 				where =
-						where.substring(6);
+						where.substring(
+								6
+						);
 			}
 
+
 			conditions.add(
-					"(" + where + ")"
+					"("
+							+ where
+							+ ")"
 			);
 		}
 
 
 		// =========================================================
-		// 3. SEARCH TRONG COLUMN ĐANG MỞ
+		// FILTER OPTION VALUE
+		//
+		// DATE:
+		//
+		// DB:
+		// 2026-08-01 04:26:00
+		// 2026-08-01 20:44:00
+		//
+		// OPTION:
+		// 2026-08-01
 		// =========================================================
 
-		if (!safeSearch.isBlank()) {
+		String valueExpression =
+				buildFilterValueExpression(
+						column,
+						dateField
+				);
 
-			conditions.add(
-					"CAST(" +
-							column +
-							" AS NVARCHAR(500)) LIKE ?"
-			);
+
+		// =========================================================
+		// SEARCH
+		// =========================================================
+
+		if (
+				!safeSearch.isBlank()
+		) {
+
+			if (dateField) {
+
+				conditions.add(
+						valueExpression
+								+ " LIKE ?"
+				);
+
+			} else {
+
+				conditions.add(
+						"CAST("
+								+ column
+								+ " AS NVARCHAR(500)) LIKE ?"
+				);
+			}
+
 
 			params.add(
-					"%" + safeSearch + "%"
+					"%"
+							+ safeSearch
+							+ "%"
 			);
 		}
 
 
 		// =========================================================
-		// 4. BUILD WHERE
+		// WHERE
 		// =========================================================
 
 		String whereSql =
@@ -319,72 +368,75 @@ public class BacklogMainRepository {
 
 
 		// =========================================================
-		// 5. HIGH CARDINALITY
-		//
-		// VBELN / AUFNR / PNAME...
-		//
-		// Chỉ lấy TOP N
+		// HIGH CARDINALITY
 		// =========================================================
 
-		if (isHighCardinalityField(field)) {
+		if (
+				isHighCardinalityField(
+						field
+				)
+		) {
 
 			String sql = """
 					SELECT DISTINCT TOP (%d)
-					    COALESCE(
-					        CAST(%s AS NVARCHAR(500)),
-					        ''
-					    ) AS FilterValue
+					
+					    %s AS FilterValue
+					
 					FROM F2_Backlog_Main
+					
 					%s
-					ORDER BY FilterValue
+					
+					ORDER BY
+					    FilterValue
 					""".formatted(
 					safeLimit,
-					column,
+					valueExpression,
 					whereSql
 			);
 
 
 			return jdbcTemplate.query(
 					sql,
+
 					(rs, rowNum) ->
 							rs.getString(
 									"FilterValue"
 							),
+
 					params.toArray()
 			);
 		}
 
 
 		// =========================================================
-		// 6. LOW CARDINALITY
-		//
-		// Status / Div / ShipBy / CurrentProcess...
-		//
-		// Không limit vì số lượng distinct nhỏ.
-		// Nhưng PHẢI áp dụng active filters.
+		// LOW CARDINALITY / DATE
 		// =========================================================
 
 		String sql = """
 				SELECT DISTINCT
-				    COALESCE(
-				        CAST(%s AS NVARCHAR(500)),
-				        ''
-				    ) AS FilterValue
+				
+				    %s AS FilterValue
+				
 				FROM F2_Backlog_Main
+				
 				%s
-				ORDER BY FilterValue
+				
+				ORDER BY
+				    FilterValue
 				""".formatted(
-				column,
+				valueExpression,
 				whereSql
 		);
 
 
 		return jdbcTemplate.query(
 				sql,
+
 				(rs, rowNum) ->
 						rs.getString(
 								"FilterValue"
 						),
+
 				params.toArray()
 		);
 	}
@@ -635,4 +687,53 @@ public class BacklogMainRepository {
 			);
 		};
 	}
+
+	private String buildFilterValueExpression(
+			String column,
+			boolean dateField
+	) {
+
+		if (dateField) {
+
+			/*
+			 * CHỈ dùng cho danh sách Excel Filter.
+			 *
+			 * DB:
+			 * 2026-08-01 04:26:00
+			 *
+			 * Filter option:
+			 * 2026-08-01
+			 *
+			 * Không UPDATE hoặc thay đổi dữ liệu DB.
+			 */
+			return """
+					CASE
+					    WHEN %s IS NULL THEN ''
+					    ELSE CONVERT(
+					        VARCHAR(10),
+					        %s,
+					        23
+					    )
+					END
+					""".formatted(
+					column,
+					column
+			);
+		}
+
+
+		return """
+				COALESCE(
+				    CAST(
+				        %s
+				        AS NVARCHAR(500)
+				    ),
+				    ''
+				)
+				""".formatted(
+				column
+		);
+	}
+
+
 }
