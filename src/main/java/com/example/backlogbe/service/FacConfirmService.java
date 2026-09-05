@@ -49,6 +49,7 @@ public class FacConfirmService {
 			String div,
 			LocalDate expD,
 			String procGrp,
+			String classify,
 			int page,
 			int size
 	) {
@@ -67,6 +68,12 @@ public class FacConfirmService {
 		String safeProcGrp =
 				normalizeProcessGroup(
 						procGrp
+				);
+
+
+		String safeClassify =
+				normalizeClassify(
+						classify
 				);
 
 
@@ -90,7 +97,8 @@ public class FacConfirmService {
 				repository.count(
 						safeDiv,
 						expD,
-						safeProcGrp
+						safeProcGrp,
+						safeClassify
 				);
 
 
@@ -103,14 +111,11 @@ public class FacConfirmService {
 						safeDiv,
 						expD,
 						safeProcGrp,
+						safeClassify,
 						safePage,
 						safeSize
 				);
 
-
-		// =====================================================
-		// RESPONSE
-		// =====================================================
 
 		return PageResponse.of(
 				content,
@@ -120,6 +125,40 @@ public class FacConfirmService {
 		);
 	}
 
+	private String normalizeClassify(
+			String classify
+	) {
+
+		if (
+				classify == null
+						|| classify.isBlank()
+		) {
+			return null;
+		}
+
+
+		String value =
+				classify.trim();
+
+
+		if (
+				value.equalsIgnoreCase("Sale")
+		) {
+			return "Sale";
+		}
+
+
+		if (
+				value.equalsIgnoreCase("Stock")
+		) {
+			return "Stock";
+		}
+
+
+		throw new IllegalArgumentException(
+				"classify must be Sale or Stock"
+		);
+	}
 
 	// =========================================================
 	// SEARCH - SERVER SIDE EXCEL FILTER
@@ -142,7 +181,7 @@ public class FacConfirmService {
 
 
 		// =====================================================
-		// BASE FILTERS
+		// BASE FILTER
 		// =====================================================
 
 		String safeDiv =
@@ -159,6 +198,12 @@ public class FacConfirmService {
 		String safeProcGrp =
 				normalizeProcessGroup(
 						request.procGrp()
+				);
+
+
+		String safeClassify =
+				normalizeClassify(
+						request.classify()
 				);
 
 
@@ -179,22 +224,18 @@ public class FacConfirmService {
 
 
 		// =====================================================
-		// LOGIC OPERATOR
-		// =====================================================
-
-		String safeLogicOperator =
-				normalizeLogicOperator(
-						request.logicOperator()
-				);
-
-
-		// =====================================================
-		// VALIDATE FILTERS
+		// EXCEL FILTER
 		// =====================================================
 
 		List<FacConfirmFilterItem> safeFilters =
 				normalizeFilters(
 						request.filters()
+				);
+
+
+		String safeLogicOperator =
+				normalizeLogicOperator(
+						request.logicOperator()
 				);
 
 
@@ -207,6 +248,7 @@ public class FacConfirmService {
 						safeDiv,
 						request.expD(),
 						safeProcGrp,
+						safeClassify,
 						safeFilters,
 						safeLogicOperator
 				);
@@ -221,6 +263,7 @@ public class FacConfirmService {
 						safeDiv,
 						request.expD(),
 						safeProcGrp,
+						safeClassify,
 						safePage,
 						safeSize,
 						safeFilters,
@@ -291,6 +334,10 @@ public class FacConfirmService {
 						request.procGrp()
 				);
 
+		String safeClassify =
+				normalizeClassify(
+						request.classify()
+				);
 
 		// =====================================================
 		// ACTIVE FILTERS
@@ -322,6 +369,7 @@ public class FacConfirmService {
 				safeDiv,
 				request.expD(),
 				safeProcGrp,
+				safeClassify,
 				safeFilters
 		);
 	}

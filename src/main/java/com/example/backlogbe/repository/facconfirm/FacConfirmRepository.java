@@ -127,6 +127,11 @@ public class FacConfirmRepository {
 			        bl.CurrentProcess,
 			        bl.FinalQty,
 			
+			        -- =================================================
+			        -- STOCK VS SALE
+			        -- =================================================
+			        bl.Classify,
+			
 			        -- needed for business filtering
 			        bl.ProcessGrp2,
 			        bl.Div,
@@ -272,6 +277,7 @@ public class FacConfirmRepository {
 			String div,
 			LocalDate expD,
 			String procGrp,
+			String classify,
 			List<Object> params
 	) {
 
@@ -288,78 +294,136 @@ public class FacConfirmRepository {
 
 		// =====================================================
 		// PROCESS GROUP
-		//
-		// dùng 3 lần trong SQL
 		// =====================================================
 
 		params.add(procGrp);
-
 		params.add(procGrp);
-
 		params.add(procGrp);
 
 
 		// =====================================================
 		// DIV
-		//
-		// dùng 2 lần
 		// =====================================================
 
 		params.add(div);
-
 		params.add(div);
 
 
-		return """
-				
-				WHERE d.ExportD <= ?
-				
-				  AND (
-				
-				         (
-				             ? = 'Fine'
-				
-				             AND d.ProcessGrp2 IN (
-				                 'Fine',
-				                 'Heat',
-				                 'Rough'
-				             )
-				         )
-				
-				
-				      OR (
-				
-				             ? = 'Heat'
-				
-				             AND d.ProcessGrp2 IN (
-				                 'Heat',
-				                 'Rough'
-				             )
-				         )
-				
-				
-				      OR (
-				
-				             ? = 'Rough'
-				
-				             AND d.ProcessGrp2 = 'Rough'
-				         )
-				  )
-				
-				
-				  AND (
-				
-				         d.Div = ?
-				
-				      OR (
-				
-				             ? = 'GU'
-				
-				             AND d.Div LIKE '%G'
-				         )
-				  )
-				
-				""";
+		StringBuilder where =
+				new StringBuilder(
+						"""
+								
+								WHERE d.ExportD <= ?
+								
+								  AND (
+								
+										 (
+											  ? = 'Fine'
+											  AND d.ProcessGrp2 IN (
+												  'Fine',
+												  'Heat',
+												  'Rough'
+											  )
+										 )
+								
+									  OR (
+											  ? = 'Heat'
+											  AND d.ProcessGrp2 IN (
+												  'Heat',
+												  'Rough'
+											  )
+										 )
+								
+									  OR (
+											  ? = 'Rough'
+											  AND d.ProcessGrp2 = 'Rough'
+										 )
+								  )
+								
+								  AND (
+								
+										  d.Div = ?
+								
+									   OR (
+											  ? = 'GU'
+											  AND d.Div LIKE '%G'
+										  )
+								  )
+								
+								"""
+				);
+
+
+		// =====================================================
+		// CLASSIFY
+		//
+		// UI input:
+		//
+		// Sale  -> DB Classify = Sale
+		// Stock -> DB Classify <> Sale
+		// =====================================================
+
+		if (
+				classify != null
+						&& !classify.isBlank()
+		) {
+
+			// =================================================
+			// SALE
+			// =================================================
+
+			if (
+					"Sale".equalsIgnoreCase(
+							classify
+					)
+			) {
+
+				where.append(
+						"""
+								
+								AND LTRIM(
+									  RTRIM(
+											ISNULL(
+												  d.Classify,
+												  ''
+											)
+									  )
+								) = 'Sale'
+								
+								"""
+				);
+			}
+
+
+			// =================================================
+			// STOCK
+			// =================================================
+
+			else if (
+					"Stock".equalsIgnoreCase(
+							classify
+					)
+			) {
+
+				where.append(
+						"""
+								
+								AND LTRIM(
+									  RTRIM(
+											ISNULL(
+												  d.Classify,
+												  ''
+											)
+									  )
+								) <> 'Sale'
+								
+								"""
+				);
+			}
+		}
+
+
+		return where.toString();
 	}
 
 
@@ -371,6 +435,7 @@ public class FacConfirmRepository {
 			String div,
 			LocalDate expD,
 			String procGrp,
+			String classify,
 			int page,
 			int size
 	) {
@@ -388,6 +453,7 @@ public class FacConfirmRepository {
 						div,
 						expD,
 						procGrp,
+						classify,
 						params
 				);
 
@@ -402,16 +468,11 @@ public class FacConfirmRepository {
 						+ """
 						
 						ORDER BY
-						
 						    d.ExportD,
-						
 						    d.ProductGrp,
-						
 						    d.AUFNR
 						
-						
 						OFFSET ? ROWS
-						
 						FETCH NEXT ? ROWS ONLY
 						
 						""";
@@ -420,7 +481,6 @@ public class FacConfirmRepository {
 		params.add(
 				offset
 		);
-
 
 		params.add(
 				size
@@ -442,7 +502,8 @@ public class FacConfirmRepository {
 	public long count(
 			String div,
 			LocalDate expD,
-			String procGrp
+			String procGrp,
+			String classify
 	) {
 
 		List<Object> params =
@@ -454,6 +515,7 @@ public class FacConfirmRepository {
 						div,
 						expD,
 						procGrp,
+						classify,
 						params
 				);
 
@@ -496,6 +558,7 @@ public class FacConfirmRepository {
 			String div,
 			LocalDate expD,
 			String procGrp,
+			String classify,
 			int page,
 			int size,
 			List<FacConfirmFilterItem> filters,
@@ -519,6 +582,7 @@ public class FacConfirmRepository {
 						div,
 						expD,
 						procGrp,
+						classify,
 						params
 				);
 
@@ -557,9 +621,7 @@ public class FacConfirmRepository {
 						ORDER BY
 						
 						    d.ExportD,
-						
 						    d.ProductGrp,
-						
 						    d.AUFNR
 						
 						
@@ -569,10 +631,6 @@ public class FacConfirmRepository {
 						
 						""";
 
-
-		// =====================================================
-		// PAGINATION
-		// =====================================================
 
 		params.add(
 				offset
@@ -600,6 +658,7 @@ public class FacConfirmRepository {
 			String div,
 			LocalDate expD,
 			String procGrp,
+			String classify,
 			List<FacConfirmFilterItem> filters,
 			String logicOperator
 	) {
@@ -613,6 +672,7 @@ public class FacConfirmRepository {
 						div,
 						expD,
 						procGrp,
+						classify,
 						params
 				);
 
@@ -659,7 +719,6 @@ public class FacConfirmRepository {
 				: total;
 	}
 
-
 	// =========================================================
 	// FILTER OPTIONS
 	// =========================================================
@@ -670,6 +729,7 @@ public class FacConfirmRepository {
 			String div,
 			LocalDate expD,
 			String procGrp,
+			String classify,
 			List<FacConfirmFilterItem> filters
 	) {
 
@@ -796,9 +856,9 @@ public class FacConfirmRepository {
 						div,
 						expD,
 						procGrp,
+						classify,
 						params
 				);
-
 
 		// =====================================================
 		// OTHER FILTERS

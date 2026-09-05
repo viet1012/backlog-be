@@ -35,10 +35,8 @@ public class FacConfirmController {
 	// =========================================================
 
 	@GetMapping
-	public ResponseEntity<PageResponse<FacConfirmDto>> getFacConfirm(
-
-			@RequestParam
-			String div,
+	public PageResponse<FacConfirmDto> getFacConfirm(
+			@RequestParam String div,
 
 			@RequestParam
 			@DateTimeFormat(
@@ -46,8 +44,12 @@ public class FacConfirmController {
 			)
 			LocalDate expD,
 
-			@RequestParam
-			String procGrp,
+			@RequestParam String procGrp,
+
+			@RequestParam(
+					required = false
+			)
+			String classify,
 
 			@RequestParam(
 					defaultValue = "0"
@@ -58,17 +60,15 @@ public class FacConfirmController {
 					defaultValue = "100"
 			)
 			int size
-
 	) {
 
-		return ResponseEntity.ok(
-				service.getFacConfirm(
-						div,
-						expD,
-						procGrp,
-						page,
-						size
-				)
+		return service.getFacConfirm(
+				div,
+				expD,
+				procGrp,
+				classify,
+				page,
+				size
 		);
 	}
 
