@@ -36,6 +36,8 @@ public record FacConfirmDto(
 
 		BigDecimal finalQty,
 
+		Boolean hasHeatProcess,
+
 		@JsonSerialize(using = SmartDateTimeSerializer.class)
 		LocalDateTime toDrill,
 

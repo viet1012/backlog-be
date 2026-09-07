@@ -68,10 +68,7 @@ public class BacklogRowMapper
 				rs.getString("PRT_ADDCMT1"),
 				rs.getString("PRT_ADDCMT2"),
 
-				getNullableInteger(
-						rs,
-						"PRT_STS"
-				),
+				rs.getString("PRT_STS"),
 
 				rs.getString("Div"),
 				rs.getString("FERTH"),

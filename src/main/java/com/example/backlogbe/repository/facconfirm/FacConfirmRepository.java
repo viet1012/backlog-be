@@ -28,14 +28,11 @@ public class FacConfirmRepository {
 			        fc.ConfirmFnTime,
 			
 			        ROW_NUMBER() OVER (
-			
 			            PARTITION BY
 			                fc.AUNFR,
 			                fc.ProcessGrp
-			
 			            ORDER BY
 			                fc.UpdatedAt DESC
-			
 			        ) AS rn
 			
 			    FROM F2Database.dbo.F2_Backlog_Fac_Confirm fc
@@ -57,14 +54,12 @@ public class FacConfirmRepository {
 			    SELECT
 			        AUNFR,
 			
-			
 			        MAX(
 			            CASE
 			                WHEN ProcessGrp = 'To Drill'
 			                THEN ConfirmFnTime
 			            END
 			        ) AS Confirm_ToDrill,
-			
 			
 			        MAX(
 			            CASE
@@ -73,14 +68,12 @@ public class FacConfirmRepository {
 			            END
 			        ) AS Confirm_ToHeat,
 			
-			
 			        MAX(
 			            CASE
 			                WHEN ProcessGrp = 'Heat Start'
 			                THEN ConfirmFnTime
 			            END
 			        ) AS Confirm_HeatStart,
-			
 			
 			        MAX(
 			            CASE
@@ -89,7 +82,6 @@ public class FacConfirmRepository {
 			            END
 			        ) AS Confirm_HeatFinish,
 			
-			
 			        MAX(
 			            CASE
 			                WHEN ProcessGrp = 'To Packing'
@@ -97,13 +89,51 @@ public class FacConfirmRepository {
 			            END
 			        ) AS Confirm_ToPacking
 			
-			
 			    FROM LatestConfirm
 			
 			    WHERE rn = 1
 			
 			    GROUP BY
 			        AUNFR
+			),
+			
+			
+			-- =====================================================
+			-- PO CÓ CÔNG ĐOẠN NHIỆT
+			-- =====================================================
+			
+			HeatProcess AS (
+			
+			    SELECT DISTINCT
+			        r.AUFNR
+			
+			    FROM
+			        [MANUFASPCPD].[dbo].[MANUFA_F_PD_DT_REQ_DTL1] r
+			
+			    WHERE
+			        UPPER(
+			            LTRIM(
+			                RTRIM(
+			                    ISNULL(
+			                        r.AFVC_LTXA1,
+			                        ''
+			                    )
+			                )
+			            )
+			        ) IN (
+			            'INDUCTION H.T.',
+			            'H.T.',
+			            'H.T. (CARBURIZING)',
+			            'H.T. (INDUCTION)',
+			            'H.T. (OIL)',
+			            'H.T. (VACCUME)',
+			            'H.T.(CARBURIZING)',
+			            'H.T.(OIL)',
+			            'H.T.(OIL)/H.T. (VACCUME)',
+			            'H.T. (F3)',
+			            'HEAT',
+			            'H.T.(CARBURIZING) (F3)'
+			        )
 			),
 			
 			
@@ -127,57 +157,50 @@ public class FacConfirmRepository {
 			        bl.CurrentProcess,
 			        bl.FinalQty,
 			
-			        -- =================================================
-			        -- STOCK VS SALE
-			        -- =================================================
 			        bl.Classify,
 			
-			        -- needed for business filtering
 			        bl.ProcessGrp2,
 			        bl.Div,
 			
 			
-			        -- =========================================
-			        -- TO DRILL
-			        -- Confirm exists -> use ConfirmFnTime
-			        -- Otherwise     -> use backlog value
-			        -- =========================================
+			        -- =================================================
+			        -- HAS HEAT PROCESS
+			        -- =================================================
+			
+			        CAST(
+			            CASE
+			                WHEN hp.AUFNR IS NOT NULL
+			                THEN 1
+			                ELSE 0
+			            END
+			            AS BIT
+			        ) AS HasHeatProcess,
+			
+			
 			        COALESCE(
 			            cp.Confirm_ToDrill,
 			            bl.ToDrill
 			        ) AS ToDrill,
 			
 			
-			        -- =========================================
-			        -- TO HEAT
-			        -- =========================================
 			        COALESCE(
 			            cp.Confirm_ToHeat,
 			            bl.ToHeat
 			        ) AS ToHeat,
 			
 			
-			        -- =========================================
-			        -- HEAT START
-			        -- =========================================
 			        COALESCE(
 			            cp.Confirm_HeatStart,
 			            bl.TimeSQuenching
 			        ) AS Heat_Start,
 			
 			
-			        -- =========================================
-			        -- HEAT FINISH
-			        -- =========================================
 			        COALESCE(
 			            cp.Confirm_HeatFinish,
 			            bl.TimeFHeat
 			        ) AS Heat_Finish,
 			
 			
-			        -- =========================================
-			        -- TO PACKING
-			        -- =========================================
 			        COALESCE(
 			            cp.Confirm_ToPacking,
 			            bl.ToPK
@@ -188,6 +211,9 @@ public class FacConfirmRepository {
 			
 			    LEFT JOIN ConfirmPivot cp
 			        ON cp.AUNFR = bl.AUFNR
+			
+			    LEFT JOIN HeatProcess hp
+			        ON hp.AUFNR = bl.AUFNR
 			)
 			
 			""";
@@ -221,6 +247,8 @@ public class FacConfirmRepository {
 			    d.CurrentProcess,
 			
 			    d.FinalQty,
+			
+			    d.HasHeatProcess,
 			
 			    d.ToDrill,
 			

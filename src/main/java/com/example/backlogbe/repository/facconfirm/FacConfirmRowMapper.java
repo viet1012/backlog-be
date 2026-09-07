@@ -79,6 +79,8 @@ public class FacConfirmRowMapper
 						"FinalQty"
 				),
 
+				rs.getBoolean("HasHeatProcess"),
+
 				toLocalDateTime(
 						rs.getTimestamp(
 								"ToDrill"
