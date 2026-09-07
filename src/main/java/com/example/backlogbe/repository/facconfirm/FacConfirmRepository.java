@@ -261,7 +261,7 @@ public class FacConfirmRepository {
 					CASE
 					    -- Không có Heat
 					    WHEN hp.AUFNR IS NULL
-					    THEN N'Không có công đoạn Heat'
+					    THEN N'Không có Heat'
 			
 					    -- DC53 = Heat + Aging (5 days)
 					    WHEN hp.AUFNR IS NOT NULL
