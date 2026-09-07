@@ -96,6 +96,14 @@ public final class FacConfirmFilterField {
 					Map.entry(
 							"toPk",
 							"bl.ToPK"
+					),
+
+					// =============================================
+					// COMPUTED FIELD FROM FacData
+					// =============================================
+					Map.entry(
+							"note",
+							"d.Note"
 					)
 			);
 

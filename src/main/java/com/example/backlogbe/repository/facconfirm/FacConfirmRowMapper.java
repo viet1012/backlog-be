@@ -79,7 +79,24 @@ public class FacConfirmRowMapper
 						"FinalQty"
 				),
 
-				rs.getBoolean("HasHeatProcess"),
+				rs.getObject(
+						"HasHeatProcess",
+						Boolean.class
+				),
+
+				rs.getObject(
+						"IsDC53",
+						Boolean.class
+				),
+
+				rs.getObject(
+						"IsTD",
+						Boolean.class
+				),
+
+				rs.getString(
+						"Note"
+				),
 
 				toLocalDateTime(
 						rs.getTimestamp(

@@ -38,6 +38,12 @@ public record FacConfirmDto(
 
 		Boolean hasHeatProcess,
 
+		Boolean isDC53,
+
+		Boolean isTD,
+
+		String note,
+
 		@JsonSerialize(using = SmartDateTimeSerializer.class)
 		LocalDateTime toDrill,
 

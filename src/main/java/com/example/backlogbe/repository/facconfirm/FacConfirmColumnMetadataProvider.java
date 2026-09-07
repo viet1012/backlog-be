@@ -414,7 +414,11 @@ public class FacConfirmColumnMetadataProvider {
 				ColumnType.TEXT
 		);
 
-
+		register(
+				"note",
+				"Note",
+				ColumnType.TEXT
+		);
 		// =====================================================
 		// NUMBER
 		// =====================================================

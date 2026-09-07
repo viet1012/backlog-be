@@ -93,13 +93,12 @@ public class FacConfirmRepository {
 			
 			    WHERE rn = 1
 			
-			    GROUP BY
-			        AUNFR
+			    GROUP BY AUNFR
 			),
 			
 			
 			-- =====================================================
-			-- PO CÓ CÔNG ĐOẠN NHIỆT
+			-- PO CÓ CÔNG ĐOẠN HEAT
 			-- =====================================================
 			
 			HeatProcess AS (
@@ -134,6 +133,32 @@ public class FacConfirmRepository {
 			            'HEAT',
 			            'H.T.(CARBURIZING) (F3)'
 			        )
+			),
+			
+			
+			-- =====================================================
+			-- PO CÓ AGING (5 DAYS)
+			-- =====================================================
+			
+			Aging5DaysProcess AS (
+			
+			    SELECT DISTINCT
+			        r.AUFNR
+			
+			    FROM
+			        [MANUFASPCPD].[dbo].[MANUFA_F_PD_DT_REQ_DTL1] r
+			
+			    WHERE
+			        UPPER(
+			            LTRIM(
+			                RTRIM(
+			                    ISNULL(
+			                        r.AFVC_LTXA1,
+			                        ''
+			                    )
+			                )
+			            )
+			        ) = 'AGING (5 DAYS)'
 			),
 			
 			
@@ -177,6 +202,97 @@ public class FacConfirmRepository {
 			        ) AS HasHeatProcess,
 			
 			
+			        -- =================================================
+			        -- IS DC53
+			        --
+			        -- DC53 = có Heat + Aging (5 days)
+			        -- =================================================
+			
+			        CAST(
+			            CASE
+			                WHEN hp.AUFNR IS NOT NULL
+			                 AND ag.AUFNR IS NOT NULL
+			                THEN 1
+			                ELSE 0
+			            END
+			            AS BIT
+			        ) AS IsDC53,
+			
+					-- =================================================
+					-- IS TD
+					--
+					-- TD = có Heat
+					--      + PNAME bắt đầu HF_TD... hoặc TD...
+					-- =================================================
+					CAST(
+					    CASE
+					        WHEN hp.AUFNR IS NOT NULL
+					         AND (
+					                UPPER(
+					                    LTRIM(
+					                        RTRIM(
+					                            ISNULL(
+					                                bl.PNAME,
+					                                ''
+					                            )
+					                        )
+					                    )
+					                ) LIKE 'HF[_]TD%'
+					             OR UPPER(
+					                    LTRIM(
+					                        RTRIM(
+					                            ISNULL(
+					                                bl.PNAME,
+					                                ''
+					                            )
+					                        )
+					                    )
+					                ) LIKE 'TD%'
+					         )
+					        THEN 1
+					        ELSE 0
+					    END
+					    AS BIT
+					) AS IsTD,
+			        -- =================================================
+			        -- NOTE
+			        -- =================================================
+			
+					CASE
+					    -- Không có Heat
+					    WHEN hp.AUFNR IS NULL
+					    THEN N'Không có công đoạn Heat'
+			
+					    -- DC53 = Heat + Aging (5 days)
+					    WHEN hp.AUFNR IS NOT NULL
+					     AND ag.AUFNR IS NOT NULL
+					    THEN N'DC53 - Chờ 5 ngày'
+			
+					    -- TD = Heat + PNAME bắt đầu HF_TD... hoặc TD...
+					    WHEN hp.AUFNR IS NOT NULL
+					     AND (
+					            UPPER(
+					                LTRIM(
+					                    RTRIM(
+					                        ISNULL(bl.PNAME, '')
+					                    )
+					                )
+					            ) LIKE 'HF[_]TD%'
+			
+					         OR UPPER(
+					                LTRIM(
+					                    RTRIM(
+					                        ISNULL(bl.PNAME, '')
+					                    )
+					                )
+					            ) LIKE 'TD%'
+					     )
+					    THEN N'TD - Chờ 2 ngày'
+			
+					    ELSE NULL
+					END AS Note,
+			
+			
 			        COALESCE(
 			            cp.Confirm_ToDrill,
 			            bl.ToDrill
@@ -214,6 +330,9 @@ public class FacConfirmRepository {
 			
 			    LEFT JOIN HeatProcess hp
 			        ON hp.AUFNR = bl.AUFNR
+			
+			    LEFT JOIN Aging5DaysProcess ag
+			        ON ag.AUFNR = bl.AUFNR
 			)
 			
 			""";
@@ -249,6 +368,12 @@ public class FacConfirmRepository {
 			    d.FinalQty,
 			
 			    d.HasHeatProcess,
+			
+			    d.IsDC53,
+			
+				d.IsTD,
+			
+			    d.Note,
 			
 			    d.ToDrill,
 			
