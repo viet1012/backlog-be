@@ -10,6 +10,7 @@ public record FacConfirmFilterOptionsRequest(
 		LocalDate expD,
 		String procGrp,
 		String classify,
+		String heatType,
 		List<FacConfirmFilterItem> filters
 ) {
 }

@@ -52,6 +52,11 @@ public class FacConfirmController {
 			String classify,
 
 			@RequestParam(
+					defaultValue = "All"
+			)
+			String heatType,
+
+			@RequestParam(
 					defaultValue = "0"
 			)
 			int page,
@@ -67,6 +72,7 @@ public class FacConfirmController {
 				expD,
 				procGrp,
 				classify,
+				heatType,
 				page,
 				size
 		);

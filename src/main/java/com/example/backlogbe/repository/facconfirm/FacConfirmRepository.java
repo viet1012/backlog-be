@@ -431,6 +431,7 @@ public class FacConfirmRepository {
 			LocalDate expD,
 			String procGrp,
 			String classify,
+			String heatType,
 			List<Object> params
 	) {
 
@@ -574,7 +575,50 @@ public class FacConfirmRepository {
 				);
 			}
 		}
+		// =====================================================
+		// HEAT TYPE
+		// =====================================================
 
+		if (
+				heatType != null
+						&& !"All".equalsIgnoreCase(heatType)
+		) {
+
+			if ("Normal".equalsIgnoreCase(heatType)) {
+
+				where.append(
+						"""
+								
+								AND d.IsDC53 = 0
+								AND d.IsTD = 0
+								
+								"""
+				);
+
+			} else if ("DC53".equalsIgnoreCase(heatType)) {
+
+				where.append(
+						"""
+								
+								AND d.HasHeatProcess = 1
+								AND d.IsDC53 = 1
+								
+								"""
+				);
+
+			} else if ("TD".equalsIgnoreCase(heatType)) {
+
+				where.append(
+						"""
+								
+								AND d.HasHeatProcess = 1
+								AND d.IsTD = 1
+								AND d.IsDC53 = 0
+								
+								"""
+				);
+			}
+		}
 
 		return where.toString();
 	}
@@ -589,6 +633,7 @@ public class FacConfirmRepository {
 			LocalDate expD,
 			String procGrp,
 			String classify,
+			String heatType,
 			int page,
 			int size
 	) {
@@ -596,10 +641,8 @@ public class FacConfirmRepository {
 		int offset =
 				page * size;
 
-
 		List<Object> params =
 				new ArrayList<>();
-
 
 		String baseWhere =
 				buildBaseWhere(
@@ -607,17 +650,14 @@ public class FacConfirmRepository {
 						expD,
 						procGrp,
 						classify,
+						heatType,
 						params
 				);
 
-
 		String sql =
 				FAC_DATA_CTE
-
 						+ DETAIL_COLUMNS
-
 						+ baseWhere
-
 						+ """
 						
 						ORDER BY
@@ -630,15 +670,8 @@ public class FacConfirmRepository {
 						
 						""";
 
-
-		params.add(
-				offset
-		);
-
-		params.add(
-				size
-		);
-
+		params.add(offset);
+		params.add(size);
 
 		return jdbcTemplate.query(
 				sql,
@@ -656,12 +689,12 @@ public class FacConfirmRepository {
 			String div,
 			LocalDate expD,
 			String procGrp,
-			String classify
+			String classify,
+			String heatType
 	) {
 
 		List<Object> params =
 				new ArrayList<>();
-
 
 		String baseWhere =
 				buildBaseWhere(
@@ -669,13 +702,12 @@ public class FacConfirmRepository {
 						expD,
 						procGrp,
 						classify,
+						heatType,
 						params
 				);
 
-
 		String sql =
 				FAC_DATA_CTE
-
 						+ """
 						
 						SELECT
@@ -684,9 +716,7 @@ public class FacConfirmRepository {
 						FROM FacData d
 						
 						"""
-
 						+ baseWhere;
-
 
 		Long total =
 				jdbcTemplate.queryForObject(
@@ -695,12 +725,10 @@ public class FacConfirmRepository {
 						params.toArray()
 				);
 
-
 		return total == null
 				? 0L
 				: total;
 	}
-
 
 	// =========================================================
 	// SEARCH
@@ -712,23 +740,16 @@ public class FacConfirmRepository {
 			LocalDate expD,
 			String procGrp,
 			String classify,
+			String heatType,
 			int page,
 			int size,
 			List<FacConfirmFilterItem> filters,
 			String logicOperator
 	) {
 
-		int offset =
-				page * size;
+		int offset = page * size;
 
-
-		List<Object> params =
-				new ArrayList<>();
-
-
-		// =====================================================
-		// BASE
-		// =====================================================
+		List<Object> params = new ArrayList<>();
 
 		String baseWhere =
 				buildBaseWhere(
@@ -736,13 +757,9 @@ public class FacConfirmRepository {
 						expD,
 						procGrp,
 						classify,
+						heatType,
 						params
 				);
-
-
-		// =====================================================
-		// EXCEL FILTER
-		// =====================================================
 
 		FacConfirmFilterSqlBuilder.QueryParts filterParts =
 				filterBuilder.build(
@@ -750,50 +767,27 @@ public class FacConfirmRepository {
 						logicOperator
 				);
 
-
-		params.addAll(
-				filterParts.params()
-		);
-
-
-		// =====================================================
-		// SQL
-		// =====================================================
+		params.addAll(filterParts.params());
 
 		String sql =
 				FAC_DATA_CTE
-
 						+ DETAIL_COLUMNS
-
 						+ baseWhere
-
 						+ filterParts.sql()
-
 						+ """
 						
 						ORDER BY
-						
 						    d.ExportD,
 						    d.ProductGrp,
 						    d.AUFNR
 						
-						
 						OFFSET ? ROWS
-						
 						FETCH NEXT ? ROWS ONLY
 						
 						""";
 
-
-		params.add(
-				offset
-		);
-
-
-		params.add(
-				size
-		);
-
+		params.add(offset);
+		params.add(size);
 
 		return jdbcTemplate.query(
 				sql,
@@ -812,13 +806,12 @@ public class FacConfirmRepository {
 			LocalDate expD,
 			String procGrp,
 			String classify,
+			String heatType,
 			List<FacConfirmFilterItem> filters,
 			String logicOperator
 	) {
 
-		List<Object> params =
-				new ArrayList<>();
-
+		List<Object> params = new ArrayList<>();
 
 		String baseWhere =
 				buildBaseWhere(
@@ -826,9 +819,9 @@ public class FacConfirmRepository {
 						expD,
 						procGrp,
 						classify,
+						heatType,
 						params
 				);
-
 
 		FacConfirmFilterSqlBuilder.QueryParts filterParts =
 				filterBuilder.build(
@@ -836,28 +829,18 @@ public class FacConfirmRepository {
 						logicOperator
 				);
 
-
-		params.addAll(
-				filterParts.params()
-		);
-
+		params.addAll(filterParts.params());
 
 		String sql =
 				FAC_DATA_CTE
-
 						+ """
 						
-						SELECT
-						    COUNT_BIG(*)
-						
+						SELECT COUNT_BIG(*)
 						FROM FacData d
 						
 						"""
-
 						+ baseWhere
-
 						+ filterParts.sql();
-
 
 		Long total =
 				jdbcTemplate.queryForObject(
@@ -866,10 +849,7 @@ public class FacConfirmRepository {
 						params.toArray()
 				);
 
-
-		return total == null
-				? 0L
-				: total;
+		return total == null ? 0L : total;
 	}
 
 	// =========================================================
@@ -883,126 +863,55 @@ public class FacConfirmRepository {
 			LocalDate expD,
 			String procGrp,
 			String classify,
+			String heatType,
 			List<FacConfirmFilterItem> filters
 	) {
 
-		// =====================================================
-		// COLUMN
-		// =====================================================
-
 		FacConfirmColumnMetadataProvider.ColumnMeta meta =
-				metadataProvider.get(
-						field
-				);
-
+				metadataProvider.get(field);
 
 		String column =
-				"["
-						+ meta.name()
-						+ "]";
-
+				"d.[" + meta.name() + "]";
 
 		boolean dateField =
 				meta.type()
 						== FacConfirmColumnMetadataProvider.ColumnType.DATE;
 
-
-		// =====================================================
-		// DISPLAY VALUE
-		//
-		// DATE:
-		//
-		// DB:
-		// 2026-09-03 14:26:37
-		//
-		// Excel option:
-		// 2026-09-03
-		//
-		// DB DATA KHÔNG BỊ THAY ĐỔI.
-		// =====================================================
-
 		String valueExpression;
-
 
 		if (dateField) {
 
 			valueExpression =
 					"""
-							
 							CASE
-							
-								WHEN %s IS NULL
-								THEN ''
-							
-								ELSE CONVERT(
-									VARCHAR(10),
-									%s,
-									23
-								)
-							
+								WHEN %s IS NULL THEN ''
+								ELSE CONVERT(VARCHAR(10), %s, 23)
 							END
-							
-							""".formatted(
-							column,
-							column
-					);
+							""".formatted(column, column);
 
 		} else {
 
 			valueExpression =
 					"""
-							
 							ISNULL(
-							
-								CAST(
-									%s
-									AS NVARCHAR(500)
-								),
-							
+								CAST(%s AS NVARCHAR(500)),
 								''
 							)
-							
-							""".formatted(
-							column
-					);
+							""".formatted(column);
 		}
-
-
-		// =====================================================
-		// REMOVE CURRENT FILTER
-		//
-		// Excel behavior
-		// =====================================================
 
 		List<FacConfirmFilterItem> otherFilters =
 				filters == null
 						? List.of()
-						: filters
-						.stream()
-
-						.filter(
-								item ->
-										item != null
+						: filters.stream()
+						.filter(item -> item != null)
+						.filter(item ->
+								item.field() == null
+										|| !field.equalsIgnoreCase(item.field())
 						)
-
-						.filter(
-								item ->
-										item.field() == null
-												|| !field.equalsIgnoreCase(
-												item.field()
-										)
-						)
-
 						.toList();
 
-
-		// =====================================================
-		// PARAMS
-		// =====================================================
-
-		List<Object> params =
-				new ArrayList<>();
-
+		List<Object> params = new ArrayList<>();
 
 		String baseWhere =
 				buildBaseWhere(
@@ -1010,12 +919,9 @@ public class FacConfirmRepository {
 						expD,
 						procGrp,
 						classify,
+						heatType,
 						params
 				);
-
-		// =====================================================
-		// OTHER FILTERS
-		// =====================================================
 
 		FacConfirmFilterSqlBuilder.QueryParts filterParts =
 				filterBuilder.build(
@@ -1023,105 +929,50 @@ public class FacConfirmRepository {
 						"and"
 				);
 
+		params.addAll(filterParts.params());
 
-		params.addAll(
-				filterParts.params()
-		);
+		StringBuilder sql = new StringBuilder();
 
-
-		// =====================================================
-		// SQL
-		// =====================================================
-
-		StringBuilder sql =
-				new StringBuilder();
-
-
-		sql.append(
-				FAC_DATA_CTE
-		);
-
+		sql.append(FAC_DATA_CTE);
 
 		sql.append(
 				"""
 						
 						SELECT DISTINCT
-						
 							%s AS FilterValue
-						
 						FROM FacData d
 						
-						""".formatted(
-						valueExpression
-				)
+						""".formatted(valueExpression)
 		);
 
-
-		sql.append(
-				baseWhere
-		);
-
-
-		sql.append(
-				filterParts.sql()
-		);
-
-
-		// =====================================================
-		// SEARCH
-		// =====================================================
+		sql.append(baseWhere);
+		sql.append(filterParts.sql());
 
 		String safeSearch =
 				search == null
 						? ""
 						: search.trim();
 
-
-		if (
-				!safeSearch.isBlank()
-		) {
+		if (!safeSearch.isBlank()) {
 
 			sql.append(
-					" AND "
-							+ valueExpression
-							+ " LIKE ? "
+					" AND " + valueExpression + " LIKE ? "
 			);
 
-
-			params.add(
-					"%"
-							+ safeSearch
-							+ "%"
-			);
+			params.add("%" + safeSearch + "%");
 		}
-
-
-		// =====================================================
-		// ORDER
-		// =====================================================
 
 		sql.append(
 				"""
 						
-						ORDER BY
-							FilterValue
+						ORDER BY FilterValue
 						
 						"""
 		);
 
-
-		// =====================================================
-		// RESULT
-		// =====================================================
-
 		return jdbcTemplate.query(
 				sql.toString(),
-
-				(rs, rowNum) ->
-						rs.getString(
-								"FilterValue"
-						),
-
+				(rs, rowNum) -> rs.getString("FilterValue"),
 				params.toArray()
 		);
 	}

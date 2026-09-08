@@ -8,6 +8,7 @@ public record FacConfirmSearchRequest(
 		LocalDate expD,
 		String procGrp,
 		String classify,
+		String heatType,
 		Integer page,
 		Integer size,
 		List<FacConfirmFilterItem> filters,

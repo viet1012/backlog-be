@@ -50,61 +50,41 @@ public class FacConfirmService {
 			LocalDate expD,
 			String procGrp,
 			String classify,
+			String heatType,
 			int page,
 			int size
 	) {
 
 		String safeDiv =
-				normalizeDiv(
-						div
-				);
+				normalizeDiv(div);
 
-
-		validateExportDate(
-				expD
-		);
-
+		validateExportDate(expD);
 
 		String safeProcGrp =
-				normalizeProcessGroup(
-						procGrp
-				);
-
+				normalizeProcessGroup(procGrp);
 
 		String safeClassify =
-				normalizeClassify(
-						classify
-				);
+				normalizeClassify(classify);
 
+		String safeHeatType =
+				normalizeHeatType(heatType);
 
 		int safePage =
-				normalizePage(
-						page
-				);
-
+				normalizePage(page);
 
 		int safeSize =
-				normalizeSize(
-						size
-				);
+				normalizeSize(size);
 
-
-		// =====================================================
-		// COUNT
-		// =====================================================
 
 		long total =
 				repository.count(
 						safeDiv,
 						expD,
 						safeProcGrp,
-						safeClassify
+						safeClassify,
+						safeHeatType
 				);
 
-
-		// =====================================================
-		// DATA
-		// =====================================================
 
 		List<FacConfirmDto> content =
 				repository.findPage(
@@ -112,6 +92,7 @@ public class FacConfirmService {
 						expD,
 						safeProcGrp,
 						safeClassify,
+						safeHeatType,
 						safePage,
 						safeSize
 				);
@@ -122,6 +103,41 @@ public class FacConfirmService {
 				safePage,
 				safeSize,
 				total
+		);
+	}
+
+	private String normalizeHeatType(
+			String heatType
+	) {
+
+		if (
+				heatType == null
+						|| heatType.isBlank()
+		) {
+			return "All";
+		}
+
+		String value =
+				heatType.trim();
+
+		if (value.equalsIgnoreCase("All")) {
+			return "All";
+		}
+
+		if (value.equalsIgnoreCase("Normal")) {
+			return "Normal";
+		}
+
+		if (value.equalsIgnoreCase("DC53")) {
+			return "DC53";
+		}
+
+		if (value.equalsIgnoreCase("TD")) {
+			return "TD";
+		}
+
+		throw new IllegalArgumentException(
+				"heatType must be All, Normal, DC53 or TD"
 		);
 	}
 
@@ -206,7 +222,10 @@ public class FacConfirmService {
 						request.classify()
 				);
 
-
+		String safeHeatType =
+				normalizeHeatType(
+						request.heatType()
+				);
 		// =====================================================
 		// PAGINATION
 		// =====================================================
@@ -249,6 +268,7 @@ public class FacConfirmService {
 						request.expD(),
 						safeProcGrp,
 						safeClassify,
+						safeHeatType,
 						safeFilters,
 						safeLogicOperator
 				);
@@ -264,6 +284,7 @@ public class FacConfirmService {
 						request.expD(),
 						safeProcGrp,
 						safeClassify,
+						safeHeatType,
 						safePage,
 						safeSize,
 						safeFilters,
@@ -358,7 +379,10 @@ public class FacConfirmService {
 						? ""
 						: request.search().trim();
 
-
+		String safeHeatType =
+				normalizeHeatType(
+						request.heatType()
+				);
 		// =====================================================
 		// DATA
 		// =====================================================
@@ -370,6 +394,7 @@ public class FacConfirmService {
 				request.expD(),
 				safeProcGrp,
 				safeClassify,
+				safeHeatType,
 				safeFilters
 		);
 	}
