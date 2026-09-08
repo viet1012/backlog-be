@@ -294,8 +294,8 @@ public class FacConfirmRepository {
 			
 			
 			        COALESCE(
-			            cp.Confirm_ToDrill,
-			            bl.ToDrill
+			            bl.ToDrill,
+			            cp.Confirm_ToDrill
 			        ) AS ToDrill,
 			
 			
@@ -988,22 +988,33 @@ public class FacConfirmRepository {
 	) {
 
 		/*
-		 * Summary business hiện tại:
+		 * Business:
 		 *
 		 * Rough:
-		 * final confirm = To Heat
+		 *   final confirm = To Heat
+		 *   Required khi Backlog_Main.ToHeat IS NULL
 		 *
 		 * Heat:
-		 * final confirm = Heat Finish
+		 *   final confirm = Heat Finish
+		 *   Required khi Backlog_Main.TimeFHeat IS NULL
 		 *
 		 * Fine:
-		 * final confirm = To Packing
+		 *   final confirm = To Packing
+		 *   Required khi Backlog_Main.ToPK IS NULL
 		 *
-		 * Required:
+		 * F2_Backlog_Main LUÔN ưu tiên.
 		 *
-		 * final backlog column NULL
-		 * OR
-		 * đã từng có Fac Confirm record
+		 * Nếu Main đã có final time:
+		 *   -> không thuộc Fac Confirm scope
+		 *   -> không tính Required
+		 *   -> không tính Confirmed
+		 *
+		 * Nếu Main final time NULL:
+		 *   -> thuộc Required
+		 *
+		 * Trong Required:
+		 *   có Fac Confirm record tương ứng
+		 *   -> Confirmed
 		 */
 
 		String sql = """
@@ -1011,9 +1022,7 @@ public class FacConfirmRepository {
 				WITH Base AS (
 				
 				    SELECT
-				
 				        bl.AUFNR,
-				
 				        bl.ProcessGrp2,
 				
 				        ISNULL(
@@ -1022,30 +1031,20 @@ public class FacConfirmRepository {
 				        ) AS FinalQty,
 				
 				        bl.ToHeat,
-				
 				        bl.TimeFHeat,
-				
 				        bl.ToPK
-				
 				
 				    FROM F2_Backlog_Main bl
 				
-				
 				    WHERE bl.ExportD <= ?
 				
-				
 				      AND (
-				
 				             bl.Div = ?
-				
 				          OR (
-				
 				                 ? = 'GU'
-				
 				                 AND bl.Div LIKE '%G'
 				             )
 				      )
-				
 				
 				      AND bl.ProcessGrp2 IN (
 				          'Fine',
@@ -1058,17 +1057,12 @@ public class FacConfirmRepository {
 				Confirmed AS (
 				
 				    SELECT DISTINCT
-				
 				        fc.AUNFR,
-				
 				        fc.ProcessGrp
-				
 				
 				    FROM F2Database.dbo.F2_Backlog_Fac_Confirm fc
 				
-				
 				    WHERE fc.ConfirmFnTime IS NOT NULL
-				
 				
 				      AND fc.ProcessGrp IN (
 				          'To Heat',
@@ -1080,101 +1074,52 @@ public class FacConfirmRepository {
 				
 				ProcessScope AS (
 				
-				
 				    -- =========================================
 				    -- ROUGH
+				    -- Main.ToHeat NULL mới thuộc scope
 				    -- =========================================
 				
 				    SELECT
-				
-				        'Rough'
-				            AS ProcessGroup,
-				
-				        1
-				            AS SortOrder,
+				        'Rough' AS ProcessGroup,
+				        1 AS SortOrder,
 				
 				        b.AUFNR,
-				
 				        b.FinalQty,
 				
-				        'To Heat'
-				            AS FinalConfirmProcess
-				
+				        'To Heat' AS FinalConfirmProcess
 				
 				    FROM Base b
 				
-				
 				    WHERE b.ProcessGrp2 = 'Rough'
 				
-				
-				      AND (
-				
-				             b.ToHeat IS NULL
-				
-				          OR EXISTS (
-				
-				                 SELECT 1
-				
-				                 FROM Confirmed c
-				
-				                 WHERE c.AUNFR =
-				                       b.AUFNR
-				
-				                   AND c.ProcessGrp =
-				                       'To Heat'
-				             )
-				      )
+				      AND b.ToHeat IS NULL
 				
 				
 				    UNION ALL
 				
 				
 				    -- =========================================
-				    --  HEAT
+				    -- HEAT
+				    -- Main.TimeFHeat NULL mới thuộc scope
 				    -- =========================================
 				
 				    SELECT
-				
-				        'Heat'
-				            AS ProcessGroup,
-				
-				        2
-				            AS SortOrder,
+				        'Heat' AS ProcessGroup,
+				        2 AS SortOrder,
 				
 				        b.AUFNR,
-				
 				        b.FinalQty,
 				
-				        'Heat Finish'
-				            AS FinalConfirmProcess
-				
+				        'Heat Finish' AS FinalConfirmProcess
 				
 				    FROM Base b
-				
 				
 				    WHERE b.ProcessGrp2 IN (
 				        'Heat',
 				        'Rough'
 				    )
 				
-				
-				      AND (
-				
-				             b.TimeFHeat IS NULL
-				
-				          OR EXISTS (
-				
-				                 SELECT 1
-				
-				                 FROM Confirmed c
-				
-				                 WHERE c.AUNFR =
-				                       b.AUFNR
-				
-				                   AND c.ProcessGrp =
-				                       'Heat Finish'
-				             )
-				      )
+				      AND b.TimeFHeat IS NULL
 				
 				
 				    UNION ALL
@@ -1182,53 +1127,28 @@ public class FacConfirmRepository {
 				
 				    -- =========================================
 				    -- FINE
+				    -- Main.ToPK NULL mới thuộc scope
 				    -- =========================================
 				
 				    SELECT
-				
-				        'Fine'
-				            AS ProcessGroup,
-				
-				        3
-				            AS SortOrder,
+				        'Fine' AS ProcessGroup,
+				        3 AS SortOrder,
 				
 				        b.AUFNR,
-				
 				        b.FinalQty,
 				
-				        'To Packing'
-				            AS FinalConfirmProcess
-				
+				        'To Packing' AS FinalConfirmProcess
 				
 				    FROM Base b
 				
-				
-				    WHERE (
-				
-				             b.ToPK IS NULL
-				
-				          OR EXISTS (
-				
-				                 SELECT 1
-				
-				                 FROM Confirmed c
-				
-				                 WHERE c.AUNFR =
-				                       b.AUFNR
-				
-				                   AND c.ProcessGrp =
-				                       'To Packing'
-				             )
-				      )
+				    WHERE b.ToPK IS NULL
 				),
 				
 				
 				Summary AS (
 				
 				    SELECT
-				
 				        ps.ProcessGroup,
-				
 				        ps.SortOrder,
 				
 				
@@ -1237,12 +1157,10 @@ public class FacConfirmRepository {
 				
 				
 				        SUM(
-				
 				            CAST(
 				                ps.FinalQty
 				                AS DECIMAL(18, 2)
 				            )
-				
 				        ) AS RequiredTotalQty,
 				
 				
@@ -1252,11 +1170,8 @@ public class FacConfirmRepository {
 				
 				
 				        SUM(
-				
 				            CASE
-				
 				                WHEN c.AUNFR IS NOT NULL
-				
 				                THEN CAST(
 				                    ps.FinalQty
 				                    AS DECIMAL(18, 2)
@@ -1266,9 +1181,7 @@ public class FacConfirmRepository {
 				                    0
 				                    AS DECIMAL(18, 2)
 				                )
-				
 				            END
-				
 				        ) AS ConfirmedTotalQty
 				
 				
@@ -1276,49 +1189,37 @@ public class FacConfirmRepository {
 				
 				
 				    LEFT JOIN Confirmed c
-				
-				        ON c.AUNFR =
-				           ps.AUFNR
-				
+				        ON c.AUNFR = ps.AUFNR
 				       AND c.ProcessGrp =
 				           ps.FinalConfirmProcess
 				
 				
 				    GROUP BY
-				
 				        ps.ProcessGroup,
-				
 				        ps.SortOrder
 				)
 				
 				
 				SELECT
-				
 				    ProcessGroup,
 				
 				    RequiredOrderCount,
-				
 				
 				    ISNULL(
 				        RequiredTotalQty,
 				        0
 				    ) AS RequiredTotalQty,
 				
-				
 				    ConfirmedOrderCount,
-				
 				
 				    ISNULL(
 				        ConfirmedTotalQty,
 				        0
 				    ) AS ConfirmedTotalQty
 				
-				
 				FROM Summary
 				
-				
-				ORDER BY
-				    SortOrder
+				ORDER BY SortOrder
 				
 				""";
 
@@ -1326,26 +1227,17 @@ public class FacConfirmRepository {
 		List<Object> params =
 				new ArrayList<>();
 
-
 		params.add(
 				Timestamp.valueOf(
 						expD.atStartOfDay()
 				)
 		);
 
-
-		params.add(
-				div
-		);
-
-
-		params.add(
-				div
-		);
+		params.add(div);
+		params.add(div);
 
 
 		return jdbcTemplate.query(
-
 				sql,
 
 				(rs, rowNum) ->

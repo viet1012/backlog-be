@@ -49,17 +49,92 @@ public class FacConfirmProcessTimeRepository {
 
 		String sql = """
 				SELECT
-				    AUNFR AS aufnr,
-				    ProcessGrp AS processGrp,
-				    ConfirmFnTime AS confirmFnTime,
-				    Updater AS updater,
-				    UpdatedAt AS updatedAt
-				FROM F2Database.dbo.F2_Backlog_Fac_Confirm
-				WHERE AUNFR IN (%s)
+				    fc.AUNFR AS aufnr,
+				    fc.ProcessGrp AS processGrp,
+				    fc.ConfirmFnTime AS confirmFnTime,
+				    fc.Updater AS updater,
+				    fc.UpdatedAt AS updatedAt
+				
+				FROM F2Database.dbo.F2_Backlog_Fac_Confirm fc
+				
+				INNER JOIN F2Database.dbo.F2_Backlog_Main bl
+				    ON bl.AUFNR = fc.AUNFR
+				
+				WHERE fc.AUNFR IN (%s)
+				
+				  AND fc.ConfirmFnTime IS NOT NULL
+				
+				  AND (
+				         (
+				             fc.ProcessGrp = 'To Drill'
+				             AND bl.ToDrill IS NULL
+				         )
+				
+				      OR (
+				             fc.ProcessGrp = 'To Heat'
+				             AND bl.ToHeat IS NULL
+				         )
+				
+				      OR (
+				             fc.ProcessGrp = 'Heat Start'
+				             AND bl.TimeSQuenching IS NULL
+				         )
+				
+				      OR (
+				             fc.ProcessGrp = 'Heat Finish'
+				             AND bl.TimeFHeat IS NULL
+				         )
+				
+				      OR (
+				             fc.ProcessGrp = 'To Packing'
+				             AND bl.ToPK IS NULL
+				         )
+				  )
+				
 				""".formatted(placeholders);
-
-		return jdbcTemplate.queryForList(
+		return jdbcTemplate.query(
 				sql,
+				(rs, rowNum) -> {
+					Map<String, Object> row =
+							new java.util.LinkedHashMap<>();
+
+					row.put(
+							"aufnr",
+							rs.getString("aufnr")
+					);
+
+					row.put(
+							"processGrp",
+							rs.getString("processGrp")
+					);
+
+					Timestamp confirmFnTime =
+							rs.getTimestamp("confirmFnTime");
+
+					row.put(
+							"confirmFnTime",
+							confirmFnTime != null
+									? confirmFnTime.toLocalDateTime()
+									: null
+					);
+
+					row.put(
+							"updater",
+							rs.getString("updater")
+					);
+
+					Timestamp updatedAt =
+							rs.getTimestamp("updatedAt");
+
+					row.put(
+							"updatedAt",
+							updatedAt != null
+									? updatedAt.toLocalDateTime()
+									: null
+					);
+
+					return row;
+				},
 				cleanAufnrs.toArray()
 		);
 	}
