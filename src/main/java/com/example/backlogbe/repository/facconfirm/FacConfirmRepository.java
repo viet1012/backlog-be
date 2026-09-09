@@ -19,14 +19,11 @@ public class FacConfirmRepository {
 
 
 	private static final String FAC_DATA_CTE = """
-			
 			WITH LatestConfirm AS (
-			
 			    SELECT
 			        fc.AUNFR,
 			        fc.ProcessGrp,
 			        fc.ConfirmFnTime,
-			
 			        ROW_NUMBER() OVER (
 			            PARTITION BY
 			                fc.AUNFR,
@@ -34,11 +31,8 @@ public class FacConfirmRepository {
 			            ORDER BY
 			                fc.UpdatedAt DESC
 			        ) AS rn
-			
 			    FROM F2Database.dbo.F2_Backlog_Fac_Confirm fc
-			
 			    WHERE fc.ConfirmFnTime IS NOT NULL
-			
 			      AND fc.ProcessGrp IN (
 			          'To Drill',
 			          'To Heat',
@@ -48,9 +42,7 @@ public class FacConfirmRepository {
 			      )
 			),
 			
-			
 			ConfirmPivot AS (
-			
 			    SELECT
 			        AUNFR,
 			
@@ -90,80 +82,59 @@ public class FacConfirmRepository {
 			        ) AS Confirm_ToPacking
 			
 			    FROM LatestConfirm
-			
 			    WHERE rn = 1
-			
 			    GROUP BY AUNFR
 			),
 			
-			
-			-- =====================================================
+			-- =========================================================
 			-- PO CÓ CÔNG ĐOẠN HEAT
-			-- =====================================================
-			
+			-- =========================================================
 			HeatProcess AS (
-			
 			    SELECT DISTINCT
 			        r.AUFNR
-			
-			    FROM
-			        [MANUFASPCPD].[dbo].[MANUFA_F_PD_DT_REQ_DTL1] r
-			
-			    WHERE
-			        UPPER(
-			            LTRIM(
-			                RTRIM(
-			                    ISNULL(
-			                        r.AFVC_LTXA1,
-			                        ''
-			                    )
-			                )
+			    FROM [MANUFASPCPD].[dbo].[MANUFA_F_PD_DT_REQ_DTL1] r
+			    WHERE UPPER(
+			        LTRIM(
+			            RTRIM(
+			                ISNULL(r.AFVC_LTXA1, '')
 			            )
-			        ) IN (
-			            'INDUCTION H.T.',
-			            'H.T.',
-			            'H.T. (CARBURIZING)',
-			            'H.T. (INDUCTION)',
-			            'H.T. (OIL)',
-			            'H.T. (VACCUME)',
-			            'H.T.(CARBURIZING)',
-			            'H.T.(OIL)',
-			            'H.T.(OIL)/H.T. (VACCUME)',
-			            'H.T. (F3)',
-			            'HEAT',
-			            'H.T.(CARBURIZING) (F3)'
 			        )
+			    ) IN (
+			        'INDUCTION H.T.',
+			        'H.T.',
+			        'H.T. (CARBURIZING)',
+			        'H.T. (INDUCTION)',
+			        'H.T. (OIL)',
+			        'H.T. (VACCUME)',
+			        'H.T.(CARBURIZING)',
+			        'H.T.(OIL)',
+			        'H.T.(OIL)/H.T. (VACCUME)',
+			        'H.T. (F3)',
+			        'HEAT',
+			        'H.T.(CARBURIZING) (F3)'
+			    )
 			),
 			
-			
-			-- =====================================================
+			-- =========================================================
 			-- PO CÓ AGING (5 DAYS)
-			-- =====================================================
-			
+			-- =========================================================
 			Aging5DaysProcess AS (
-			
 			    SELECT DISTINCT
 			        r.AUFNR
-			
-			    FROM
-			        [MANUFASPCPD].[dbo].[MANUFA_F_PD_DT_REQ_DTL1] r
-			
-			    WHERE
-			        UPPER(
-			            LTRIM(
-			                RTRIM(
-			                    ISNULL(
-			                        r.AFVC_LTXA1,
-			                        ''
-			                    )
-			                )
+			    FROM [MANUFASPCPD].[dbo].[MANUFA_F_PD_DT_REQ_DTL1] r
+			    WHERE UPPER(
+			        LTRIM(
+			            RTRIM(
+			                ISNULL(r.AFVC_LTXA1, '')
 			            )
-			        ) = 'AGING (5 DAYS)'
+			        )
+			    ) = 'AGING (5 DAYS)'
 			),
 			
-			
+			-- =========================================================
+			-- FAC CONFIRM DATA
+			-- =========================================================
 			FacData AS (
-			
 			    SELECT
 			        bl.FERTH,
 			        bl.ProductGrp,
@@ -183,15 +154,35 @@ public class FacConfirmRepository {
 			        bl.FinalQty,
 			
 			        bl.Classify,
-			
 			        bl.ProcessGrp2,
 			        bl.Div,
 			
+			        -- =================================================
+			        -- PO KHÔNG CẦN FAC CONFIRM
+			        -- =================================================
+			        CAST(
+			            CASE
+			                WHEN (
+			                       bl.ProductGrp = 'Cam'
+			                    OR bl.FERTH LIKE 'Backing Plug%'
+			                    OR bl.PHCD LIKE 'J%'
+			                    OR bl.PRT_ADDCMT2 LIKE '%Xuat kho%'
+			                    OR bl.ProcessGrp2 = 'MTO'
+			                    OR (
+			                           bl.ZGLOBAL_CODE IS NULL
+			                       AND bl.PRT_ADDCMT2 NOT LIKE '%FNK%'
+			                    )
+			                    OR bl.Status2 <> 'ON PROGRESS'
+			                )
+			                THEN 1
+			                ELSE 0
+			            END
+			            AS BIT
+			        ) AS IsNoCount,
 			
 			        -- =================================================
 			        -- HAS HEAT PROCESS
 			        -- =================================================
-			
 			        CAST(
 			            CASE
 			                WHEN hp.AUFNR IS NOT NULL
@@ -201,13 +192,11 @@ public class FacConfirmRepository {
 			            AS BIT
 			        ) AS HasHeatProcess,
 			
-			
 			        -- =================================================
 			        -- IS DC53
 			        --
-			        -- DC53 = có Heat + Aging (5 days)
+			        -- DC53 = Có Heat + Aging (5 Days)
 			        -- =================================================
-			
 			        CAST(
 			            CASE
 			                WHEN hp.AUFNR IS NOT NULL
@@ -218,110 +207,110 @@ public class FacConfirmRepository {
 			            AS BIT
 			        ) AS IsDC53,
 			
-					-- =================================================
-					-- IS TD
-					--
-					-- TD = có Heat
-					--      + PNAME bắt đầu HF_TD... hoặc TD...
-					-- =================================================
-					CAST(
-					    CASE
-					        WHEN hp.AUFNR IS NOT NULL
-					         AND (
-					                UPPER(
-					                    LTRIM(
-					                        RTRIM(
-					                            ISNULL(
-					                                bl.PNAME,
-					                                ''
-					                            )
-					                        )
-					                    )
-					                ) LIKE 'HF[_]TD%'
-					             OR UPPER(
-					                    LTRIM(
-					                        RTRIM(
-					                            ISNULL(
-					                                bl.PNAME,
-					                                ''
-					                            )
-					                        )
-					                    )
-					                ) LIKE 'TD%'
-					         )
-					        THEN 1
-					        ELSE 0
-					    END
-					    AS BIT
-					) AS IsTD,
+			        -- =================================================
+			        -- IS TD
+			        --
+			        -- TD = Có Heat
+			        --    + PNAME bắt đầu HF_TD... hoặc TD...
+			        -- =================================================
+			        CAST(
+			            CASE
+			                WHEN hp.AUFNR IS NOT NULL
+			                 AND (
+			                        UPPER(
+			                            LTRIM(
+			                                RTRIM(
+			                                    ISNULL(bl.PNAME, '')
+			                                )
+			                            )
+			                        ) LIKE 'HF[_]TD%'
+			
+			                     OR UPPER(
+			                            LTRIM(
+			                                RTRIM(
+			                                    ISNULL(bl.PNAME, '')
+			                                )
+			                            )
+			                        ) LIKE 'TD%'
+			                 )
+			                THEN 1
+			                ELSE 0
+			            END
+			            AS BIT
+			        ) AS IsTD,
+			
 			        -- =================================================
 			        -- NOTE
+			        --
+			        -- Priority:
+			        -- 1. Không có Heat
+			        -- 2. DC53
+			        -- 3. TD
 			        -- =================================================
+			        CASE
+			            WHEN hp.AUFNR IS NULL
+			            THEN N'Không có Heat'
 			
-					CASE
-					    -- Không có Heat
-					    WHEN hp.AUFNR IS NULL
-					    THEN N'Không có Heat'
+			            WHEN hp.AUFNR IS NOT NULL
+			             AND ag.AUFNR IS NOT NULL
+			            THEN N'DC53 - Chờ 5 ngày'
 			
-					    -- DC53 = Heat + Aging (5 days)
-					    WHEN hp.AUFNR IS NOT NULL
-					     AND ag.AUFNR IS NOT NULL
-					    THEN N'DC53 - Chờ 5 ngày'
+			            WHEN hp.AUFNR IS NOT NULL
+			             AND (
+			                    UPPER(
+			                        LTRIM(
+			                            RTRIM(
+			                                ISNULL(bl.PNAME, '')
+			                            )
+			                        )
+			                    ) LIKE 'HF[_]TD%'
 			
-					    -- TD = Heat + PNAME bắt đầu HF_TD... hoặc TD...
-					    WHEN hp.AUFNR IS NOT NULL
-					     AND (
-					            UPPER(
-					                LTRIM(
-					                    RTRIM(
-					                        ISNULL(bl.PNAME, '')
-					                    )
-					                )
-					            ) LIKE 'HF[_]TD%'
+			                 OR UPPER(
+			                        LTRIM(
+			                            RTRIM(
+			                                ISNULL(bl.PNAME, '')
+			                            )
+			                        )
+			                    ) LIKE 'TD%'
+			             )
+			            THEN N'TD - Chờ 2 ngày'
 			
-					         OR UPPER(
-					                LTRIM(
-					                    RTRIM(
-					                        ISNULL(bl.PNAME, '')
-					                    )
-					                )
-					            ) LIKE 'TD%'
-					     )
-					    THEN N'TD - Chờ 2 ngày'
+			            ELSE NULL
+			        END AS Note,
 			
-					    ELSE NULL
-					END AS Note,
-			
+			        -- =================================================
+			        -- PROCESS DATETIME
+			        --
+			        -- Priority:
+			        -- F2_Backlog_Main
+			        --      ↓ NULL
+			        -- F2_Backlog_Fac_Confirm
+			        -- =================================================
 			
 			        COALESCE(
 			            bl.ToDrill,
 			            cp.Confirm_ToDrill
 			        ) AS ToDrill,
 			
-			
 			        COALESCE(
-			            cp.Confirm_ToHeat,
-			            bl.ToHeat
+			            bl.ToHeat,
+			            cp.Confirm_ToHeat
 			        ) AS ToHeat,
 			
-			
 			        COALESCE(
-			            cp.Confirm_HeatStart,
-			            bl.TimeSQuenching
+			            bl.TimeSQuenching,
+			            cp.Confirm_HeatStart
 			        ) AS Heat_Start,
 			
-			
 			        COALESCE(
-			            cp.Confirm_HeatFinish,
-			            bl.TimeFHeat
+			            bl.TimeFHeat,
+			            cp.Confirm_HeatFinish
 			        ) AS Heat_Finish,
 			
-			
 			        COALESCE(
-			            cp.Confirm_ToPacking,
-			            bl.ToPK
+			            bl.ToPK,
+			            cp.Confirm_ToPacking
 			        ) AS ToPK
-			
 			
 			    FROM F2_Backlog_Main bl
 			
@@ -336,7 +325,6 @@ public class FacConfirmRepository {
 			)
 			
 			""";
-
 	private static final String DETAIL_COLUMNS = """
 			
 			SELECT
@@ -503,7 +491,7 @@ public class FacConfirmRepository {
 											  AND d.Div LIKE '%G'
 										  )
 								  )
-								
+								  AND d.IsNoCount = 0
 								"""
 				);
 
@@ -1020,206 +1008,233 @@ public class FacConfirmRepository {
 		String sql = """
 				
 				WITH Base AS (
-				
+
 				    SELECT
 				        bl.AUFNR,
 				        bl.ProcessGrp2,
-				
+
 				        ISNULL(
 				            bl.FinalQty,
 				            0
 				        ) AS FinalQty,
-				
+
 				        bl.ToHeat,
 				        bl.TimeFHeat,
 				        bl.ToPK
 				
-				    FROM F2_Backlog_Main bl
+				FROM F2_Backlog_Main bl
 				
-				    WHERE bl.ExportD <= ?
+				WHERE bl.ExportD <= ?
 				
-				      AND (
-				             bl.Div = ?
-				          OR (
-				                 ? = 'GU'
-				                 AND bl.Div LIKE '%G'
-				             )
-				      )
+				  AND (
+				         bl.Div = ?
+				      OR (
+				             ? = 'GU'
+				             AND bl.Div LIKE '%G'
+				         )
+				  )
 				
-				      AND bl.ProcessGrp2 IN (
-				          'Fine',
-				          'Heat',
-				          'Rough'
-				      )
-				),
+				  AND bl.ProcessGrp2 IN (
+				      'Fine',
+				      'Heat',
+				      'Rough'
+				  )
 				
+				  -- =========================================
+				  -- BỎ CÁC PO KHÔNG CẦN FAC CONFIRM
+				  -- =========================================
 				
-				Confirmed AS (
+				  AND CASE
+				          WHEN (
+				                 bl.ProductGrp = 'Cam'
 				
-				    SELECT DISTINCT
-				        fc.AUNFR,
-				        fc.ProcessGrp
+				              OR bl.FERTH LIKE 'Backing Plug%'
 				
-				    FROM F2Database.dbo.F2_Backlog_Fac_Confirm fc
+				              OR bl.PHCD LIKE 'J%'
 				
-				    WHERE fc.ConfirmFnTime IS NOT NULL
+				              OR bl.PRT_ADDCMT2 LIKE '%Xuat kho%'
 				
-				      AND fc.ProcessGrp IN (
-				          'To Heat',
-				          'Heat Finish',
-				          'To Packing'
-				      )
-				),
+				              OR bl.ProcessGrp2 = 'MTO'
 				
+				              OR (
+				                     bl.ZGLOBAL_CODE IS NULL
+				                     AND bl.PRT_ADDCMT2 NOT LIKE '%FNK%'
+				                 )
 				
-				ProcessScope AS (
-				
-				    -- =========================================
-				    -- ROUGH
-				    -- Main.ToHeat NULL mới thuộc scope
-				    -- =========================================
-				
-				    SELECT
-				        'Rough' AS ProcessGroup,
-				        1 AS SortOrder,
-				
-				        b.AUFNR,
-				        b.FinalQty,
-				
-				        'To Heat' AS FinalConfirmProcess
-				
-				    FROM Base b
-				
-				    WHERE b.ProcessGrp2 = 'Rough'
-				
-				      AND b.ToHeat IS NULL
+				              OR bl.Status2 <> 'ON PROGRESS'
+				          )
+				          THEN 1
+				          ELSE 0
+				      END = 0
+								),
 				
 				
-				    UNION ALL
+								Confirmed AS (
+				
+								    SELECT DISTINCT
+								        fc.AUNFR,
+								        fc.ProcessGrp
+				
+								    FROM F2Database.dbo.F2_Backlog_Fac_Confirm fc
+				
+								    WHERE fc.ConfirmFnTime IS NOT NULL
+				
+								      AND fc.ProcessGrp IN (
+								          'To Heat',
+								          'Heat Finish',
+								          'To Packing'
+								      )
+								),
 				
 				
-				    -- =========================================
-				    -- HEAT
-				    -- Main.TimeFHeat NULL mới thuộc scope
-				    -- =========================================
+								ProcessScope AS (
 				
-				    SELECT
-				        'Heat' AS ProcessGroup,
-				        2 AS SortOrder,
+								    -- =========================================
+								    -- ROUGH
+								    -- Main.ToHeat NULL mới thuộc scope
+								    -- =========================================
 				
-				        b.AUFNR,
-				        b.FinalQty,
+								    SELECT
+								        'Rough' AS ProcessGroup,
+								        1 AS SortOrder,
 				
-				        'Heat Finish' AS FinalConfirmProcess
+								        b.AUFNR,
+								        b.FinalQty,
 				
-				    FROM Base b
+								        'To Heat' AS FinalConfirmProcess
 				
-				    WHERE b.ProcessGrp2 IN (
-				        'Heat',
-				        'Rough'
-				    )
+								    FROM Base b
 				
-				      AND b.TimeFHeat IS NULL
+								    WHERE b.ProcessGrp2 = 'Rough'
 				
-				
-				    UNION ALL
+								      AND b.ToHeat IS NULL
 				
 				
-				    -- =========================================
-				    -- FINE
-				    -- Main.ToPK NULL mới thuộc scope
-				    -- =========================================
-				
-				    SELECT
-				        'Fine' AS ProcessGroup,
-				        3 AS SortOrder,
-				
-				        b.AUFNR,
-				        b.FinalQty,
-				
-				        'To Packing' AS FinalConfirmProcess
-				
-				    FROM Base b
-				
-				    WHERE b.ToPK IS NULL
-				),
+								    UNION ALL
 				
 				
-				Summary AS (
+								    -- =========================================
+								    -- HEAT
+								    -- Main.TimeFHeat NULL mới thuộc scope
+								    -- =========================================
 				
-				    SELECT
-				        ps.ProcessGroup,
-				        ps.SortOrder,
+								    SELECT
+								        'Heat' AS ProcessGroup,
+								        2 AS SortOrder,
 				
+								        b.AUFNR,
+								        b.FinalQty,
 				
-				        COUNT_BIG(*)
-				            AS RequiredOrderCount,
+								        'Heat Finish' AS FinalConfirmProcess
 				
+								    FROM Base b
 				
-				        SUM(
-				            CAST(
-				                ps.FinalQty
-				                AS DECIMAL(18, 2)
-				            )
-				        ) AS RequiredTotalQty,
+								    WHERE b.ProcessGrp2 IN (
+								        'Heat',
+								        'Rough'
+								    )
 				
-				
-				        COUNT_BIG(
-				            c.AUNFR
-				        ) AS ConfirmedOrderCount,
-				
-				
-				        SUM(
-				            CASE
-				                WHEN c.AUNFR IS NOT NULL
-				                THEN CAST(
-				                    ps.FinalQty
-				                    AS DECIMAL(18, 2)
-				                )
-				
-				                ELSE CAST(
-				                    0
-				                    AS DECIMAL(18, 2)
-				                )
-				            END
-				        ) AS ConfirmedTotalQty
+								      AND b.TimeFHeat IS NULL
 				
 				
-				    FROM ProcessScope ps
+								    UNION ALL
 				
 				
-				    LEFT JOIN Confirmed c
-				        ON c.AUNFR = ps.AUFNR
-				       AND c.ProcessGrp =
-				           ps.FinalConfirmProcess
+								    -- =========================================
+								    -- FINE
+								    -- Main.ToPK NULL mới thuộc scope
+								    -- =========================================
+				
+								    SELECT
+								        'Fine' AS ProcessGroup,
+								        3 AS SortOrder,
+				
+								        b.AUFNR,
+								        b.FinalQty,
+				
+								        'To Packing' AS FinalConfirmProcess
+				
+								    FROM Base b
+				
+								    WHERE b.ToPK IS NULL
+								),
 				
 				
-				    GROUP BY
-				        ps.ProcessGroup,
-				        ps.SortOrder
-				)
+								Summary AS (
+				
+								    SELECT
+								        ps.ProcessGroup,
+								        ps.SortOrder,
 				
 				
-				SELECT
-				    ProcessGroup,
+								        COUNT_BIG(*)
+								            AS RequiredOrderCount,
 				
-				    RequiredOrderCount,
 				
-				    ISNULL(
-				        RequiredTotalQty,
-				        0
-				    ) AS RequiredTotalQty,
+								        SUM(
+								            CAST(
+								                ps.FinalQty
+								                AS DECIMAL(18, 2)
+								            )
+								        ) AS RequiredTotalQty,
 				
-				    ConfirmedOrderCount,
 				
-				    ISNULL(
-				        ConfirmedTotalQty,
-				        0
-				    ) AS ConfirmedTotalQty
+								        COUNT_BIG(
+								            c.AUNFR
+								        ) AS ConfirmedOrderCount,
 				
-				FROM Summary
 				
-				ORDER BY SortOrder
+								        SUM(
+								            CASE
+								                WHEN c.AUNFR IS NOT NULL
+								                THEN CAST(
+								                    ps.FinalQty
+								                    AS DECIMAL(18, 2)
+								                )
+				
+								                ELSE CAST(
+								                    0
+								                    AS DECIMAL(18, 2)
+								                )
+								            END
+								        ) AS ConfirmedTotalQty
+				
+				
+								    FROM ProcessScope ps
+				
+				
+								    LEFT JOIN Confirmed c
+								        ON c.AUNFR = ps.AUFNR
+								       AND c.ProcessGrp =
+								           ps.FinalConfirmProcess
+				
+				
+								    GROUP BY
+								        ps.ProcessGroup,
+								        ps.SortOrder
+								)
+				
+				
+								SELECT
+								    ProcessGroup,
+				
+								    RequiredOrderCount,
+				
+								    ISNULL(
+								        RequiredTotalQty,
+								        0
+								    ) AS RequiredTotalQty,
+				
+								    ConfirmedOrderCount,
+				
+								    ISNULL(
+								        ConfirmedTotalQty,
+								        0
+								    ) AS ConfirmedTotalQty
+				
+								FROM Summary
+				
+								ORDER BY SortOrder
 				
 				""";
 
