@@ -1,17 +1,15 @@
 package com.example.backlogbe.repository.backlog;
 
-import com.example.backlogbe.dto.backlog.BacklogFilterRequest;
-import com.example.backlogbe.dto.backlog.BacklogMainDto;
-import com.example.backlogbe.dto.backlog.BacklogStatusSummaryDto;
-import com.example.backlogbe.dto.backlog.BacklogStatusSummaryItemDto;
+import com.example.backlogbe.dto.backlog.*;
 import lombok.RequiredArgsConstructor;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
 import java.math.BigDecimal;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Locale;
+import java.sql.Date;
+import java.time.LocalDate;
+import java.util.*;
+
 @Repository
 @RequiredArgsConstructor
 public class BacklogMainRepository {
@@ -742,13 +740,21 @@ public class BacklogMainRepository {
 // STATUS SUMMARY
 // =========================================================
 
+// =========================================================
+// STATUS SUMMARY
+// =========================================================
+
 	public BacklogStatusSummaryDto findStatusSummary(
 			BacklogFilterRequest request
 	) {
 
-		// Summary được group theo Status.
-		// Vì vậy bỏ filter Status để các status card
-		// luôn hiển thị và có thể click chuyển qua lại.
+		// =====================================================
+		// REMOVE STATUS FILTER
+		//
+		// Summary cần hiển thị toàn bộ status.
+		// Các filter khác vẫn được áp dụng bình thường.
+		// =====================================================
+
 		BacklogFilterRequest summaryRequest =
 				removeCurrentFieldFilter(
 						request,
@@ -760,14 +766,20 @@ public class BacklogMainRepository {
 						summaryRequest
 				);
 
-
 		// =====================================================
 		// TOTAL
+		//
+		// Giữ nguyên business hiện tại:
+		// - COUNT_BIG(*)
+		// - SUM(KWMENG)
+		// - cùng filter với matrix
+		// - bỏ Status filter
 		// =====================================================
 
 		String totalSql = """
 				SELECT
 				    COUNT_BIG(*) AS TotalPoCount,
+				
 				    COALESCE(
 				        SUM(
 				            CAST(
@@ -777,44 +789,69 @@ public class BacklogMainRepository {
 				        ),
 				        0
 				    ) AS TotalQty
+				
 				FROM F2_Backlog_Main
 				"""
 				+ queryParts.where();
 
+		record TotalResult(
+				long totalPoCount,
+				BigDecimal totalQty
+		) {
+		}
 
-		BacklogStatusSummaryDto total =
+		TotalResult total =
 				jdbcTemplate.queryForObject(
 						totalSql,
 
 						(rs, rowNum) ->
-								new BacklogStatusSummaryDto(
+								new TotalResult(
 										rs.getLong(
 												"TotalPoCount"
 										),
+
 										rs.getBigDecimal(
 												"TotalQty"
-										),
-										List.of()
+										)
 								),
 
 						queryParts.params()
 								.toArray()
 				);
 
-
 		// =====================================================
-		// STATUS GROUP
+		// STATUS + DATE MATRIX
+		//
+		// Status:
+		// lấy trực tiếp từ DB.
+		//
+		// Date:
+		// ExportD -> yyyy-MM-dd
 		// =====================================================
 
-		String statusSql = """
+		String matrixSql = """
+				WITH SummarySource AS (
+				    SELECT
+				        CAST(ExportD AS DATE) AS SummaryDate,
+				
+				        COALESCE(
+				            NULLIF(
+				                LTRIM(RTRIM(Status)),
+				                ''
+				            ),
+				            '(Blank)'
+				        ) AS SummaryStatus,
+				
+				        KWMENG
+				
+				    FROM F2_Backlog_Main
+				
+				    %s
+				)
+				
 				SELECT
-				    COALESCE(
-				        NULLIF(
-				            LTRIM(RTRIM(Status)),
-				            ''
-				        ),
-				        '(Blank)'
-				    ) AS Status,
+				    SummaryDate,
+				    SummaryStatus,
 				
 				    COUNT_BIG(*) AS PoCount,
 				
@@ -828,89 +865,210 @@ public class BacklogMainRepository {
 				        0
 				    ) AS TotalQty
 				
-				FROM F2_Backlog_Main
-				"""
-				+ queryParts.where()
-				+ """
+				FROM SummarySource
+				
+				WHERE SummaryDate IS NOT NULL
 				
 				GROUP BY
-				    COALESCE(
-				        NULLIF(
-				            LTRIM(RTRIM(Status)),
-				            ''
-				        ),
-				        '(Blank)'
-				    )
+				    SummaryDate,
+				    SummaryStatus
 				
 				ORDER BY
-				    CASE
-				        WHEN COALESCE(
-				            NULLIF(
-				                LTRIM(RTRIM(Status)),
-				                ''
-				            ),
-				            '(Blank)'
-				        ) = 'NY Process'
-				            THEN 1
-				
-				        WHEN COALESCE(
-				            NULLIF(
-				                LTRIM(RTRIM(Status)),
-				                ''
-				            ),
-				            '(Blank)'
-				        ) = 'NYI'
-				            THEN 2
-				
-				        WHEN COALESCE(
-				            NULLIF(
-				                LTRIM(RTRIM(Status)),
-				                ''
-				            ),
-				            '(Blank)'
-				        ) = 'WIP'
-				            THEN 3
-				
-				        WHEN COALESCE(
-				            NULLIF(
-				                LTRIM(RTRIM(Status)),
-				                ''
-				            ),
-				            '(Blank)'
-				        ) = 'WIP_FG'
-				            THEN 4
-				
+				    CASE SummaryStatus
+				        WHEN 'NY Process' THEN 1
+				        WHEN 'NYI' THEN 2
+				        WHEN 'WIP' THEN 3
+				        WHEN 'WIP_FG' THEN 4
 				        ELSE 99
 				    END,
 				
-				    Status
-				""";
+				    SummaryStatus,
+				    SummaryDate
+				""".formatted(
+				queryParts.where()
+		);
 
+		// =====================================================
+		// INTERNAL QUERY RESULT
+		// =====================================================
 
-		List<BacklogStatusSummaryItemDto> statuses =
+		record MatrixResult(
+				LocalDate date,
+				String status,
+				long poCount,
+				BigDecimal qty
+		) {
+		}
+
+		List<MatrixResult> results =
 				jdbcTemplate.query(
-						statusSql,
+						matrixSql,
 
-						(rs, rowNum) ->
-								new BacklogStatusSummaryItemDto(
-										rs.getString(
-												"Status"
-										),
-										rs.getLong(
-												"PoCount"
-										),
-										rs.getBigDecimal(
-												"TotalQty"
-										)
-								),
+						(rs, rowNum) -> {
+
+							Date sqlDate =
+									rs.getDate(
+											"SummaryDate"
+									);
+
+							return new MatrixResult(
+									sqlDate == null
+											? null
+											: sqlDate.toLocalDate(),
+
+									rs.getString(
+											"SummaryStatus"
+									),
+
+									rs.getLong(
+											"PoCount"
+									),
+
+									rs.getBigDecimal(
+											"TotalQty"
+									)
+							);
+						},
 
 						queryParts.params()
 								.toArray()
 				);
 
+		// =====================================================
+		// UNIQUE DATES
+		// =====================================================
+
+		List<LocalDate> dates =
+				results.stream()
+						.map(
+								MatrixResult::date
+						)
+						.filter(
+								date ->
+										date != null
+						)
+						.distinct()
+						.sorted()
+						.toList();
 
 		// =====================================================
-		// RESULT
+		// GROUP:
+		//
+		// Status
+		//   -> Date
+		//       -> MatrixResult
+		//
+		// LinkedHashMap giữ thứ tự query trả về.
+		// =====================================================
+
+		Map<
+				String,
+				Map<LocalDate, MatrixResult>
+				> statusMap =
+				new LinkedHashMap<>();
+
+		for (
+				MatrixResult result :
+				results
+		) {
+
+			if (
+					result.status() == null
+							|| result.date() == null
+			) {
+				continue;
+			}
+
+			statusMap
+					.computeIfAbsent(
+							result.status(),
+							key ->
+									new LinkedHashMap<>()
+					)
+					.put(
+							result.date(),
+							result
+					);
+		}
+
+		// =====================================================
+		// BUILD RESPONSE ROWS
+		//
+		// Mỗi status luôn có đủ tất cả dates.
+		//
+		// Nếu status không có data tại một date:
+		// poCount = 0
+		// qty     = 0
+		// =====================================================
+
+		List<BacklogStatusSummaryRowDto> rows =
+				new ArrayList<>();
+
+		for (
+				Map.Entry<
+						String,
+						Map<LocalDate, MatrixResult>
+						> entry :
+				statusMap.entrySet()
+		) {
+
+			String status =
+					entry.getKey();
+
+			Map<LocalDate, MatrixResult>
+					valuesByDate =
+					entry.getValue();
+
+			List<BacklogStatusSummaryCellDto>
+					values =
+					new ArrayList<>();
+
+			for (
+					LocalDate date :
+					dates
+			) {
+
+				MatrixResult value =
+						valuesByDate.get(
+								date
+						);
+
+				if (value == null) {
+
+					values.add(
+							new BacklogStatusSummaryCellDto(
+									date,
+									0L,
+									BigDecimal.ZERO
+							)
+					);
+
+					continue;
+				}
+
+				values.add(
+						new BacklogStatusSummaryCellDto(
+								date,
+
+								value.poCount(),
+
+								value.qty() == null
+										? BigDecimal.ZERO
+										: value.qty()
+						)
+				);
+			}
+
+			rows.add(
+					new BacklogStatusSummaryRowDto(
+							status,
+							values
+					)
+			);
+		}
+
+		// =====================================================
+		// RESPONSE
 		// =====================================================
 
 		if (total == null) {
@@ -918,17 +1076,20 @@ public class BacklogMainRepository {
 			return new BacklogStatusSummaryDto(
 					0L,
 					BigDecimal.ZERO,
-					statuses
+					dates,
+					rows
 			);
 		}
 
-
 		return new BacklogStatusSummaryDto(
 				total.totalPoCount(),
+
 				total.totalQty() == null
 						? BigDecimal.ZERO
 						: total.totalQty(),
-				statuses
+
+				dates,
+				rows
 		);
 	}
 
