@@ -5,6 +5,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
+import java.math.BigDecimal;
+import java.sql.Timestamp;
 import java.util.List;
 
 @Repository
@@ -13,78 +15,143 @@ public class OdbfRepository {
 
 	private final JdbcTemplate jdbcTemplate;
 
-
-	// =========================================================
-	// SUMMARY
-	// =========================================================
-
 	public List<OdbfSummaryDto> findSummary() {
 
 		String sql = """
+				WITH od AS (
+				    SELECT
+				        CAST(
+				            ExportD - IssueD
+				            AS INT
+				        ) AS IssueLT,
+				
+				        IIF(
+				            (
+				                PRT_ADDCMT2 LIKE '%Bu%'
+				                OR AUFNR LIKE '72%'
+				            ),
+				            '',
+				            IIF(
+				                CAST(
+				                    ExportD - IssueD
+				                    AS INT
+				                )
+				                -
+				                COALESCE(
+				                    WaitingDays,
+				                    IIF(
+				                        ProductGrp = 'Retainer',
+				                        3,
+				                        IIF(
+				                            ProductGrp = 'Sprue Bush'
+				                            OR ProductGrp = 'Taper Block',
+				                            1,
+				                            0
+				                        )
+				                    )
+				                )
+				                <= 1,
+				                'ShortLT',
+				                ''
+				            )
+				        ) AS ShortLT,
+				
+				        *
+				
+				    FROM F2_Backlog_Main
+				
+				    WHERE
+				        CountODBF <> 'No Count'
+				),
+				
+				bl AS (
+				    SELECT
+				        IIF(
+				            COALESCE(
+				                ToPK,
+				                PK_Received
+				            ) > ExportD,
+				            'Late',
+				            'OK'
+				        ) AS ODBF_Judge,
+				
+				        *
+				
+				    FROM od
+				
+				    WHERE
+				        ShortLT <> 'ShortLT'
+				)
+				
 				SELECT
-				    bl.ProductGrp,
-				    bl.Status2,
-				    bl.ExportD,
-				    COUNT(bl.AUFNR) AS CountPO,
+				    ProductGrp,
+				    ODBF_Judge,
+				    ExportD,
+				
+				    COUNT(AUFNR) AS CountPO,
+				
 				    COALESCE(
 				        SUM(
 				            CAST(
-				                COALESCE(bl.FinalQty, 0)
+				                COALESCE(
+				                    FinalQty,
+				                    0
+				                )
 				                AS DECIMAL(38, 4)
 				            )
 				        ),
 				        0
 				    ) AS SumQty
 				
-				FROM F2_Backlog_Main bl
+				FROM bl
 				
-				WHERE bl.DIV = 'PR'
-				
-				  AND bl.ExportD BETWEEN
-				      DATEADD(DAY, -2, GETDATE())
-				      AND DATEADD(DAY, 7, GETDATE())
+				WHERE
+				    Div = 'PR'
+				    AND ShortLT = ''
 				
 				GROUP BY
-				    bl.ProductGrp,
-				    bl.Status2,
-				    bl.ExportD
+				    ProductGrp,
+				    ODBF_Judge,
+				    ExportD
 				
 				ORDER BY
-				    bl.ProductGrp,
-				    bl.Status2,
-				    bl.ExportD
+				    ProductGrp,
+				    ExportD,
+				    ODBF_Judge
 				""";
-
 
 		return jdbcTemplate.query(
 				sql,
+				(rs, rowNum) -> {
 
-				(rs, rowNum) ->
-						new OdbfSummaryDto(
-								rs.getString(
-										"ProductGrp"
-								),
+					Timestamp exportTimestamp =
+							rs.getTimestamp("ExportD");
 
-								rs.getString(
-										"Status2"
-								),
+					BigDecimal sumQty =
+							rs.getBigDecimal("SumQty");
 
-								rs.getTimestamp(
-										"ExportD"
-								) == null
-										? null
-										: rs.getTimestamp(
-										"ExportD"
-								).toLocalDateTime(),
+					return new OdbfSummaryDto(
+							rs.getString("ProductGrp"),
 
-								rs.getLong(
-										"CountPO"
-								),
+							rs.getString("ODBF_Judge"),
 
-								rs.getBigDecimal(
-										"SumQty"
-								)
-						)
+							exportTimestamp == null
+									? null
+									: exportTimestamp.toLocalDateTime(),
+
+							rs.getLong("CountPO"),
+
+							sumQty == null
+									? BigDecimal.ZERO
+									: sumQty,
+
+							// Service sẽ tính
+							null,
+
+							// Service sẽ tính
+							null
+					);
+				}
 		);
 	}
 }

@@ -8,6 +8,8 @@ public record OdbfSummaryDto(
 		String status2,
 		LocalDateTime exportD,
 		Long countPo,
-		BigDecimal sumQty
+		BigDecimal sumQty,
+		BigDecimal poRatio,
+		BigDecimal qtyRatio
 ) {
 }
