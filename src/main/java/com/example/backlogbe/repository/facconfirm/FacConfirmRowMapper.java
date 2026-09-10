@@ -79,6 +79,19 @@ public class FacConfirmRowMapper
 						"FinalQty"
 				),
 
+				// =========================================
+				// WAITING DAYS
+				// =========================================
+
+				rs.getObject(
+						"WaitingDays",
+						Integer.class
+				),
+
+				// =========================================
+				// HEAT
+				// =========================================
+
 				rs.getObject(
 						"HasHeatProcess",
 						Boolean.class
@@ -94,9 +107,18 @@ public class FacConfirmRowMapper
 						Boolean.class
 				),
 
+				rs.getObject(
+						"IsMolypden",
+						Boolean.class
+				),
+
 				rs.getString(
 						"Note"
 				),
+
+				// =========================================
+				// PROCESS DATETIME
+				// =========================================
 
 				toLocalDateTime(
 						rs.getTimestamp(

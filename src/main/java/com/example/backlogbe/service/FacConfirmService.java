@@ -136,8 +136,12 @@ public class FacConfirmService {
 			return "TD";
 		}
 
+		if (value.equalsIgnoreCase("Molypden")) {
+			return "Molypden";
+		}
+
 		throw new IllegalArgumentException(
-				"heatType must be All, Normal, DC53 or TD"
+				"heatType must be All, Normal, DC53, TD or Molypden"
 		);
 	}
 

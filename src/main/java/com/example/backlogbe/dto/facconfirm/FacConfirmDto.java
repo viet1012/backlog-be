@@ -36,13 +36,25 @@ public record FacConfirmDto(
 
 		BigDecimal finalQty,
 
+		// =========================================
+		// HEAT
+		// =========================================
+
+		Integer waitingDays,
+
 		Boolean hasHeatProcess,
 
 		Boolean isDC53,
 
 		Boolean isTD,
 
+		Boolean isMolypden,
+
 		String note,
+
+		// =========================================
+		// PROCESS DATETIME
+		// =========================================
 
 		@JsonSerialize(using = SmartDateTimeSerializer.class)
 		LocalDateTime toDrill,

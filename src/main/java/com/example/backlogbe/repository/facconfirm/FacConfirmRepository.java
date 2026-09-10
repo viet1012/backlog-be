@@ -86,54 +86,6 @@ public class FacConfirmRepository {
 			    GROUP BY AUNFR
 			),
 			
-			-- =========================================================
-			-- PO CÓ CÔNG ĐOẠN HEAT
-			-- =========================================================
-			HeatProcess AS (
-			    SELECT DISTINCT
-			        r.AUFNR
-			    FROM [MANUFASPCPD].[dbo].[MANUFA_F_PD_DT_REQ_DTL1] r
-			    WHERE UPPER(
-			        LTRIM(
-			            RTRIM(
-			                ISNULL(r.AFVC_LTXA1, '')
-			            )
-			        )
-			    ) IN (
-			        'INDUCTION H.T.',
-			        'H.T.',
-			        'H.T. (CARBURIZING)',
-			        'H.T. (INDUCTION)',
-			        'H.T. (OIL)',
-			        'H.T. (VACCUME)',
-			        'H.T.(CARBURIZING)',
-			        'H.T.(OIL)',
-			        'H.T.(OIL)/H.T. (VACCUME)',
-			        'H.T. (F3)',
-			        'HEAT',
-			        'H.T.(CARBURIZING) (F3)'
-			    )
-			),
-			
-			-- =========================================================
-			-- PO CÓ AGING (5 DAYS)
-			-- =========================================================
-			Aging5DaysProcess AS (
-			    SELECT DISTINCT
-			        r.AUFNR
-			    FROM [MANUFASPCPD].[dbo].[MANUFA_F_PD_DT_REQ_DTL1] r
-			    WHERE UPPER(
-			        LTRIM(
-			            RTRIM(
-			                ISNULL(r.AFVC_LTXA1, '')
-			            )
-			        )
-			    ) = 'AGING (5 DAYS)'
-			),
-			
-			-- =========================================================
-			-- FAC CONFIRM DATA
-			-- =========================================================
 			FacData AS (
 			    SELECT
 			        bl.FERTH,
@@ -156,6 +108,9 @@ public class FacConfirmRepository {
 			        bl.Classify,
 			        bl.ProcessGrp2,
 			        bl.Div,
+			
+			        bl.WaitingDays,
+			        bl.Heat_Note AS RawHeatNote,
 			
 			        -- =================================================
 			        -- PO KHÔNG CẦN FAC CONFIRM
@@ -185,22 +140,27 @@ public class FacConfirmRepository {
 			        -- =================================================
 			        CAST(
 			            CASE
-			                WHEN hp.AUFNR IS NOT NULL
-			                THEN 1
-			                ELSE 0
+			                WHEN UPPER(
+			                    LTRIM(
+			                        RTRIM(
+			                            ISNULL(bl.Heat_Note, '')
+			                        )
+			                    )
+			                ) = 'NO HEAT'
+			                THEN 0
+			
+			                ELSE 1
 			            END
 			            AS BIT
 			        ) AS HasHeatProcess,
 			
 			        -- =================================================
 			        -- IS DC53
-			        --
-			        -- DC53 = Có Heat + Aging (5 Days)
+			        -- WaitingDays = 5
 			        -- =================================================
 			        CAST(
 			            CASE
-			                WHEN hp.AUFNR IS NOT NULL
-			                 AND ag.AUFNR IS NOT NULL
+			                WHEN bl.WaitingDays = 5
 			                THEN 1
 			                ELSE 0
 			            END
@@ -209,30 +169,11 @@ public class FacConfirmRepository {
 			
 			        -- =================================================
 			        -- IS TD
-			        --
-			        -- TD = Có Heat
-			        --    + PNAME bắt đầu HF_TD... hoặc TD...
+			        -- WaitingDays = 2
 			        -- =================================================
 			        CAST(
 			            CASE
-			                WHEN hp.AUFNR IS NOT NULL
-			                 AND (
-			                        UPPER(
-			                            LTRIM(
-			                                RTRIM(
-			                                    ISNULL(bl.PNAME, '')
-			                                )
-			                            )
-			                        ) LIKE 'HF[_]TD%'
-			
-			                     OR UPPER(
-			                            LTRIM(
-			                                RTRIM(
-			                                    ISNULL(bl.PNAME, '')
-			                                )
-			                            )
-			                        ) LIKE 'TD%'
-			                 )
+			                WHEN bl.WaitingDays = 2
 			                THEN 1
 			                ELSE 0
 			            END
@@ -240,53 +181,48 @@ public class FacConfirmRepository {
 			        ) AS IsTD,
 			
 			        -- =================================================
-			        -- NOTE
-			        --
-			        -- Priority:
-			        -- 1. Không có Heat
-			        -- 2. DC53
-			        -- 3. TD
+			        -- IS MOLYPDEN
+			        -- WaitingDays = 7
+			        -- =================================================
+			        CAST(
+			            CASE
+			                WHEN bl.WaitingDays = 7
+			                THEN 1
+			                ELSE 0
+			            END
+			            AS BIT
+			        ) AS IsMolypden,
+			
+			        -- =================================================
+			        -- HEAT NOTE
+			        -- Theo đúng query nghiệp vụ
 			        -- =================================================
 			        CASE
-			            WHEN hp.AUFNR IS NULL
+			            WHEN bl.WaitingDays = 5
+			            THEN N'DC53 chờ 5 ngày'
+			
+			            WHEN bl.WaitingDays = 2
+			            THEN N'TD chờ 2 ngày'
+			
+			            WHEN bl.WaitingDays = 7
+			            THEN N'Molypden chờ 7 ngày'
+			
+			            WHEN UPPER(
+			                LTRIM(
+			                    RTRIM(
+			                        ISNULL(bl.Heat_Note, '')
+			                    )
+			                )
+			            ) = 'NO HEAT'
 			            THEN N'Không có Heat'
 			
-			            WHEN hp.AUFNR IS NOT NULL
-			             AND ag.AUFNR IS NOT NULL
-			            THEN N'DC53 - Chờ 5 ngày'
-			
-			            WHEN hp.AUFNR IS NOT NULL
-			             AND (
-			                    UPPER(
-			                        LTRIM(
-			                            RTRIM(
-			                                ISNULL(bl.PNAME, '')
-			                            )
-			                        )
-			                    ) LIKE 'HF[_]TD%'
-			
-			                 OR UPPER(
-			                        LTRIM(
-			                            RTRIM(
-			                                ISNULL(bl.PNAME, '')
-			                            )
-			                        )
-			                    ) LIKE 'TD%'
-			             )
-			            THEN N'TD - Chờ 2 ngày'
-			
-			            ELSE NULL
+			            ELSE N''
 			        END AS Note,
 			
 			        -- =================================================
 			        -- PROCESS DATETIME
-			        --
-			        -- Priority:
-			        -- F2_Backlog_Main
-			        --      ↓ NULL
-			        -- F2_Backlog_Fac_Confirm
+			        -- Main ưu tiên, FacConfirm fallback
 			        -- =================================================
-			
 			        COALESCE(
 			            bl.ToDrill,
 			            cp.Confirm_ToDrill
@@ -316,65 +252,41 @@ public class FacConfirmRepository {
 			
 			    LEFT JOIN ConfirmPivot cp
 			        ON cp.AUNFR = bl.AUFNR
-			
-			    LEFT JOIN HeatProcess hp
-			        ON hp.AUFNR = bl.AUFNR
-			
-			    LEFT JOIN Aging5DaysProcess ag
-			        ON ag.AUFNR = bl.AUFNR
 			)
 			
 			""";
 	private static final String DETAIL_COLUMNS = """
-			
 			SELECT
-			
 			    d.FERTH,
-			
 			    d.ProductGrp,
-			
 			    d.AUFNR,
-			
 			    d.ZGLOBAL_CODE,
-			
 			    d.PNAME,
-			
 			    d.IssueD,
-			
 			    d.ExportD,
-			
 			    d.CusId,
-			
 			    d.ShipBy,
-			
 			    d.MTO_ID,
-			
 			    d.PRT_ADDCMT2,
-			
 			    d.CurrentProcess,
-			
 			    d.FinalQty,
 			
+			    d.WaitingDays,
+			
 			    d.HasHeatProcess,
-			
 			    d.IsDC53,
-			
-				d.IsTD,
+			    d.IsTD,
+			    d.IsMolypden,
 			
 			    d.Note,
 			
 			    d.ToDrill,
-			
 			    d.ToHeat,
-			
 			    d.Heat_Start,
-			
 			    d.Heat_Finish,
-			
 			    d.ToPK
 			
 			FROM FacData d
-			
 			""";
 	private final JdbcTemplate jdbcTemplate;
 	private final FacConfirmFilterSqlBuilder filterBuilder;
@@ -577,8 +489,9 @@ public class FacConfirmRepository {
 				where.append(
 						"""
 								
-								AND d.IsDC53 = 0
-								AND d.IsTD = 0
+									 AND d.IsDC53 = 0
+									 AND d.IsTD = 0
+									 AND d.IsMolypden = 0
 								
 								"""
 				);
@@ -588,8 +501,7 @@ public class FacConfirmRepository {
 				where.append(
 						"""
 								
-								AND d.HasHeatProcess = 1
-								AND d.IsDC53 = 1
+									 AND d.IsDC53 = 1
 								
 								"""
 				);
@@ -599,9 +511,17 @@ public class FacConfirmRepository {
 				where.append(
 						"""
 								
-								AND d.HasHeatProcess = 1
-								AND d.IsTD = 1
-								AND d.IsDC53 = 0
+									 AND d.IsTD = 1
+								
+								"""
+				);
+
+			} else if ("Molypden".equalsIgnoreCase(heatType)) {
+
+				where.append(
+						"""
+								
+									 AND d.IsMolypden = 1
 								
 								"""
 				);
