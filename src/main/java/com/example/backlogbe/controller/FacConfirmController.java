@@ -115,26 +115,20 @@ public class FacConfirmController {
 	// PROCESS GROUPS
 	// =========================================================
 
-	@GetMapping("/process-groups")
+
+	@PostMapping("/process-groups")
 	public ResponseEntity<
 			List<FacConfirmProcessGroupDto>
 			> getProcessGroups(
 
-			@RequestParam
-			String div,
-
-			@RequestParam
-			@DateTimeFormat(
-					iso = DateTimeFormat.ISO.DATE
-			)
-			LocalDate expD
+			@RequestBody
+			FacConfirmProcessGroupRequest request
 
 	) {
 
 		return ResponseEntity.ok(
 				service.getProcessGroups(
-						div,
-						expD
+						request
 				)
 		);
 	}

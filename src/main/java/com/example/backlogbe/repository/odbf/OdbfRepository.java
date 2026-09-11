@@ -15,11 +15,13 @@ public class OdbfRepository {
 
 	private final JdbcTemplate jdbcTemplate;
 
+
 	public List<OdbfSummaryDto> findSummary() {
 
 		String sql = """
 				WITH od AS (
 				    SELECT
+				
 				        CAST(
 				            ExportD - IssueD
 				            AS INT
@@ -66,35 +68,69 @@ public class OdbfRepository {
 				
 				bl AS (
 				    SELECT
+				
 				        IIF(
 				            COALESCE(
-				                ToPK,
-				                PK_Received
-				            ) > ExportD,
+				                od.ToPK,
+				                od.PK_Received
+				            ) > od.ExportD
+				            OR COALESCE(
+				                od.ToPK,
+				                od.PK_Received
+				            ) IS NULL,
 				            'Late',
 				            'OK'
 				        ) AS ODBF_Judge,
 				
-				        *
+				        od.*,
+				
+				        fac.ConfirmFnTime,
+				
+				        IIF(
+				            COALESCE(
+				                od.ToPK,
+				                od.PK_Received
+				            ) IS NULL,
+				
+				            IIF(
+				                fac.ConfirmFnTime < od.ExportD,
+				                'OK',
+				                'Late'
+				            ),
+				
+				            NULL
+				        ) AS FacSimu
 				
 				    FROM od
 				
+				    LEFT JOIN F2_Backlog_Fac_Confirm fac
+				        ON od.AUFNR = fac.AUNFR
+				       AND fac.ProcessGrp = 'To Packing'
+				
 				    WHERE
-				        ShortLT <> 'ShortLT'
+				        od.ShortLT <> 'ShortLT'
 				)
 				
 				SELECT
-				    ProductGrp,
-				    ODBF_Judge,
-				    ExportD,
 				
-				    COUNT(AUFNR) AS CountPO,
+				    bl.ProductGrp,
+				
+				    COALESCE(
+				        bl.FacSimu,
+				        bl.ODBF_Judge
+				    ) AS Status2,
+				
+				    bl.ExportD,
+				
+				    COUNT(
+				        bl.AUFNR
+				    ) AS CountPO,
 				
 				    COALESCE(
 				        SUM(
 				            CAST(
 				                COALESCE(
-				                    FinalQty,
+				                    bl.FinalQty,
 				                    0
 				                )
 				                AS DECIMAL(38, 4)
@@ -106,49 +142,66 @@ public class OdbfRepository {
 				FROM bl
 				
 				WHERE
-				    Div = 'PR'
-				    AND ShortLT = ''
+				    bl.Div = 'PR'
+				    AND bl.ShortLT = ''
 				
 				GROUP BY
-				    ProductGrp,
-				    ODBF_Judge,
-				    ExportD
+				    bl.ProductGrp,
+				    bl.ExportD,
+				    COALESCE(
+				        bl.FacSimu,
+				        bl.ODBF_Judge
+				    )
 				
 				ORDER BY
-				    ProductGrp,
-				    ExportD,
-				    ODBF_Judge
+				    bl.ProductGrp,
+				    bl.ExportD,
+				    Status2
 				""";
+
 
 		return jdbcTemplate.query(
 				sql,
 				(rs, rowNum) -> {
 
 					Timestamp exportTimestamp =
-							rs.getTimestamp("ExportD");
+							rs.getTimestamp(
+									"ExportD"
+							);
 
 					BigDecimal sumQty =
-							rs.getBigDecimal("SumQty");
+							rs.getBigDecimal(
+									"SumQty"
+							);
+
 
 					return new OdbfSummaryDto(
-							rs.getString("ProductGrp"),
+							rs.getString(
+									"ProductGrp"
+							),
 
-							rs.getString("ODBF_Judge"),
+							// field thứ 2 của DTO = status2
+							rs.getString(
+									"Status2"
+							),
 
 							exportTimestamp == null
 									? null
-									: exportTimestamp.toLocalDateTime(),
+									: exportTimestamp
+									.toLocalDateTime(),
 
-							rs.getLong("CountPO"),
+							rs.getLong(
+									"CountPO"
+							),
 
 							sumQty == null
 									? BigDecimal.ZERO
 									: sumQty,
 
-							// Service sẽ tính
+							// Service tính poRatio
 							null,
 
-							// Service sẽ tính
+							// Service tính qtyRatio
 							null
 					);
 				}

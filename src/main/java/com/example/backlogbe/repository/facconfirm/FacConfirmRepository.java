@@ -902,278 +902,23 @@ public class FacConfirmRepository {
 	// PROCESS GROUP SUMMARY
 	// =========================================================
 
+
 	public List<FacConfirmProcessGroupDto> findProcessGroups(
 			String div,
-			LocalDate expD
+			LocalDate expD,
+			String classify,
+			String heatType,
+			List<FacConfirmFilterItem> filters,
+			String logicOperator
 	) {
-
-		/*
-		 * Business:
-		 *
-		 * Rough:
-		 *   final confirm = To Heat
-		 *   Required khi Backlog_Main.ToHeat IS NULL
-		 *
-		 * Heat:
-		 *   final confirm = Heat Finish
-		 *   Required khi Backlog_Main.TimeFHeat IS NULL
-		 *
-		 * Fine:
-		 *   final confirm = To Packing
-		 *   Required khi Backlog_Main.ToPK IS NULL
-		 *
-		 * F2_Backlog_Main LUÔN ưu tiên.
-		 *
-		 * Nếu Main đã có final time:
-		 *   -> không thuộc Fac Confirm scope
-		 *   -> không tính Required
-		 *   -> không tính Confirmed
-		 *
-		 * Nếu Main final time NULL:
-		 *   -> thuộc Required
-		 *
-		 * Trong Required:
-		 *   có Fac Confirm record tương ứng
-		 *   -> Confirmed
-		 */
-
-		String sql = """
-				
-				WITH Base AS (
-
-				    SELECT
-				        bl.AUFNR,
-				        bl.ProcessGrp2,
-
-				        ISNULL(
-				            bl.FinalQty,
-				            0
-				        ) AS FinalQty,
-
-				        bl.ToHeat,
-				        bl.TimeFHeat,
-				        bl.ToPK
-				
-				FROM F2_Backlog_Main bl
-				
-				WHERE bl.ExportD <= ?
-				
-				  AND (
-				         bl.Div = ?
-				      OR (
-				             ? = 'GU'
-				             AND bl.Div LIKE '%G'
-				         )
-				  )
-				
-				  AND bl.ProcessGrp2 IN (
-				      'Fine',
-				      'Heat',
-				      'Rough'
-				  )
-				
-				  -- =========================================
-				  -- BỎ CÁC PO KHÔNG CẦN FAC CONFIRM
-				  -- =========================================
-				
-				  AND CASE
-				          WHEN (
-				                 bl.ProductGrp = 'Cam'
-				
-				              OR bl.FERTH LIKE 'Backing Plug%'
-				
-				              OR bl.PHCD LIKE 'J%'
-				
-				              OR bl.PRT_ADDCMT2 LIKE '%Xuat kho%'
-				
-				              OR bl.ProcessGrp2 = 'MTO'
-				
-				              OR (
-				                     bl.ZGLOBAL_CODE IS NULL
-				                     AND bl.PRT_ADDCMT2 NOT LIKE '%FNK%'
-				                 )
-				
-				              OR bl.Status2 <> 'ON PROGRESS'
-				          )
-				          THEN 1
-				          ELSE 0
-				      END = 0
-								),
-				
-				
-								Confirmed AS (
-				
-								    SELECT DISTINCT
-								        fc.AUNFR,
-								        fc.ProcessGrp
-				
-								    FROM F2Database.dbo.F2_Backlog_Fac_Confirm fc
-				
-								    WHERE fc.ConfirmFnTime IS NOT NULL
-				
-								      AND fc.ProcessGrp IN (
-								          'To Heat',
-								          'Heat Finish',
-								          'To Packing'
-								      )
-								),
-				
-				
-								ProcessScope AS (
-				
-								    -- =========================================
-								    -- ROUGH
-								    -- Main.ToHeat NULL mới thuộc scope
-								    -- =========================================
-				
-								    SELECT
-								        'Rough' AS ProcessGroup,
-								        1 AS SortOrder,
-				
-								        b.AUFNR,
-								        b.FinalQty,
-				
-								        'To Heat' AS FinalConfirmProcess
-				
-								    FROM Base b
-				
-								    WHERE b.ProcessGrp2 = 'Rough'
-				
-								      AND b.ToHeat IS NULL
-				
-				
-								    UNION ALL
-				
-				
-								    -- =========================================
-								    -- HEAT
-								    -- Main.TimeFHeat NULL mới thuộc scope
-								    -- =========================================
-				
-								    SELECT
-								        'Heat' AS ProcessGroup,
-								        2 AS SortOrder,
-				
-								        b.AUFNR,
-								        b.FinalQty,
-				
-								        'Heat Finish' AS FinalConfirmProcess
-				
-								    FROM Base b
-				
-								    WHERE b.ProcessGrp2 IN (
-								        'Heat',
-								        'Rough'
-								    )
-				
-								      AND b.TimeFHeat IS NULL
-				
-				
-								    UNION ALL
-				
-				
-								    -- =========================================
-								    -- FINE
-								    -- Main.ToPK NULL mới thuộc scope
-								    -- =========================================
-				
-								    SELECT
-								        'Fine' AS ProcessGroup,
-								        3 AS SortOrder,
-				
-								        b.AUFNR,
-								        b.FinalQty,
-				
-								        'To Packing' AS FinalConfirmProcess
-				
-								    FROM Base b
-				
-								    WHERE b.ToPK IS NULL
-								),
-				
-				
-								Summary AS (
-				
-								    SELECT
-								        ps.ProcessGroup,
-								        ps.SortOrder,
-				
-				
-								        COUNT_BIG(*)
-								            AS RequiredOrderCount,
-				
-				
-								        SUM(
-								            CAST(
-								                ps.FinalQty
-								                AS DECIMAL(18, 2)
-								            )
-								        ) AS RequiredTotalQty,
-				
-				
-								        COUNT_BIG(
-								            c.AUNFR
-								        ) AS ConfirmedOrderCount,
-				
-				
-								        SUM(
-								            CASE
-								                WHEN c.AUNFR IS NOT NULL
-								                THEN CAST(
-								                    ps.FinalQty
-								                    AS DECIMAL(18, 2)
-								                )
-				
-								                ELSE CAST(
-								                    0
-								                    AS DECIMAL(18, 2)
-								                )
-								            END
-								        ) AS ConfirmedTotalQty
-				
-				
-								    FROM ProcessScope ps
-				
-				
-								    LEFT JOIN Confirmed c
-								        ON c.AUNFR = ps.AUFNR
-								       AND c.ProcessGrp =
-								           ps.FinalConfirmProcess
-				
-				
-								    GROUP BY
-								        ps.ProcessGroup,
-								        ps.SortOrder
-								)
-				
-				
-								SELECT
-								    ProcessGroup,
-				
-								    RequiredOrderCount,
-				
-								    ISNULL(
-								        RequiredTotalQty,
-								        0
-								    ) AS RequiredTotalQty,
-				
-								    ConfirmedOrderCount,
-				
-								    ISNULL(
-								        ConfirmedTotalQty,
-								        0
-								    ) AS ConfirmedTotalQty
-				
-								FROM Summary
-				
-								ORDER BY SortOrder
-				
-				""";
-
 
 		List<Object> params =
 				new ArrayList<>();
 
+
+		// =========================================================
+		// BASE PARAMS
+		// =========================================================
 		params.add(
 				Timestamp.valueOf(
 						expD.atStartOfDay()
@@ -1182,6 +927,360 @@ public class FacConfirmRepository {
 
 		params.add(div);
 		params.add(div);
+
+
+		// =========================================================
+		// BASE WHERE
+		// Không có procGrp ở đây vì cần tính cả 3 nút cùng lúc
+		// =========================================================
+
+		StringBuilder where =
+				new StringBuilder(
+						"""
+								
+								WHERE d.ExportD <= ?
+								
+								  AND (
+										 d.Div = ?
+									  OR (
+										   ? = 'GU'
+										   AND d.Div LIKE '%G'
+									  )
+								  )
+								
+								  AND d.IsNoCount = 0
+								
+								"""
+				);
+
+
+		// =========================================================
+		// CLASSIFY
+		// =========================================================
+
+		if (
+				classify != null
+						&& !classify.isBlank()
+		) {
+
+			if (
+					"Sale".equalsIgnoreCase(
+							classify
+					)
+			) {
+
+				where.append(
+						"""
+								
+								AND LTRIM(
+									RTRIM(
+										ISNULL(
+											d.Classify,
+											''
+										)
+									)
+								) = 'Sale'
+								
+								"""
+				);
+
+			} else if (
+					"Stock".equalsIgnoreCase(
+							classify
+					)
+			) {
+
+				where.append(
+						"""
+								
+								AND LTRIM(
+									RTRIM(
+										ISNULL(
+											d.Classify,
+											''
+										)
+									)
+								) <> 'Sale'
+								
+								"""
+				);
+			}
+		}
+
+
+		// =========================================================
+		// HEAT TYPE
+		// =========================================================
+
+		if (
+				heatType != null
+						&& !"All".equalsIgnoreCase(
+						heatType
+				)
+		) {
+
+			if (
+					"Normal".equalsIgnoreCase(
+							heatType
+					)
+			) {
+
+				where.append(
+						"""
+								
+								AND d.IsDC53 = 0
+								AND d.IsTD = 0
+								AND d.IsMolypden = 0
+								
+								"""
+				);
+
+			} else if (
+					"DC53".equalsIgnoreCase(
+							heatType
+					)
+			) {
+
+				where.append(
+						"""
+								
+								AND d.IsDC53 = 1
+								
+								"""
+				);
+
+			} else if (
+					"TD".equalsIgnoreCase(
+							heatType
+					)
+			) {
+
+				where.append(
+						"""
+								
+								AND d.IsTD = 1
+								
+								"""
+				);
+
+			} else if (
+					"Molypden".equalsIgnoreCase(
+							heatType
+					)
+			) {
+
+				where.append(
+						"""
+								
+								AND d.IsMolypden = 1
+								
+								"""
+				);
+			}
+		}
+
+
+		// =========================================================
+		// EXCEL FILTER
+		// =========================================================
+
+		FacConfirmFilterSqlBuilder.QueryParts filterParts =
+				filterBuilder.build(
+						filters,
+						logicOperator
+				);
+
+		where.append(
+				filterParts.sql()
+		);
+
+		params.addAll(
+				filterParts.params()
+		);
+
+
+		// =========================================================
+		// SQL
+		// =========================================================
+
+		String sql =
+				FAC_DATA_CTE
+						+ """
+						
+						,
+						FilteredBase AS (
+						
+						    SELECT
+						        d.*
+						
+						    FROM FacData d
+						
+						"""
+						+ where
+						+ """
+						
+						),
+						
+						
+						Confirmed AS (
+						
+						    SELECT DISTINCT
+						        fc.AUNFR,
+						        fc.ProcessGrp
+						
+						    FROM F2Database.dbo.F2_Backlog_Fac_Confirm fc
+						
+						    WHERE fc.ConfirmFnTime IS NOT NULL
+						
+						      AND fc.ProcessGrp IN (
+						          'To Heat',
+						          'Heat Finish',
+						          'To Packing'
+						      )
+						),
+						
+						
+						ProcessScope AS (
+						
+						    -- =========================================
+						    -- ROUGH
+						    -- =========================================
+						    SELECT
+						        'Rough' AS ProcessGroup,
+						        1 AS SortOrder,
+						        b.AUFNR,
+						        b.FinalQty,
+						        'To Heat' AS FinalConfirmProcess
+						
+						    FROM FilteredBase b
+						
+						    WHERE (
+						           b.ProcessGrp2 = 'Rough'
+						           OR b.ProcessGrp2 IS NULL
+						    )
+						
+						
+						    UNION ALL
+						
+						
+						    -- =========================================
+						    -- HEAT
+						    -- =========================================
+						    SELECT
+						        'Heat' AS ProcessGroup,
+						        2 AS SortOrder,
+						        b.AUFNR,
+						        b.FinalQty,
+						        'Heat Finish' AS FinalConfirmProcess
+						
+						    FROM FilteredBase b
+						
+						    WHERE (
+						           b.ProcessGrp2 IN (
+						               'Heat',
+						               'Rough'
+						           )
+						           OR b.ProcessGrp2 IS NULL
+						    )
+						
+						
+						    UNION ALL
+						
+						
+						    -- =========================================
+						    -- FINE
+						    -- =========================================
+						    SELECT
+						        'Fine' AS ProcessGroup,
+						        3 AS SortOrder,
+						        b.AUFNR,
+						        b.FinalQty,
+						        'To Packing' AS FinalConfirmProcess
+						
+						    FROM FilteredBase b
+						
+						    WHERE (
+						           b.ProcessGrp2 IN (
+						               'Fine',
+						               'Heat',
+						               'Rough'
+						           )
+						           OR b.ProcessGrp2 IS NULL
+						    )
+						),
+						
+						
+						Summary AS (
+						
+						    SELECT
+						        ps.ProcessGroup,
+						        ps.SortOrder,
+						
+						        COUNT_BIG(*)
+						            AS RequiredOrderCount,
+						
+						        SUM(
+						            CAST(
+						                ps.FinalQty
+						                AS DECIMAL(18, 2)
+						            )
+						        ) AS RequiredTotalQty,
+						
+						        COUNT_BIG(
+						            c.AUNFR
+						        ) AS ConfirmedOrderCount,
+						
+						        SUM(
+						            CASE
+						                WHEN c.AUNFR IS NOT NULL
+						                THEN CAST(
+						                    ps.FinalQty
+						                    AS DECIMAL(18, 2)
+						                )
+						
+						                ELSE CAST(
+						                    0
+						                    AS DECIMAL(18, 2)
+						                )
+						            END
+						        ) AS ConfirmedTotalQty
+						
+						    FROM ProcessScope ps
+						
+						    LEFT JOIN Confirmed c
+						        ON c.AUNFR = ps.AUFNR
+						       AND c.ProcessGrp =
+						           ps.FinalConfirmProcess
+						
+						    GROUP BY
+						        ps.ProcessGroup,
+						        ps.SortOrder
+						)
+						
+						
+						SELECT
+						    ProcessGroup,
+						
+						    RequiredOrderCount,
+						
+						    ISNULL(
+						        RequiredTotalQty,
+						        0
+						    ) AS RequiredTotalQty,
+						
+						    ConfirmedOrderCount,
+						
+						    ISNULL(
+						        ConfirmedTotalQty,
+						        0
+						    ) AS ConfirmedTotalQty
+						
+						FROM Summary
+						
+						ORDER BY
+						    SortOrder
+						
+						""";
 
 
 		return jdbcTemplate.query(

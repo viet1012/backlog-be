@@ -408,26 +408,96 @@ public class FacConfirmService {
 	// PROCESS GROUP SUMMARY
 	// =========================================================
 
+// =========================================================
+// PROCESS GROUP SUMMARY
+// =========================================================
+
 	@Transactional(readOnly = true)
 	public List<FacConfirmProcessGroupDto> getProcessGroups(
-			String div,
-			LocalDate expD
+			FacConfirmProcessGroupRequest request
 	) {
+
+		// =====================================================
+		// REQUEST
+		// =====================================================
+
+		if (request == null) {
+			throw new IllegalArgumentException(
+					"request is required"
+			);
+		}
+
+
+		// =====================================================
+		// DIV
+		// =====================================================
 
 		String safeDiv =
 				normalizeDiv(
-						div
+						request.div()
 				);
 
 
+		// =====================================================
+		// EXPORT DATE
+		// =====================================================
+
 		validateExportDate(
-				expD
+				request.expD()
 		);
 
 
+		// =====================================================
+		// CLASSIFY
+		// =====================================================
+
+		String safeClassify =
+				normalizeClassify(
+						request.classify()
+				);
+
+
+		// =====================================================
+		// HEAT TYPE
+		// =====================================================
+
+		String safeHeatType =
+				normalizeHeatType(
+						request.heatType()
+				);
+
+
+		// =====================================================
+		// EXCEL FILTER
+		// =====================================================
+
+		List<FacConfirmFilterItem> safeFilters =
+				normalizeFilters(
+						request.filters()
+				);
+
+
+		// =====================================================
+		// LOGIC OPERATOR
+		// =====================================================
+
+		String safeLogicOperator =
+				normalizeLogicOperator(
+						request.logicOperator()
+				);
+
+
+		// =====================================================
+		// REPOSITORY
+		// =====================================================
+
 		return repository.findProcessGroups(
 				safeDiv,
-				expD
+				request.expD(),
+				safeClassify,
+				safeHeatType,
+				safeFilters,
+				safeLogicOperator
 		);
 	}
 
