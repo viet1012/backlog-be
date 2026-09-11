@@ -24,22 +24,36 @@ public class BacklogMainController {
     // SEARCH + FILTER + SORT
     // =========================================================
 
+
     @PostMapping("/search")
     public PageResponse<BacklogMainDto> search(
-            @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size,
-            @RequestParam(required = false) String sort,
-            @RequestBody(required = false) BacklogFilterRequest filter
+            @RequestParam(defaultValue = "0")
+            int page,
+
+            @RequestParam(defaultValue = "20")
+            int size,
+
+            @RequestParam(
+                    required = false,
+                    defaultValue = ""
+            )
+            String search,
+
+            @RequestParam(required = false)
+            String sort,
+
+            @RequestBody(required = false)
+            BacklogFilterRequest filter
     ) {
 
         return service.getAll(
                 page,
                 size,
+                search,
                 filter,
                 sort
         );
     }
-
 
     // =========================================================
     // EXCEL FILTER OPTIONS

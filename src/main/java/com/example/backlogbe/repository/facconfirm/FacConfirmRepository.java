@@ -367,43 +367,57 @@ public class FacConfirmRepository {
 				new StringBuilder(
 						"""
 								
-								WHERE d.ExportD <= ?
+								 WHERE d.ExportD <= ?
 								
 								  AND (
 								
-										 (
-											  ? = 'Fine'
-											  AND d.ProcessGrp2 IN (
-												  'Fine',
-												  'Heat',
-												  'Rough'
-											  )
-										 )
+									   (
+											? = 'Fine'
+											AND (
+												   d.ProcessGrp2 IN (
+													   'Fine',
+													   'Heat',
+													   'Rough'
+												   )
+												OR d.ProcessGrp2 IS NULL
+											)
+									   )
 								
-									  OR (
-											  ? = 'Heat'
-											  AND d.ProcessGrp2 IN (
-												  'Heat',
-												  'Rough'
-											  )
-										 )
+									   OR
 								
-									  OR (
-											  ? = 'Rough'
-											  AND d.ProcessGrp2 = 'Rough'
-										 )
+									   (
+											? = 'Heat'
+											AND (
+												   d.ProcessGrp2 IN (
+													   'Heat',
+													   'Rough'
+												   )
+												OR d.ProcessGrp2 IS NULL
+											)
+									   )
+								
+									   OR
+								
+									   (
+											? = 'Rough'
+											AND (
+												   d.ProcessGrp2 = 'Rough'
+												OR d.ProcessGrp2 IS NULL
+											)
+									   )
 								  )
 								
 								  AND (
+										 d.Div = ?
 								
-										  d.Div = ?
-								
-									   OR (
-											  ? = 'GU'
-											  AND d.Div LIKE '%G'
-										  )
+									  OR (
+										   ? = 'GU'
+										   AND d.Div LIKE '%G'
+									  )
 								  )
+								
 								  AND d.IsNoCount = 0
+								
 								"""
 				);
 
@@ -461,16 +475,14 @@ public class FacConfirmRepository {
 
 				where.append(
 						"""
-								
-								AND LTRIM(
-									  RTRIM(
-											ISNULL(
-												  d.Classify,
-												  ''
-											)
-									  )
-								) <> 'Sale'
-								
+									AND LTRIM(
+										  RTRIM(
+												ISNULL(
+													  d.Classify,
+													  ''
+												)
+										  )
+									) <> 'Sale'
 								"""
 				);
 			}

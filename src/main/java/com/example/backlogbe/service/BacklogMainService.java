@@ -27,6 +27,7 @@ public class BacklogMainService {
     public PageResponse<BacklogMainDto> getAll(
             int page,
             int size,
+            String search,
             BacklogFilterRequest filter,
             String sort
     ) {
@@ -47,6 +48,12 @@ public class BacklogMainService {
                 );
 
 
+        String safeSearch =
+                search == null
+                        ? ""
+                        : search.trim();
+
+
         BacklogFilterRequest safeFilter =
                 filter == null
                         ? new BacklogFilterRequest(
@@ -58,7 +65,8 @@ public class BacklogMainService {
 
         long total =
                 repository.countFiltered(
-                        safeFilter
+                        safeFilter,
+                        safeSearch
                 );
 
 
@@ -67,6 +75,7 @@ public class BacklogMainService {
                         safePage,
                         safeSize,
                         safeFilter,
+                        safeSearch,
                         sort
                 );
 

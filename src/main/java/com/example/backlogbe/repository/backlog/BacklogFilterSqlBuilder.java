@@ -110,6 +110,31 @@ public class BacklogFilterSqlBuilder {
 		);
 	}
 
+	private String normalizeTextFilterValue(
+			String field,
+			String value
+	) {
+
+		if (value == null) {
+			return "";
+		}
+
+		String normalized =
+				value.trim();
+
+		if (
+				"Status".equalsIgnoreCase(
+						field
+				)
+						&& "Finished".equalsIgnoreCase(
+						normalized
+				)
+		) {
+			return "WIP_FG";
+		}
+
+		return normalized;
+	}
 
 	private String buildText(
 			String column,
@@ -121,9 +146,10 @@ public class BacklogFilterSqlBuilder {
 				normalize(filter.operator());
 
 		String value =
-				filter.value() == null
-						? ""
-						: filter.value().trim();
+				normalizeTextFilterValue(
+						filter.field(),
+						filter.value()
+				);
 
 
 		return switch (operator) {
@@ -140,7 +166,13 @@ public class BacklogFilterSqlBuilder {
 								: filter.values()
 								.stream()
 								.filter(v -> v != null)
-								.map(String::trim)
+								.map(
+										v ->
+												normalizeTextFilterValue(
+														filter.field(),
+														v
+												)
+								)
 								.distinct()
 								.toList();
 
@@ -854,6 +886,7 @@ public class BacklogFilterSqlBuilder {
 						+ ". Expected yyyy-MM-dd."
 		);
 	}
+
 	private String resolveSeparator(
 			String logicOperator
 	) {

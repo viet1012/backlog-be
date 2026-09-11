@@ -73,23 +73,138 @@ public class BacklogMainRepository {
 	// =========================================================
 	// FIND FILTERED
 	// =========================================================
+	private void appendGlobalSearch(
+			String search,
+			List<String> conditions,
+			List<Object> params
+	) {
+
+		if (
+				search == null
+						|| search.isBlank()
+		) {
+			return;
+		}
+
+		String keyword =
+				"%"
+						+ search.trim()
+						+ "%";
+
+		conditions.add(
+				"""
+						(
+							CAST(VBELN AS NVARCHAR(500)) LIKE ?
+							OR CAST(ZGLOBAL_CODE AS NVARCHAR(500)) LIKE ?
+							OR CAST(PIER_AUFNR AS NVARCHAR(500)) LIKE ?
+							OR CAST(AUFNR AS NVARCHAR(500)) LIKE ?
+							OR CAST(PNAME AS NVARCHAR(500)) LIKE ?
+							OR CAST(RRONYU1 AS NVARCHAR(500)) LIKE ?
+							OR CAST(MTO_ID AS NVARCHAR(500)) LIKE ?
+							OR CAST(CurrentProcess AS NVARCHAR(500)) LIKE ?
+							OR CAST(ShipBy AS NVARCHAR(500)) LIKE ?
+						)
+						"""
+		);
+
+		for (
+				int i = 0;
+				i < 9;
+				i++
+		) {
+			params.add(keyword);
+		}
+	}
 
 	public List<BacklogMainDto> findFiltered(
 			int page,
 			int size,
 			BacklogFilterRequest request,
+			String search,
 			String sort
 	) {
 
 		int offset =
 				page * size;
 
-
 		var queryParts =
 				filterBuilder.build(
 						request
 				);
 
+		List<String> conditions =
+				new ArrayList<>();
+
+		List<Object> params =
+				new ArrayList<>();
+
+
+		// =========================================================
+		// COLUMN FILTERS
+		// =========================================================
+
+		if (
+				queryParts.where() != null
+						&& !queryParts.where().isBlank()
+		) {
+
+			String filterWhere =
+					queryParts.where()
+							.trim();
+
+			if (
+					filterWhere.regionMatches(
+							true,
+							0,
+							"WHERE ",
+							0,
+							6
+					)
+			) {
+				filterWhere =
+						filterWhere.substring(6);
+			}
+
+			conditions.add(
+					"("
+							+ filterWhere
+							+ ")"
+			);
+
+			params.addAll(
+					queryParts.params()
+			);
+		}
+
+
+		// =========================================================
+		// GLOBAL SEARCH
+		// =========================================================
+
+		appendGlobalSearch(
+				search,
+				conditions,
+				params
+		);
+
+
+		// =========================================================
+		// WHERE
+		// =========================================================
+
+		String whereSql =
+				conditions.isEmpty()
+						? ""
+						: " WHERE "
+						+ String.join(
+						" AND ",
+						conditions
+				);
+
+
+		// =========================================================
+		// ORDER
+		// =========================================================
 
 		String orderBy =
 				buildOrderBy(
@@ -97,9 +212,13 @@ public class BacklogMainRepository {
 				);
 
 
+		// =========================================================
+		// SQL
+		// =========================================================
+
 		String sql =
 				SELECT_COLUMNS
-						+ queryParts.where()
+						+ whereSql
 						+ orderBy
 						+ """
 						
@@ -107,11 +226,6 @@ public class BacklogMainRepository {
 						FETCH NEXT ? ROWS ONLY
 						""";
 
-
-		List<Object> params =
-				new ArrayList<>(
-						queryParts.params()
-				);
 
 		params.add(offset);
 		params.add(size);
@@ -130,7 +244,8 @@ public class BacklogMainRepository {
 	// =========================================================
 
 	public long countFiltered(
-			BacklogFilterRequest request
+			BacklogFilterRequest request,
+			String search
 	) {
 
 		var queryParts =
@@ -138,20 +253,84 @@ public class BacklogMainRepository {
 						request
 				);
 
+		List<String> conditions =
+				new ArrayList<>();
+
+		List<Object> params =
+				new ArrayList<>();
+
+
+		// =========================================================
+		// COLUMN FILTERS
+		// =========================================================
+
+		if (
+				queryParts.where() != null
+						&& !queryParts.where().isBlank()
+		) {
+
+			String filterWhere =
+					queryParts.where()
+							.trim();
+
+			if (
+					filterWhere.regionMatches(
+							true,
+							0,
+							"WHERE ",
+							0,
+							6
+					)
+			) {
+				filterWhere =
+						filterWhere.substring(6);
+			}
+
+			conditions.add(
+					"("
+							+ filterWhere
+							+ ")"
+			);
+
+			params.addAll(
+					queryParts.params()
+			);
+		}
+
+
+		// =========================================================
+		// GLOBAL SEARCH
+		// =========================================================
+
+		appendGlobalSearch(
+				search,
+				conditions,
+				params
+		);
+
+
+		String whereSql =
+				conditions.isEmpty()
+						? ""
+						: " WHERE "
+						+ String.join(
+						" AND ",
+						conditions
+				);
+
 
 		String sql = """
 				SELECT COUNT_BIG(*)
 				FROM F2_Backlog_Main
 				"""
-				+ queryParts.where();
+				+ whereSql;
 
 
 		Long total =
 				jdbcTemplate.queryForObject(
 						sql,
 						Long.class,
-						queryParts.params()
-								.toArray()
+						params.toArray()
 				);
 
 
@@ -159,7 +338,6 @@ public class BacklogMainRepository {
 				? 0L
 				: total;
 	}
-
 
 	// =========================================================
 	// EXCEL FILTER DISTINCT VALUES
@@ -834,13 +1012,18 @@ public class BacklogMainRepository {
 				    SELECT
 				        CAST(ExportD AS DATE) AS SummaryDate,
 				
-				        COALESCE(
-				            NULLIF(
+				        CASE
+				            WHEN LTRIM(RTRIM(Status)) = 'WIP_FG'
+				                THEN 'Finished'
+				
+				            WHEN NULLIF(
 				                LTRIM(RTRIM(Status)),
 				                ''
-				            ),
-				            '(Blank)'
-				        ) AS SummaryStatus,
+				            ) IS NULL
+				                THEN '(Blank)'
+				
+				            ELSE LTRIM(RTRIM(Status))
+				        END AS SummaryStatus,
 				
 				        KWMENG
 				
@@ -878,7 +1061,7 @@ public class BacklogMainRepository {
 				        WHEN 'NY Process' THEN 1
 				        WHEN 'NYI' THEN 2
 				        WHEN 'WIP' THEN 3
-				        WHEN 'WIP_FG' THEN 4
+				        WHEN 'Finished' THEN 4
 				        ELSE 99
 				    END,
 				
