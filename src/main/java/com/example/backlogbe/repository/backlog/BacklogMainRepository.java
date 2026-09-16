@@ -986,7 +986,7 @@ public class BacklogMainRepository {
 				    COALESCE(
 				        SUM(
 				            CAST(
-				                COALESCE(KWMENG, 0)
+				                COALESCE(FinalQty, 0)
 				                AS DECIMAL(38, 4)
 				            )
 				        ),
@@ -1050,7 +1050,7 @@ public class BacklogMainRepository {
 				            ELSE LTRIM(RTRIM(Status))
 				        END AS SummaryStatus,
 				
-				        KWMENG
+				        FinalQty
 				
 				    FROM F2_Backlog_Main
 				
@@ -1066,7 +1066,7 @@ public class BacklogMainRepository {
 				    COALESCE(
 				        SUM(
 				            CAST(
-				                COALESCE(KWMENG, 0)
+				                COALESCE(FinalQty, 0)
 				                AS DECIMAL(38, 4)
 				            )
 				        ),
