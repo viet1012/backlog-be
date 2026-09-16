@@ -1,6 +1,5 @@
 package com.example.backlogbe.repository.backlog;
 
-
 import com.example.backlogbe.dto.backlog.BacklogMainDto;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Component;
@@ -107,6 +106,31 @@ public class BacklogRowMapper
 				rs.getString("C_KEYCONTROL1"),
 				rs.getString("C_KEYCONTROL3"),
 
+				// =================================================
+				// NEW DATABASE COLUMNS
+				// =================================================
+
+				rs.getString("Classify"),
+				rs.getString("ProcessGrp2"),
+				rs.getString("ProductGrp"),
+				rs.getString("CountODBF"),
+				rs.getString("Status2"),
+
+				toLocalDateTime(
+						rs.getTimestamp("Pickup_Time")
+				),
+
+				toLocalDateTime(
+						rs.getTimestamp("PK_Received")
+				),
+
+				getNullableDouble(
+						rs,
+						"WaitingDays"
+				),
+
+				rs.getString("Heat_Note"),
+
 				rs.getString("Updater"),
 
 				toLocalDateTime(
@@ -115,20 +139,17 @@ public class BacklogRowMapper
 		);
 	}
 
-
-	private Integer getNullableInteger(
+	private Double getNullableDouble(
 			ResultSet rs,
 			String column
 	) throws SQLException {
 
-		int value =
-				rs.getInt(column);
+		double value = rs.getDouble(column);
 
 		return rs.wasNull()
 				? null
 				: value;
 	}
-
 
 	private LocalDateTime toLocalDateTime(
 			Timestamp timestamp

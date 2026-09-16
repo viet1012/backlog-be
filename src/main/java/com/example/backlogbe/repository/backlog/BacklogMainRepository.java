@@ -57,6 +57,15 @@ public class BacklogMainRepository {
 			    C_PRODH,
 			    C_KEYCONTROL1,
 			    C_KEYCONTROL3,
+			    Classify,
+			    ProcessGrp2,
+			    ProductGrp,
+			    CountODBF,
+			    Status2,
+			    Pickup_Time,
+			    PK_Received,
+			    WaitingDays,
+			    Heat_Note,
 			    Updater,
 			    UpdatedAt
 			FROM F2_Backlog_Main
@@ -762,12 +771,10 @@ public class BacklogMainRepository {
 				field == null
 						|| field.isBlank()
 		) {
-
 			throw new IllegalArgumentException(
 					"Backlog field is required"
 			);
 		}
-
 
 		return switch (
 				field.trim()
@@ -855,6 +862,28 @@ public class BacklogMainRepository {
 
 			case "C_KEYCONTROL3" -> "C_KEYCONTROL3";
 
+			// =========================================================
+			// NEW COLUMNS
+			// =========================================================
+
+			case "Classify" -> "Classify";
+
+			case "ProcessGrp2" -> "ProcessGrp2";
+
+			case "ProductGrp" -> "ProductGrp";
+
+			case "CountODBF" -> "CountODBF";
+
+			case "Status2" -> "Status2";
+
+			case "Pickup_Time" -> "Pickup_Time";
+
+			case "PK_Received" -> "PK_Received";
+
+			case "WaitingDays" -> "WaitingDays";
+
+			case "Heat_Note" -> "Heat_Note";
+
 			case "Updater" -> "Updater";
 
 			case "UpdatedAt" -> "UpdatedAt";
@@ -915,12 +944,8 @@ public class BacklogMainRepository {
 
 
 	// =========================================================
-// STATUS SUMMARY
-// =========================================================
-
-// =========================================================
-// STATUS SUMMARY
-// =========================================================
+	// STATUS SUMMARY
+	// =========================================================
 
 	public BacklogStatusSummaryDto findStatusSummary(
 			BacklogFilterRequest request
@@ -1058,8 +1083,8 @@ public class BacklogMainRepository {
 				
 				ORDER BY
 				    CASE SummaryStatus
-				        WHEN 'NY Process' THEN 1
-				        WHEN 'NYI' THEN 2
+				        WHEN 'NYI' THEN 1
+				        WHEN 'NY Process' THEN 2
 				        WHEN 'WIP' THEN 3
 				        WHEN 'Finished' THEN 4
 				        ELSE 99
