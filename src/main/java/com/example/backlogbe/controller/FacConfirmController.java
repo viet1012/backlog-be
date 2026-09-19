@@ -1,10 +1,16 @@
 package com.example.backlogbe.controller;
 
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Map;
 
 import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -14,15 +20,18 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
 
 import com.example.backlogbe.dto.PageResponse;
 import com.example.backlogbe.dto.facconfirm.FacConfirmDto;
+import com.example.backlogbe.dto.facconfirm.FacConfirmExcelExportRequest;
 import com.example.backlogbe.dto.facconfirm.FacConfirmFilterOptionsRequest;
 import com.example.backlogbe.dto.facconfirm.FacConfirmProcessGroupDto;
 import com.example.backlogbe.dto.facconfirm.FacConfirmProcessGroupRequest;
 import com.example.backlogbe.dto.facconfirm.FacConfirmProcessTimeRequest;
 import com.example.backlogbe.dto.facconfirm.FacConfirmSearchRequest;
 import com.example.backlogbe.service.ClientMachineService;
+import com.example.backlogbe.service.FacConfirmExcelService;
 import com.example.backlogbe.service.FacConfirmProcessTimeService;
 import com.example.backlogbe.service.FacConfirmService;
 
@@ -42,6 +51,12 @@ public class FacConfirmController {
 			processTimeService;
 
 	private final ClientMachineService clientMachineService;
+
+	private final FacConfirmExcelService excelService;
+
+
+	private static final String EXCEL_CONTENT_TYPE =
+			"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 
 	// =========================================================
 	// DETAIL
@@ -232,6 +247,90 @@ public class FacConfirmController {
 						"machineName", machineName
 				)
 		);
+	}
+
+
+	// =========================================================
+	// EXPORT EXCEL
+	//
+	// POST /api/fac-confirm/export/excel
+	// =========================================================
+
+	@PostMapping(
+        value = "/export/excel",
+        consumes = MediaType.APPLICATION_JSON_VALUE
+)
+public ResponseEntity<StreamingResponseBody> exportExcel(
+
+        @RequestBody(required = false)
+        FacConfirmExcelExportRequest request
+) {
+
+    excelService.validateExportRequest(
+            request
+    );
+
+
+    String timestamp =
+            LocalDateTime.now()
+                    .format(
+                            DateTimeFormatter.ofPattern(
+                                    "yyyyMMdd_HHmmss"
+                            )
+                    );
+
+
+    String fileName =
+            "fac_confirm_"
+                    + timestamp
+                    + ".xlsx";
+
+
+    String encodedFileName =
+            URLEncoder.encode(
+                            fileName,
+                            StandardCharsets.UTF_8
+                    )
+                    .replace(
+                            "+",
+                            "%20"
+                    );
+
+
+    StreamingResponseBody body =
+            outputStream ->
+                    excelService.export(
+                            outputStream,
+                            request
+                    );
+
+
+    return ResponseEntity
+            .ok()
+
+            .header(
+                    HttpHeaders.CONTENT_DISPOSITION,
+
+                    "attachment; filename=\""
+                            + fileName
+                            + "\"; filename*=UTF-8''"
+                            + encodedFileName
+            )
+
+            .header(
+                    HttpHeaders.CACHE_CONTROL,
+                    "no-store, no-cache, must-revalidate"
+            )
+
+            .contentType(
+                    MediaType.parseMediaType(
+                            EXCEL_CONTENT_TYPE
+                    )
+            )
+
+            .body(
+                    body
+            );
 	}
 
 

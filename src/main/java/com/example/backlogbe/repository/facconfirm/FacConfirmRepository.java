@@ -1,11 +1,13 @@
 package com.example.backlogbe.repository.facconfirm;
 
+import java.sql.ResultSet;
 import java.sql.Timestamp;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.RowCallbackHandler;
 import org.springframework.stereotype.Repository;
 
 import com.example.backlogbe.dto.facconfirm.FacConfirmDto;
@@ -843,6 +845,104 @@ public class FacConfirmRepository {
 
 		return total == null ? 0L : total;
 	}
+
+	// =========================================================
+	// EXPORT STREAM (NO PAGINATION)
+	//
+	// Dùng chung FacData + base filters + Excel column filters
+	// + global search với search()/countSearch().
+	// =========================================================
+
+	public void streamSearchForExport(
+			String div,
+			LocalDate expD,
+			String procGrp,
+			String classify,
+			String heatType,
+			String search,
+			List<FacConfirmFilterItem> filters,
+			String logicOperator,
+			FacConfirmExportRowConsumer consumer
+	) {
+
+		if (consumer == null) {
+			throw new IllegalArgumentException(
+					"Export row consumer is required"
+			);
+		}
+
+		List<Object> params = new ArrayList<>();
+
+		String baseWhere =
+				buildBaseWhere(
+						div,
+						expD,
+						procGrp,
+						classify,
+						heatType,
+						params
+				);
+
+		FacConfirmFilterSqlBuilder.QueryParts filterParts =
+				filterBuilder.build(
+						filters,
+						logicOperator
+				);
+
+		params.addAll(filterParts.params());
+
+		String searchWhere =
+				buildGlobalSearch(
+						search,
+						params
+				);
+
+		String sql =
+				FAC_DATA_CTE
+						+ DETAIL_COLUMNS
+						+ baseWhere
+						+ filterParts.sql()
+						+ searchWhere
+						+ """
+						
+						ORDER BY
+						    d.ExportD,
+						    d.ProductGrp,
+						    d.AUFNR
+						
+						""";
+
+		jdbcTemplate.query(
+				connection -> {
+
+					var ps =
+							connection.prepareStatement(
+									sql,
+									ResultSet.TYPE_FORWARD_ONLY,
+									ResultSet.CONCUR_READ_ONLY
+							);
+
+					ps.setFetchSize(500);
+
+					for (
+							int i = 0;
+							i < params.size();
+							i++
+					) {
+
+						ps.setObject(
+								i + 1,
+								params.get(i)
+						);
+					}
+
+					return ps;
+				},
+
+				(RowCallbackHandler) rs -> consumer.accept(rs)
+		);
+	}
+
 
 	// =========================================================
 	// FILTER OPTIONS
