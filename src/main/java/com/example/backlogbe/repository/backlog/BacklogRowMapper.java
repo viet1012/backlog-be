@@ -2,6 +2,7 @@ package com.example.backlogbe.repository.backlog;
 
 import com.example.backlogbe.dto.backlog.BacklogMainDto;
 import org.springframework.jdbc.core.RowMapper;
+import org.springframework.lang.NonNull;
 import org.springframework.stereotype.Component;
 
 import java.sql.ResultSet;
@@ -15,7 +16,7 @@ public class BacklogRowMapper
 
 	@Override
 	public BacklogMainDto mapRow(
-			ResultSet rs,
+			@NonNull ResultSet rs,
 			int rowNum
 	) throws SQLException {
 

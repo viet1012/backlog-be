@@ -180,7 +180,10 @@ public class FacConfirmFilterSqlBuilder {
 								: filter.values()
 								.stream()
 								.filter(v -> v != null)
-								.map(String::trim)
+								.map(
+										item ->
+												item.trim()
+								)
 								.distinct()
 								.toList();
 
@@ -193,7 +196,8 @@ public class FacConfirmFilterSqlBuilder {
 				boolean includeBlank =
 						values.stream()
 								.anyMatch(
-										String::isEmpty
+										item ->
+												item.isEmpty()
 								);
 
 
@@ -405,7 +409,8 @@ public class FacConfirmFilterSqlBuilder {
 							)
 
 							.map(
-									String::trim
+									value ->
+											value.trim()
 							)
 
 							.map(

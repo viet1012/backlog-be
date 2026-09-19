@@ -9,6 +9,7 @@ public record FacConfirmSearchRequest(
 		String procGrp,
 		String classify,
 		String heatType,
+		String search,
 		Integer page,
 		Integer size,
 		List<FacConfirmFilterItem> filters,

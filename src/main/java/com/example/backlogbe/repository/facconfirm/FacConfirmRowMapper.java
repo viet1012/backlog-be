@@ -2,6 +2,7 @@ package com.example.backlogbe.repository.facconfirm;
 
 import com.example.backlogbe.dto.facconfirm.FacConfirmDto;
 import org.springframework.jdbc.core.RowMapper;
+import org.springframework.lang.NonNull;
 import org.springframework.stereotype.Component;
 
 import java.sql.ResultSet;
@@ -17,7 +18,7 @@ public class FacConfirmRowMapper
 
 	@Override
 	public FacConfirmDto mapRow(
-			ResultSet rs,
+			@NonNull ResultSet rs,
 			int rowNum
 	) throws SQLException {
 

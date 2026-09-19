@@ -106,6 +106,25 @@ public class FacConfirmService {
 		);
 	}
 
+	// =========================================================
+	// SEARCH
+	// =========================================================
+
+	private String normalizeSearch(
+			String search
+	) {
+
+		if (
+				search == null
+						|| search.isBlank()
+		) {
+			return null;
+		}
+
+		return search.trim();
+	}
+
+
 	private String normalizeHeatType(
 			String heatType
 	) {
@@ -230,6 +249,12 @@ public class FacConfirmService {
 				normalizeHeatType(
 						request.heatType()
 				);
+
+
+		String safeSearch =
+				normalizeSearch(
+						request.search()
+				);
 		// =====================================================
 		// PAGINATION
 		// =====================================================
@@ -273,6 +298,7 @@ public class FacConfirmService {
 						safeProcGrp,
 						safeClassify,
 						safeHeatType,
+						safeSearch,
 						safeFilters,
 						safeLogicOperator
 				);
@@ -289,6 +315,7 @@ public class FacConfirmService {
 						safeProcGrp,
 						safeClassify,
 						safeHeatType,
+						safeSearch,
 						safePage,
 						safeSize,
 						safeFilters,

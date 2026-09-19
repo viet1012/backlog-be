@@ -3,10 +3,12 @@ package com.example.backlogbe.repository.backlog;
 import com.example.backlogbe.dto.backlog.*;
 import lombok.RequiredArgsConstructor;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.RowCallbackHandler;
 import org.springframework.stereotype.Repository;
 
 import java.math.BigDecimal;
 import java.sql.Date;
+import java.sql.ResultSet;
 import java.time.LocalDate;
 import java.util.*;
 
@@ -136,88 +138,10 @@ public class BacklogMainRepository {
 		int offset =
 				page * size;
 
-		var queryParts =
-				filterBuilder.build(
-						request
-				);
-
-		List<String> conditions =
-				new ArrayList<>();
-
-		List<Object> params =
-				new ArrayList<>();
-
-
-		// =========================================================
-		// COLUMN FILTERS
-		// =========================================================
-
-		if (
-				queryParts.where() != null
-						&& !queryParts.where().isBlank()
-		) {
-
-			String filterWhere =
-					queryParts.where()
-							.trim();
-
-			if (
-					filterWhere.regionMatches(
-							true,
-							0,
-							"WHERE ",
-							0,
-							6
-					)
-			) {
-				filterWhere =
-						filterWhere.substring(6);
-			}
-
-			conditions.add(
-					"("
-							+ filterWhere
-							+ ")"
-			);
-
-			params.addAll(
-					queryParts.params()
-			);
-		}
-
-
-		// =========================================================
-		// GLOBAL SEARCH
-		// =========================================================
-
-		appendGlobalSearch(
-				search,
-				conditions,
-				params
-		);
-
-
-		// =========================================================
-		// WHERE
-		// =========================================================
-
-		String whereSql =
-				conditions.isEmpty()
-						? ""
-						: " WHERE "
-						+ String.join(
-						" AND ",
-						conditions
-				);
-
-
-		// =========================================================
-		// ORDER
-		// =========================================================
-
-		String orderBy =
-				buildOrderBy(
-						sort
+		FilteredQuery filtered =
+				buildFilteredQuery(
+						request,
+						search
 				);
 
 
@@ -227,14 +151,19 @@ public class BacklogMainRepository {
 
 		String sql =
 				SELECT_COLUMNS
-						+ whereSql
-						+ orderBy
+						+ filtered.whereSql()
+						+ buildOrderBy(sort)
 						+ """
 						
 						OFFSET ? ROWS
 						FETCH NEXT ? ROWS ONLY
 						""";
 
+
+		List<Object> params =
+				new ArrayList<>(
+						filtered.params()
+				);
 
 		params.add(offset);
 		params.add(size);
@@ -257,74 +186,10 @@ public class BacklogMainRepository {
 			String search
 	) {
 
-		var queryParts =
-				filterBuilder.build(
-						request
-				);
-
-		List<String> conditions =
-				new ArrayList<>();
-
-		List<Object> params =
-				new ArrayList<>();
-
-
-		// =========================================================
-		// COLUMN FILTERS
-		// =========================================================
-
-		if (
-				queryParts.where() != null
-						&& !queryParts.where().isBlank()
-		) {
-
-			String filterWhere =
-					queryParts.where()
-							.trim();
-
-			if (
-					filterWhere.regionMatches(
-							true,
-							0,
-							"WHERE ",
-							0,
-							6
-					)
-			) {
-				filterWhere =
-						filterWhere.substring(6);
-			}
-
-			conditions.add(
-					"("
-							+ filterWhere
-							+ ")"
-			);
-
-			params.addAll(
-					queryParts.params()
-			);
-		}
-
-
-		// =========================================================
-		// GLOBAL SEARCH
-		// =========================================================
-
-		appendGlobalSearch(
-				search,
-				conditions,
-				params
-		);
-
-
-		String whereSql =
-				conditions.isEmpty()
-						? ""
-						: " WHERE "
-						+ String.join(
-						" AND ",
-						conditions
+		FilteredQuery filtered =
+				buildFilteredQuery(
+						request,
+						search
 				);
 
 
@@ -332,20 +197,89 @@ public class BacklogMainRepository {
 				SELECT COUNT_BIG(*)
 				FROM F2_Backlog_Main
 				"""
-				+ whereSql;
+				+ filtered.whereSql();
 
 
 		Long total =
 				jdbcTemplate.queryForObject(
 						sql,
 						Long.class,
-						params.toArray()
+						filtered.params().toArray()
 				);
 
 
 		return total == null
 				? 0L
 				: total;
+	}
+
+
+	// =========================================================
+	// EXPORT STREAM (NO PAGINATION)
+	// =========================================================
+
+	public void streamFilteredForExport(
+			BacklogFilterRequest request,
+			String search,
+			String sort,
+			BacklogExportRowConsumer consumer
+	) {
+
+		if (consumer == null) {
+			throw new IllegalArgumentException(
+					"Export row consumer is required"
+			);
+		}
+
+
+		FilteredQuery filtered =
+				buildFilteredQuery(
+						request,
+						search
+				);
+
+
+		String sql =
+				SELECT_COLUMNS
+						+ filtered.whereSql()
+						+ buildOrderBy(sort);
+
+
+		jdbcTemplate.query(
+				connection -> {
+
+					var ps =
+							connection.prepareStatement(
+									sql,
+									ResultSet.TYPE_FORWARD_ONLY,
+									ResultSet.CONCUR_READ_ONLY
+							);
+
+					ps.setFetchSize(500);
+
+
+					List<Object> params =
+							filtered.params();
+
+
+					for (
+							int i = 0;
+							i < params.size();
+							i++
+					) {
+
+						ps.setObject(
+								i + 1,
+								params.get(i)
+						);
+					}
+
+
+					return ps;
+				},
+
+				(RowCallbackHandler) rs -> consumer.accept(rs)
+		);
 	}
 
 	// =========================================================
@@ -969,14 +903,62 @@ public class BacklogMainRepository {
 						summaryRequest
 				);
 
+
+		return buildStatusSummary(
+				queryParts.where(),
+				queryParts.params()
+		);
+	}
+
+
+	// =========================================================
+	// EXPORT STATUS SUMMARY
+	//
+	// Dành riêng cho Excel export:
+	// - GIỮ Status filter
+	// - áp dụng global search
+	// - dùng chung buildFilteredQuery(...) với
+	//   streamFilteredForExport(...) để không drift dataset.
+	// =========================================================
+
+	public BacklogStatusSummaryDto findExportStatusSummary(
+			BacklogFilterRequest request,
+			String search
+	) {
+
+		FilteredQuery filtered =
+				buildFilteredQuery(
+						request,
+						search
+				);
+
+
+		return buildStatusSummary(
+				filtered.whereSql(),
+				filtered.params()
+		);
+	}
+
+
+	// =========================================================
+	// SHARED STATUS SUMMARY BUILDER
+	//
+	// Không tự quyết định filter.
+	// Caller chuẩn bị WHERE + params.
+	// =========================================================
+
+	private BacklogStatusSummaryDto buildStatusSummary(
+			String whereSql,
+			List<Object> params
+	) {
+
 		// =====================================================
 		// TOTAL
 		//
 		// Giữ nguyên business hiện tại:
 		// - COUNT_BIG(*)
-		// - SUM(KWMENG)
+		// - SUM(FinalQty)
 		// - cùng filter với matrix
-		// - bỏ Status filter
 		// =====================================================
 
 		String totalSql = """
@@ -995,7 +977,7 @@ public class BacklogMainRepository {
 				
 				FROM F2_Backlog_Main
 				"""
-				+ queryParts.where();
+				+ whereSql;
 
 		record TotalResult(
 				long totalPoCount,
@@ -1018,8 +1000,7 @@ public class BacklogMainRepository {
 										)
 								),
 
-						queryParts.params()
-								.toArray()
+						params.toArray()
 				);
 
 		// =====================================================
@@ -1093,7 +1074,7 @@ public class BacklogMainRepository {
 				    SummaryStatus,
 				    SummaryDate
 				""".formatted(
-				queryParts.where()
+				whereSql
 		);
 
 		// =====================================================
@@ -1138,8 +1119,7 @@ public class BacklogMainRepository {
 							);
 						},
 
-						queryParts.params()
-								.toArray()
+						params.toArray()
 				);
 
 		// =====================================================
@@ -1149,7 +1129,8 @@ public class BacklogMainRepository {
 		List<LocalDate> dates =
 				results.stream()
 						.map(
-								MatrixResult::date
+								result ->
+										result.date()
 						)
 						.filter(
 								date ->
@@ -1301,4 +1282,109 @@ public class BacklogMainRepository {
 		);
 	}
 
+	private record FilteredQuery(
+			String whereSql,
+			List<Object> params
+	) {
+	}
+	private FilteredQuery buildFilteredQuery(
+			BacklogFilterRequest request,
+			String search
+	) {
+
+		BacklogFilterRequest safeRequest =
+				request == null
+						? new BacklogFilterRequest(
+						List.of(),
+						"and"
+				)
+						: request;
+
+
+		var queryParts =
+				filterBuilder.build(
+						safeRequest
+				);
+
+
+		List<String> conditions =
+				new ArrayList<>();
+
+
+		List<Object> params =
+				new ArrayList<>();
+
+
+		// =========================================================
+		// COLUMN FILTERS
+		// =========================================================
+
+		if (
+				queryParts.where() != null
+						&& !queryParts.where().isBlank()
+		) {
+
+			String filterWhere =
+					queryParts.where()
+							.trim();
+
+
+			if (
+					filterWhere.regionMatches(
+							true,
+							0,
+							"WHERE ",
+							0,
+							6
+					)
+			) {
+
+				filterWhere =
+						filterWhere.substring(6);
+			}
+
+
+			conditions.add(
+					"("
+							+ filterWhere
+							+ ")"
+			);
+
+
+			params.addAll(
+					queryParts.params()
+			);
+		}
+
+
+		// =========================================================
+		// GLOBAL SEARCH
+		// =========================================================
+
+		appendGlobalSearch(
+				search,
+				conditions,
+				params
+		);
+
+
+		// =========================================================
+		// WHERE
+		// =========================================================
+
+		String whereSql =
+				conditions.isEmpty()
+						? ""
+						: " WHERE "
+						+ String.join(
+						" AND ",
+						conditions
+				);
+
+
+		return new FilteredQuery(
+				whereSql,
+				params
+		);
+	}
 }

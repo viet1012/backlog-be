@@ -184,7 +184,10 @@ public class BacklogFilterSqlBuilder {
 
 				boolean includeBlank =
 						values.stream()
-								.anyMatch(String::isEmpty);
+								.anyMatch(
+										item ->
+												item.isEmpty()
+								);
 
 
 				List<String> nonBlankValues =
@@ -354,7 +357,10 @@ public class BacklogFilterSqlBuilder {
 									v != null
 											&& !v.isBlank()
 							)
-							.map(String::trim)
+							.map(
+									value ->
+											value.trim()
+							)
 							.map(v -> {
 								try {
 									return new BigDecimal(v);

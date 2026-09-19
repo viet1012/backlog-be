@@ -1,16 +1,18 @@
 package com.example.backlogbe.repository.facconfirm;
 
-import com.example.backlogbe.dto.facconfirm.FacConfirmDto;
-import com.example.backlogbe.dto.facconfirm.FacConfirmFilterItem;
-import com.example.backlogbe.dto.facconfirm.FacConfirmProcessGroupDto;
-import lombok.RequiredArgsConstructor;
-import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.stereotype.Repository;
-
 import java.sql.Timestamp;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
+
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.stereotype.Repository;
+
+import com.example.backlogbe.dto.facconfirm.FacConfirmDto;
+import com.example.backlogbe.dto.facconfirm.FacConfirmFilterItem;
+import com.example.backlogbe.dto.facconfirm.FacConfirmProcessGroupDto;
+
+import lombok.RequiredArgsConstructor;
 
 
 @Repository
@@ -121,7 +123,6 @@ public class FacConfirmRepository {
 			                       bl.ProductGrp = 'Cam'
 			                    OR bl.FERTH LIKE 'Backing Plug%'
 			                    OR bl.PHCD LIKE 'J%'
-			                    OR bl.PRT_ADDCMT2 LIKE '%Xuat kho%'
 			                    OR bl.ProcessGrp2 = 'MTO'
 			                    OR (
 			                           bl.ZGLOBAL_CODE IS NULL
@@ -655,12 +656,68 @@ public class FacConfirmRepository {
 	// EXCEL FILTER
 	// =========================================================
 
+	// =========================================================
+	// GLOBAL SEARCH
+	//
+	// BASE WHERE đã tồn tại nên append " AND (...)".
+	// Trả về "" nếu không có keyword.
+	// =========================================================
+
+	private String buildGlobalSearch(
+			String search,
+			List<Object> params
+	) {
+
+		if (
+				search == null
+						|| search.isBlank()
+		) {
+			return "";
+		}
+
+
+		String keyword =
+				"%"
+						+ search.trim()
+						+ "%";
+
+
+		for (
+				int i = 0;
+				i < 11;
+				i++
+		) {
+			params.add(keyword);
+		}
+
+
+		return """
+				
+				 AND (
+					    CAST(d.FERTH AS NVARCHAR(500)) LIKE ?
+					 OR CAST(d.ProductGrp AS NVARCHAR(500)) LIKE ?
+					 OR CAST(d.AUFNR AS NVARCHAR(500)) LIKE ?
+					 OR CAST(d.ZGLOBAL_CODE AS NVARCHAR(500)) LIKE ?
+					 OR CAST(d.PNAME AS NVARCHAR(500)) LIKE ?
+					 OR CAST(d.CusId AS NVARCHAR(500)) LIKE ?
+					 OR CAST(d.ShipBy AS NVARCHAR(500)) LIKE ?
+					 OR CAST(d.MTO_ID AS NVARCHAR(500)) LIKE ?
+					 OR CAST(d.PRT_ADDCMT2 AS NVARCHAR(500)) LIKE ?
+					 OR CAST(d.CurrentProcess AS NVARCHAR(500)) LIKE ?
+					 OR CAST(d.Note AS NVARCHAR(500)) LIKE ?
+				 )
+				
+				""";
+	}
+
+
 	public List<FacConfirmDto> search(
 			String div,
 			LocalDate expD,
 			String procGrp,
 			String classify,
 			String heatType,
+			String search,
 			int page,
 			int size,
 			List<FacConfirmFilterItem> filters,
@@ -689,11 +746,18 @@ public class FacConfirmRepository {
 
 		params.addAll(filterParts.params());
 
+		String searchWhere =
+				buildGlobalSearch(
+						search,
+						params
+				);
+
 		String sql =
 				FAC_DATA_CTE
 						+ DETAIL_COLUMNS
 						+ baseWhere
 						+ filterParts.sql()
+						+ searchWhere
 						+ """
 						
 						ORDER BY
@@ -727,6 +791,7 @@ public class FacConfirmRepository {
 			String procGrp,
 			String classify,
 			String heatType,
+			String search,
 			List<FacConfirmFilterItem> filters,
 			String logicOperator
 	) {
@@ -751,6 +816,12 @@ public class FacConfirmRepository {
 
 		params.addAll(filterParts.params());
 
+		String searchWhere =
+				buildGlobalSearch(
+						search,
+						params
+				);
+
 		String sql =
 				FAC_DATA_CTE
 						+ """
@@ -760,7 +831,8 @@ public class FacConfirmRepository {
 						
 						"""
 						+ baseWhere
-						+ filterParts.sql();
+						+ filterParts.sql()
+						+ searchWhere;
 
 		Long total =
 				jdbcTemplate.queryForObject(
