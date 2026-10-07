@@ -4,11 +4,10 @@ import com.example.backlogbe.dto.auth.ProductionControlLoginRequest;
 import com.example.backlogbe.dto.auth.ProductionControlLoginResponse;
 import com.example.backlogbe.dto.auth.ProductionControlRegisterRequest;
 import com.example.backlogbe.dto.auth.ProductionControlRegisterResponse;
-import com.example.backlogbe.model.ProductionControlAccount;
+import com.example.backlogbe.model.PatrolAccount;
 import com.example.backlogbe.model.ProductionControlHrProfile;
 import com.example.backlogbe.repository.auth.ProductionControlAuthRepository;
 import lombok.RequiredArgsConstructor;
-import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -21,7 +20,6 @@ import java.util.Locale;
 public class ProductionControlAuthService {
 
 	private static final String STATUS_ACTIVE = "ACTIVE";
-	private static final String STATUS_LOCKED = "LOCKED";
 
 	private static final String ROLE_ADMIN = "ADMIN";
 	private static final String ROLE_USER = "USER";
@@ -29,7 +27,6 @@ public class ProductionControlAuthService {
 	private static final String ROLE_PRO = "PRO";
 
 	private final ProductionControlAuthRepository repository;
-	private final PasswordEncoder passwordEncoder;
 
 	// =========================================================
 	// REGISTER
@@ -37,8 +34,7 @@ public class ProductionControlAuthService {
 
 	@Transactional
 	public ProductionControlRegisterResponse register(
-			ProductionControlRegisterRequest request,
-			String clientId
+			ProductionControlRegisterRequest request
 	) {
 
 		String employeeId =
@@ -59,15 +55,14 @@ public class ProductionControlAuthService {
 		// HR
 		// =====================================================
 
-		ProductionControlHrProfile hr =
-				repository.findHrByEmployeeId(
-								employeeId
+		repository.findHrByEmployeeId(
+						employeeId
+				)
+				.orElseThrow(() ->
+						new IllegalArgumentException(
+								"Employee ID does not exist in company HR data."
 						)
-						.orElseThrow(() ->
-								new IllegalArgumentException(
-										"Employee ID does not exist in company HR data."
-								)
-						);
+				);
 
 
 		// =====================================================
@@ -75,73 +70,35 @@ public class ProductionControlAuthService {
 		// =====================================================
 
 		if (
-				repository.existsByEmployeeId(
+				repository.existsPatrolAccount(
 						employeeId
 				)
 		) {
 
 			throw new IllegalArgumentException(
-					"Employee ID already has an account."
+					"Employee ID already has an account. Please log in with your S-Patrol password."
 			);
 		}
 
 
 		// =====================================================
-		// ROLE
+		// CREATE ACCOUNT (HSE_Patrol_Account)
 		// =====================================================
 
-		List<String> roles =
-				determineRoles(hr);
-
-		validateRolesExist(
-				roles
-		);
-
-
-		// =====================================================
-		// CREATE ACCOUNT
-		// =====================================================
-
-		Long accountId =
-				repository.createAccount(
-						employeeId,
-						password,
-						normalizeClientId(clientId)
-				);
-
-
-		// =====================================================
-		// ASSIGN ROLE
-		// =====================================================
-
-		assignRoles(
-				accountId,
-				roles
+		repository.createPatrolAccount(
+				employeeId,
+				password
 		);
 
 
 		return new ProductionControlRegisterResponse(
-				accountId,
+				null,
 				employeeId,
 				STATUS_ACTIVE,
 				"Account created successfully."
 		);
 	}
 
-	private String normalizeClientId(
-			String clientId
-	) {
-
-		if (
-				clientId == null
-						|| clientId.isBlank()
-		) {
-
-			return "UNKNOWN";
-		}
-
-		return clientId.trim();
-	}
 	// =========================================================
 	// LOGIN
 	// =========================================================
@@ -162,59 +119,40 @@ public class ProductionControlAuthService {
 		);
 
 		// -----------------------------------------------------
-		// Account
+		// Password (HSE_Patrol_Account)
 		// -----------------------------------------------------
 
-		ProductionControlAccount account =
-				repository.findByEmployeeId(employeeId)
-						.orElseThrow(this::invalidCredentials
-						);
+		PatrolAccount patrolAccount =
+				repository.findPatrolAccount(employeeId)
+						.orElseThrow(this::invalidCredentials);
 
-		// -----------------------------------------------------
-		// Password
-		// -----------------------------------------------------
-
-//		if (!passwordEncoder.matches(
-//				password,
-//				account.passwordHash()
-//		)) {
-//			throw invalidCredentials();
-//		}
-
-		if (!password.equals(account.passwordHash())) {
+		if (!password.equals(patrolAccount.pass())) {
 			throw invalidCredentials();
 		}
-		// -----------------------------------------------------
-		// Status
-		// -----------------------------------------------------
-
-		validateAccountStatus(account);
 
 		// -----------------------------------------------------
-		// Roles
+		// HR + Roles (tính lại mỗi lần login, không lưu DB)
 		// -----------------------------------------------------
-
-		List<String> roles =
-				repository.findRolesByAccountId(
-						account.id()
-				);
 
 		/*
-		 * Trường hợp account cũ chưa có role
-		 * thì không cần chặn login.
-		 *
-		 * Tạm coi là USER.
+		 * Không có HR thì vẫn cho login,
+		 * tạm coi là USER.
 		 */
-		if (roles.isEmpty()) {
-			roles = List.of(ROLE_USER);
-		}
+		ProductionControlHrProfile hr =
+				repository.findHrByEmployeeId(employeeId)
+						.orElse(null);
+
+		List<String> roles =
+				hr != null
+						? determineRoles(hr)
+						: List.of(ROLE_USER);
 
 		// -----------------------------------------------------
 		// Last Login
 		// -----------------------------------------------------
 
-		repository.updateLastLoginAt(
-				account.id()
+		repository.updatePatrolLastLogin(
+				employeeId
 		);
 
 		// -----------------------------------------------------
@@ -222,15 +160,15 @@ public class ProductionControlAuthService {
 		// -----------------------------------------------------
 
 		return new ProductionControlLoginResponse(
-				account.id(),
-				account.employeeId(),
-				account.name(),
-				account.fac(),
-				account.dept(),
-				account.section(),
-				account.line(),
-				account.group(),
-				account.status(),
+				null,
+				employeeId,
+				hr != null ? hr.name() : null,
+				hr != null ? hr.fac() : null,
+				hr != null ? hr.dept() : null,
+				hr != null ? hr.section() : null,
+				hr != null ? hr.line() : null,
+				hr != null ? hr.group() : null,
+				STATUS_ACTIVE,
 				roles
 		);
 	}
@@ -294,33 +232,6 @@ public class ProductionControlAuthService {
 		return roles;
 	}
 
-	// =========================================================
-	// ASSIGN ROLE
-	// =========================================================
-
-	private void assignRoles(
-			Long accountId,
-			List<String> roles
-	) {
-		for (String role : roles) {
-			repository.assignRole(
-					accountId,
-					role
-			);
-		}
-	}
-
-	private void validateRolesExist(
-			List<String> roles
-	) {
-		for (String role : roles) {
-			if (!repository.roleExists(role)) {
-				throw new IllegalStateException(
-						"Role does not exist: " + role
-				);
-			}
-		}
-	}
 
 	private void addRole(
 			List<String> roles,
@@ -365,27 +276,6 @@ public class ProductionControlAuthService {
 					"Employee ID and password are required."
 			);
 		}
-	}
-
-	private void validateAccountStatus(
-			ProductionControlAccount account
-	) {
-		String status =
-				normalizeHrValue(account.status());
-
-		if (STATUS_ACTIVE.equals(status)) {
-			return;
-		}
-
-		if (STATUS_LOCKED.equals(status)) {
-			throw new IllegalStateException(
-					"Account has been locked."
-			);
-		}
-
-		throw new IllegalStateException(
-				"Account is not active."
-		);
 	}
 
 	private IllegalArgumentException invalidCredentials() {
