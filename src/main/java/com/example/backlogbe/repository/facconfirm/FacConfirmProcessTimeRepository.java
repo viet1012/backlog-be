@@ -166,15 +166,19 @@ public class FacConfirmProcessTimeRepository {
 
 
 	// =========================================================
-	// FIND "KHÔNG CÓ HEAT" AUFNR (FacConfirmEditRules)
+	// FIND EDIT STATES
+	//
+	// Theo từng AUFNR: cờ "không có Heat" (FacConfirmEditRules),
+	// giá trị F2_Backlog_Main và bản ghi Fac Confirm mới nhất
+	// (theo UpdatedAt, giống LatestConfirm của FacData) cho mỗi field.
 	// =========================================================
 
-	public List<String> findNoHeatNoteAufnrs(
+	public Map<String, FacConfirmEditState> findEditStates(
 			List<String> aufnrs
 	) {
 
 		if (aufnrs == null || aufnrs.isEmpty()) {
-			return List.of();
+			return Map.of();
 		}
 
 		String placeholders = String.join(
@@ -185,24 +189,135 @@ public class FacConfirmProcessTimeRepository {
 				)
 		);
 
+		List<String> fields =
+				List.copyOf(
+						FacConfirmEditRules.FIELD_TO_DB_PROCESS.keySet()
+				);
+
+		StringBuilder columns = new StringBuilder();
+
+		for (String field : fields) {
+
+			columns.append(
+					"""
+							    bl.[%s] AS [B_%s],
+							    cp.[C_%s] AS [C_%s],
+							""".formatted(
+							FacConfirmEditRules.FIELD_TO_BACKLOG_COLUMN.get(field),
+							field,
+							field,
+							field
+					)
+			);
+		}
+
+		StringBuilder pivot = new StringBuilder();
+
+		for (int i = 0; i < fields.size(); i++) {
+
+			String field = fields.get(i);
+
+			pivot.append(
+					"""
+							        MAX(CASE WHEN x.ProcessGrp = '%s' THEN x.ConfirmFnTime END) AS [C_%s]%s
+							""".formatted(
+							FacConfirmEditRules.FIELD_TO_DB_PROCESS.get(field),
+							field,
+							i < fields.size() - 1 ? "," : ""
+					)
+			);
+		}
+
 		String sql = """
-				SELECT DISTINCT
-				    bl.AUFNR
-
+				SELECT
+				"""
+				+ columns
+				+ """
+				    bl.AUFNR,
+				    CAST(
+				        CASE
+				            WHEN """
+				+ FacConfirmEditRules.NO_HEAT_CONDITION
+				+ """
+				            THEN 1
+				            ELSE 0
+				        END
+				        AS BIT
+				    ) AS NoHeat
+				
 				FROM F2Database.dbo.F2_Backlog_Main bl
-
+				
+				OUTER APPLY (
+				    SELECT
+				"""
+				+ pivot
+				+ """
+				    FROM (
+				        SELECT
+				            fc.ProcessGrp,
+				            fc.ConfirmFnTime,
+				            ROW_NUMBER() OVER (
+				                PARTITION BY fc.ProcessGrp
+				                ORDER BY fc.UpdatedAt DESC
+				            ) AS rn
+				        FROM F2Database.dbo.F2_Backlog_Fac_Confirm fc
+				        WHERE fc.AUNFR = bl.AUFNR
+				          AND fc.ConfirmFnTime IS NOT NULL
+				    ) x
+				    WHERE x.rn = 1
+				) cp
+				
 				WHERE bl.AUFNR IN (%s)
+				""".formatted(placeholders);
 
-				  AND """.formatted(placeholders)
-				+ FacConfirmEditRules.NO_HEAT_CONDITION;
+		Map<String, FacConfirmEditState> states =
+				new java.util.LinkedHashMap<>();
 
-		return jdbcTemplate.query(
+		jdbcTemplate.query(
 				sql,
-				(rs, rowNum) -> rs.getString("AUFNR"),
+				rs -> {
+
+					Map<String, LocalDateTime> backlogValues =
+							new java.util.LinkedHashMap<>();
+
+					Map<String, LocalDateTime> confirmValues =
+							new java.util.LinkedHashMap<>();
+
+					for (String field : fields) {
+
+						Timestamp backlog =
+								rs.getTimestamp("B_" + field);
+
+						if (backlog != null) {
+							backlogValues.put(field, backlog.toLocalDateTime());
+						}
+
+						Timestamp confirm =
+								rs.getTimestamp("C_" + field);
+
+						if (confirm != null) {
+							confirmValues.put(field, confirm.toLocalDateTime());
+						}
+					}
+
+					String aufnr =
+							rs.getString("AUFNR").trim();
+
+					states.put(
+							aufnr,
+							new FacConfirmEditState(
+									aufnr,
+									rs.getBoolean("NoHeat"),
+									Map.copyOf(backlogValues),
+									Map.copyOf(confirmValues)
+							)
+					);
+				},
 				aufnrs.toArray()
 		);
-	}
 
+		return states;
+	}
 
 	// =========================================================
 	// UPSERT PROCESS TIME

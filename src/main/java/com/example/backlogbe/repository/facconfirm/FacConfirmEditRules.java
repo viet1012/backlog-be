@@ -1,5 +1,9 @@
 package com.example.backlogbe.repository.facconfirm;
 
+import java.time.Duration;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -51,6 +55,16 @@ public final class FacConfirmEditRules {
 					HEAT_START, "Heat Start",
 					HEAT_FINISH, "Heat Finish",
 					TO_PK, "To Packing"
+			);
+
+	// field -> cột trong F2_Backlog_Main
+	public static final Map<String, String> FIELD_TO_BACKLOG_COLUMN =
+			orderedMap(
+					TO_DRILL, "ToDrill",
+					TO_HEAT, "ToHeat",
+					HEAT_START, "TimeSQuenching",
+					HEAT_FINISH, "TimeFHeat",
+					TO_PK, "ToPK"
 			);
 
 	// field -> tiêu đề hiển thị
@@ -311,6 +325,111 @@ public final class FacConfirmEditRules {
 
 		return null;
 	}
+
+	// =====================================================
+	// TIME ORDER
+	//
+	// Thứ tự thời gian theo từng loại dòng (sớm -> muộn):
+	// - Dòng thường       : To Drill <= To Heat <= Heat Start <= To CLG <= To Packing
+	// - Dòng không có Heat: To Drill <= To CLG <= To Packing
+	// =====================================================
+
+	public static final Duration MAX_CLOCK_SKEW =
+			Duration.ofMinutes(5);
+
+	private static final List<String> NORMAL_TIME_ORDER =
+			List.of(TO_DRILL, TO_HEAT, HEAT_START, HEAT_FINISH, TO_PK);
+
+	private static final List<String> NO_HEAT_TIME_ORDER =
+			List.of(TO_DRILL, HEAT_FINISH, TO_PK);
+
+	private static final DateTimeFormatter TIME_FORMAT =
+			DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm");
+
+	public static List<String> getTimeOrder(EditRow row) {
+		return row.noHeat()
+				? NO_HEAT_TIME_ORDER
+				: NORMAL_TIME_ORDER;
+	}
+
+	/**
+	 * Kiểm tra thời gian các ô sắp lưu của một dòng.
+	 *
+	 * @param current giá trị đang hiển thị (Backlog ưu tiên, sau đó Fac Confirm), theo field
+	 * @param changes giá trị mới trong request, theo field
+	 * @param now     giờ server
+	 * @return danh sách lỗi (tiếng Việt), rỗng nếu hợp lệ
+	 */
+	public static List<String> validateTimes(
+			EditRow row,
+			Map<String, LocalDateTime> current,
+			Map<String, LocalDateTime> changes,
+			LocalDateTime now
+	) {
+
+		List<String> errors = new ArrayList<>();
+
+		// Không cho thời gian ở tương lai (cho lệch giờ máy tối đa MAX_CLOCK_SKEW)
+		LocalDateTime latestAllowed =
+				now.plus(MAX_CLOCK_SKEW);
+
+		for (Map.Entry<String, LocalDateTime> change : changes.entrySet()) {
+
+			if (change.getValue().isAfter(latestAllowed)) {
+				errors.add(
+						"PO " + row.aufnr() + ": "
+								+ labelOf(change.getKey())
+								+ " (" + format(change.getValue()) + ")"
+								+ " không được ở tương lai (cho phép lệch tối đa "
+								+ MAX_CLOCK_SKEW.toMinutes() + " phút)"
+				);
+			}
+		}
+
+		// Thứ tự: chỉ báo cặp có ít nhất một ô đang được sửa
+		Map<String, LocalDateTime> merged = new LinkedHashMap<>(current);
+		merged.putAll(changes);
+
+		List<String> order = getTimeOrder(row);
+
+		for (int i = 0; i < order.size(); i++) {
+			for (int j = i + 1; j < order.size(); j++) {
+
+				String earlier = order.get(i);
+				String later = order.get(j);
+
+				if (
+						!changes.containsKey(earlier)
+								&& !changes.containsKey(later)
+				) {
+					continue;
+				}
+
+				LocalDateTime earlierTime = merged.get(earlier);
+				LocalDateTime laterTime = merged.get(later);
+
+				if (
+						earlierTime != null
+								&& laterTime != null
+								&& laterTime.isBefore(earlierTime)
+				) {
+					errors.add(
+							"PO " + row.aufnr() + ": "
+									+ labelOf(later) + " (" + format(laterTime) + ")"
+									+ " không được trước "
+									+ labelOf(earlier) + " (" + format(earlierTime) + ")"
+					);
+				}
+			}
+		}
+
+		return errors;
+	}
+
+	private static String format(LocalDateTime value) {
+		return value.format(TIME_FORMAT);
+	}
+
 
 	public static String labelOf(String field) {
 		return FIELD_LABELS.getOrDefault(field, field);

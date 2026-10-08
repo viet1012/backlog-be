@@ -2,6 +2,7 @@ package com.example.backlogbe.service;
 
 import com.example.backlogbe.dto.facconfirm.FacConfirmProcessTimeRequest;
 import com.example.backlogbe.repository.facconfirm.FacConfirmEditRules;
+import com.example.backlogbe.repository.facconfirm.FacConfirmEditState;
 import com.example.backlogbe.repository.facconfirm.FacConfirmProcessTimeRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -10,10 +11,9 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 
 @Service
 @RequiredArgsConstructor
@@ -68,9 +68,27 @@ public class FacConfirmProcessTimeService {
 			);
 		}
 
+		validateReadOnlyFields(
+				request.changes()
+		);
+
+		Map<String, FacConfirmEditState> states =
+				repository.findEditStates(
+						request.changes().stream()
+								.map(change -> change.aufnr().trim())
+								.distinct()
+								.toList()
+				);
+
 		validateEditableFields(
 				request.changes(),
-				procGrp
+				procGrp,
+				states
+		);
+
+		validateTimes(
+				request.changes(),
+				states
 		);
 
 		int updatedCount = 0;
@@ -171,9 +189,8 @@ public class FacConfirmProcessTimeService {
 	// Dòng không có Heat: Rough sửa To Drill + To CLG, không được sửa To Heat.
 	// =========================================================
 
-	private void validateEditableFields(
-			List<FacConfirmProcessTimeRequest.ProcessTimeItem> changes,
-			String procGrp
+	private void validateReadOnlyFields(
+			List<FacConfirmProcessTimeRequest.ProcessTimeItem> changes
 	) {
 
 		List<String> readOnlyAufnrs =
@@ -190,15 +207,13 @@ public class FacConfirmProcessTimeService {
 			);
 		}
 
-		Set<String> noHeatAufnrs =
-				new HashSet<>(
-						repository.findNoHeatNoteAufnrs(
-								changes.stream()
-										.map(change -> change.aufnr().trim())
-										.distinct()
-										.toList()
-						)
-				);
+	}
+
+	private void validateEditableFields(
+			List<FacConfirmProcessTimeRequest.ProcessTimeItem> changes,
+			String procGrp,
+			Map<String, FacConfirmEditState> states
+	) {
 
 		List<String> violations = new ArrayList<>();
 
@@ -208,10 +223,7 @@ public class FacConfirmProcessTimeService {
 					change.aufnr().trim();
 
 			FacConfirmEditRules.EditRow row =
-					new FacConfirmEditRules.EditRow(
-							aufnr,
-							noHeatAufnrs.contains(aufnr)
-					);
+					stateOf(states, aufnr).toEditRow();
 
 			Collection<String> editableFields =
 					procGrp != null
@@ -243,6 +255,66 @@ public class FacConfirmProcessTimeService {
 							+ String.join(", ", violations)
 			);
 		}
+	}
+
+
+	// =========================================================
+	// VALIDATE TIMES (FacConfirmEditRules.validateTimes)
+	//
+	// - Không ở tương lai (lệch tối đa MAX_CLOCK_SKEW).
+	// - Đúng thứ tự công đoạn theo loại dòng, so với giá trị đang hiển thị.
+	// =========================================================
+
+	private void validateTimes(
+			List<FacConfirmProcessTimeRequest.ProcessTimeItem> changes,
+			Map<String, FacConfirmEditState> states
+	) {
+
+		// AUFNR -> (field -> giá trị mới); trùng field thì lấy giá trị sau cùng
+		Map<String, Map<String, LocalDateTime>> changesByAufnr =
+				new LinkedHashMap<>();
+
+		for (var change : changes) {
+			changesByAufnr
+					.computeIfAbsent(change.aufnr().trim(), key -> new LinkedHashMap<>())
+					.put(change.field(), change.value());
+		}
+
+		LocalDateTime now = LocalDateTime.now();
+
+		List<String> errors = new ArrayList<>();
+
+		changesByAufnr.forEach((aufnr, aufnrChanges) -> {
+
+			FacConfirmEditState state =
+					stateOf(states, aufnr);
+
+			errors.addAll(
+					FacConfirmEditRules.validateTimes(
+							state.toEditRow(),
+							state.currentValues(),
+							aufnrChanges,
+							now
+					)
+			);
+		});
+
+		if (!errors.isEmpty()) {
+			throw new IllegalArgumentException(
+					"Thời gian không hợp lệ: "
+							+ String.join("; ", errors)
+			);
+		}
+	}
+
+	private FacConfirmEditState stateOf(
+			Map<String, FacConfirmEditState> states,
+			String aufnr
+	) {
+		return states.getOrDefault(
+				aufnr,
+				FacConfirmEditState.empty(aufnr)
+		);
 	}
 
 

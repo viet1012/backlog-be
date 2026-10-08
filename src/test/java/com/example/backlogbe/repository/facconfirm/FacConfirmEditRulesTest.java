@@ -4,7 +4,9 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 
 import org.junit.jupiter.api.Test;
 
@@ -69,5 +71,85 @@ class FacConfirmEditRulesTest {
 				"To Heat",
 				FacConfirmEditRules.getFinalProcess(NORMAL, FacConfirmEditRules.ROUGH)
 		);
+	}
+
+
+	// =====================================================
+	// validateTimes
+	// =====================================================
+
+	private static final LocalDateTime NOW =
+			LocalDateTime.of(2026, 10, 8, 12, 0);
+
+
+	@Test
+	void futureTimeRejectedBeyondClockSkew() {
+
+		assertTrue(
+				FacConfirmEditRules.validateTimes(
+						NORMAL, Map.of(),
+						Map.of(FacConfirmEditRules.TO_DRILL, NOW.plusMinutes(5)),
+						NOW
+				).isEmpty()
+		);
+
+		List<String> errors =
+				FacConfirmEditRules.validateTimes(
+						NORMAL, Map.of(),
+						Map.of(FacConfirmEditRules.TO_DRILL, NOW.plusMinutes(6)),
+						NOW
+				);
+
+		assertEquals(1, errors.size());
+		assertTrue(errors.get(0).contains("tương lai"));
+	}
+
+
+	@Test
+	void noHeatToClgCannotBeBeforeToDrill() {
+
+		List<String> errors =
+				FacConfirmEditRules.validateTimes(
+						NO_HEAT,
+						Map.of(FacConfirmEditRules.TO_DRILL, NOW.minusHours(1)),
+						Map.of(FacConfirmEditRules.HEAT_FINISH, NOW.minusHours(2)),
+						NOW
+				);
+
+		assertEquals(
+				List.of("PO B: To CLG (08/10/2026 10:00) không được trước To Drill (08/10/2026 11:00)"),
+				errors
+		);
+	}
+
+
+	@Test
+	void normalRowChecksFullOrderButNotUnchangedPairs() {
+
+		// To Heat cũ sai thứ tự với To Drill cũ, nhưng không bị báo vì không sửa
+		Map<String, LocalDateTime> current = Map.of(
+				FacConfirmEditRules.TO_DRILL, NOW.minusHours(1),
+				FacConfirmEditRules.TO_HEAT, NOW.minusHours(3)
+		);
+
+		assertTrue(
+				FacConfirmEditRules.validateTimes(
+						NORMAL, current,
+						Map.of(FacConfirmEditRules.TO_PK, NOW),
+						NOW
+				).isEmpty()
+		);
+
+		List<String> errors =
+				FacConfirmEditRules.validateTimes(
+						NORMAL, current,
+						Map.of(FacConfirmEditRules.HEAT_FINISH, NOW.minusHours(2)),
+						NOW
+				);
+
+		// To CLG trước To Drill (To Heat ở trước To CLG nên hợp lệ)
+		assertEquals(1, errors.size());
+		assertTrue(errors.get(0).contains("To CLG"));
+		assertTrue(errors.get(0).contains("To Drill"));
 	}
 }
