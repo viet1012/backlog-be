@@ -154,10 +154,10 @@ AND ISNULL(bl.WaitingDays, -1) NOT IN (2, 5, 7)
 
 | Quy tắc | Chi tiết | Vị trí |
 |---|---|---|
-| Không ở tương lai | `value` không được sau giờ server + 5 phút (lệch giờ máy) | `MAX_CLOCK_SKEW` |
 | Thứ tự, dòng thường | To Drill ≤ To Heat ≤ Heat Start ≤ To CLG ≤ To Packing | `NORMAL_TIME_ORDER`, `getTimeOrder` |
 | Thứ tự, dòng không có Heat | To Drill ≤ To CLG ≤ To Packing | `NO_HEAT_TIME_ORDER`, `getTimeOrder` |
 
+- **Không giới hạn thời gian ở tương lai (theo yêu cầu nghiệp vụ).** Không thêm lại kiểm tra này.
 - So sánh với giá trị đang hiển thị (Backlog ưu tiên, sau đó Fac Confirm mới nhất; `FacConfirmEditState.currentValues`), cộng với các thay đổi khác trong cùng request.
 - Chỉ báo lỗi cho cặp có ít nhất một ô đang được sửa; dữ liệu cũ sai thứ tự mà không sửa thì không bị chặn.
 - So sánh dùng `LocalDateTime` (không có múi giờ): FE và server phải cùng giờ địa phương.
@@ -326,7 +326,7 @@ Lỗi 400:
 | `Field not editable in Rough: 123456 (To Heat, Heat Note "Không có Heat"), ...` (không gửi `procGrp` thì không có phần `in Rough`) |
 | `Ô đã có dữ liệu từ Backlog, không xác nhận lại được: PO 123456: To Drill = 08/10/2026 09:00; ...` |
 | `Thời gian không hợp lệ: PO 123456: To CLG (...) không được trước To Drill (...); ...` |
-| `Thời gian không hợp lệ: PO 123456: To Drill (...) không được ở tương lai (cho phép lệch tối đa 5 phút)` |
+
 
 ### 4.7. `POST /api/fac-confirm/export/excel`: xuất Excel
 

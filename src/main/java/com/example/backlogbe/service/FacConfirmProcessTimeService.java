@@ -315,8 +315,8 @@ public class FacConfirmProcessTimeService {
 	// =========================================================
 	// VALIDATE TIMES (FacConfirmEditRules.validateTimes)
 	//
-	// - Không ở tương lai (lệch tối đa MAX_CLOCK_SKEW).
 	// - Đúng thứ tự công đoạn theo loại dòng, so với giá trị đang hiển thị.
+	// - Không giới hạn thời gian ở tương lai (theo yêu cầu nghiệp vụ).
 	// =========================================================
 
 	private void validateTimes(
@@ -334,8 +334,6 @@ public class FacConfirmProcessTimeService {
 					.put(change.field(), change.value());
 		}
 
-		LocalDateTime now = LocalDateTime.now();
-
 		List<String> errors = new ArrayList<>();
 
 		changesByAufnr.forEach((aufnr, aufnrChanges) -> {
@@ -347,8 +345,7 @@ public class FacConfirmProcessTimeService {
 					FacConfirmEditRules.validateTimes(
 							state.toEditRow(),
 							state.currentValues(),
-							aufnrChanges,
-							now
+							aufnrChanges
 					)
 			);
 		});

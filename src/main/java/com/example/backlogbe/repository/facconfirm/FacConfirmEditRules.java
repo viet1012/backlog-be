@@ -1,6 +1,5 @@
 package com.example.backlogbe.repository.facconfirm;
 
-import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -332,10 +331,9 @@ public final class FacConfirmEditRules {
 	// Thứ tự thời gian theo từng loại dòng (sớm -> muộn):
 	// - Dòng thường       : To Drill <= To Heat <= Heat Start <= To CLG <= To Packing
 	// - Dòng không có Heat: To Drill <= To CLG <= To Packing
+	//
+	// Không giới hạn thời gian ở tương lai (theo yêu cầu nghiệp vụ).
 	// =====================================================
-
-	public static final Duration MAX_CLOCK_SKEW =
-			Duration.ofMinutes(5);
 
 	private static final List<String> NORMAL_TIME_ORDER =
 			List.of(TO_DRILL, TO_HEAT, HEAT_START, HEAT_FINISH, TO_PK);
@@ -357,34 +355,15 @@ public final class FacConfirmEditRules {
 	 *
 	 * @param current giá trị đang hiển thị (Backlog ưu tiên, sau đó Fac Confirm), theo field
 	 * @param changes giá trị mới trong request, theo field
-	 * @param now     giờ server
 	 * @return danh sách lỗi (tiếng Việt), rỗng nếu hợp lệ
 	 */
 	public static List<String> validateTimes(
 			EditRow row,
 			Map<String, LocalDateTime> current,
-			Map<String, LocalDateTime> changes,
-			LocalDateTime now
+			Map<String, LocalDateTime> changes
 	) {
 
 		List<String> errors = new ArrayList<>();
-
-		// Không cho thời gian ở tương lai (cho lệch giờ máy tối đa MAX_CLOCK_SKEW)
-		LocalDateTime latestAllowed =
-				now.plus(MAX_CLOCK_SKEW);
-
-		for (Map.Entry<String, LocalDateTime> change : changes.entrySet()) {
-
-			if (change.getValue().isAfter(latestAllowed)) {
-				errors.add(
-						"PO " + row.aufnr() + ": "
-								+ labelOf(change.getKey())
-								+ " (" + format(change.getValue()) + ")"
-								+ " không được ở tương lai (cho phép lệch tối đa "
-								+ MAX_CLOCK_SKEW.toMinutes() + " phút)"
-				);
-			}
-		}
 
 		// Thứ tự: chỉ báo cặp có ít nhất một ô đang được sửa
 		Map<String, LocalDateTime> merged = new LinkedHashMap<>(current);

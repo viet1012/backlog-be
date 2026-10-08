@@ -83,25 +83,15 @@ class FacConfirmEditRulesTest {
 
 
 	@Test
-	void futureTimeRejectedBeyondClockSkew() {
+	void futureTimeIsAllowed() {
 
+		// Không giới hạn thời gian ở tương lai (theo yêu cầu nghiệp vụ)
 		assertTrue(
 				FacConfirmEditRules.validateTimes(
 						NORMAL, Map.of(),
-						Map.of(FacConfirmEditRules.TO_DRILL, NOW.plusMinutes(5)),
-						NOW
+						Map.of(FacConfirmEditRules.TO_DRILL, NOW.plusYears(1))
 				).isEmpty()
 		);
-
-		List<String> errors =
-				FacConfirmEditRules.validateTimes(
-						NORMAL, Map.of(),
-						Map.of(FacConfirmEditRules.TO_DRILL, NOW.plusMinutes(6)),
-						NOW
-				);
-
-		assertEquals(1, errors.size());
-		assertTrue(errors.get(0).contains("tương lai"));
 	}
 
 
@@ -112,8 +102,7 @@ class FacConfirmEditRulesTest {
 				FacConfirmEditRules.validateTimes(
 						NO_HEAT,
 						Map.of(FacConfirmEditRules.TO_DRILL, NOW.minusHours(1)),
-						Map.of(FacConfirmEditRules.HEAT_FINISH, NOW.minusHours(2)),
-						NOW
+						Map.of(FacConfirmEditRules.HEAT_FINISH, NOW.minusHours(2))
 				);
 
 		assertEquals(
@@ -135,16 +124,14 @@ class FacConfirmEditRulesTest {
 		assertTrue(
 				FacConfirmEditRules.validateTimes(
 						NORMAL, current,
-						Map.of(FacConfirmEditRules.TO_PK, NOW),
-						NOW
+						Map.of(FacConfirmEditRules.TO_PK, NOW)
 				).isEmpty()
 		);
 
 		List<String> errors =
 				FacConfirmEditRules.validateTimes(
 						NORMAL, current,
-						Map.of(FacConfirmEditRules.HEAT_FINISH, NOW.minusHours(2)),
-						NOW
+						Map.of(FacConfirmEditRules.HEAT_FINISH, NOW.minusHours(2))
 				);
 
 		// To CLG trước To Drill (To Heat ở trước To CLG nên hợp lệ)
