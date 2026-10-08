@@ -1,32 +1,29 @@
 package com.example.backlogbe.service;
 
 import com.example.backlogbe.dto.facconfirm.FacConfirmProcessTimeRequest;
+import com.example.backlogbe.repository.facconfirm.FacConfirmEditRules;
 import com.example.backlogbe.repository.facconfirm.FacConfirmProcessTimeRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 @Service
 @RequiredArgsConstructor
 public class FacConfirmProcessTimeService {
 
+	// field -> ProcessGrp trong F2_Backlog_Fac_Confirm
 	private static final Map<String, String> PROCESS_MAPPING =
-			Map.of(
-					"toDrill", "To Drill",
-					"toHeat", "To Heat",
-					"heatStart", "Heat Start",
-					"heatFinish", "Heat Finish",
-					"toPk", "To Packing"
-			);
+			FacConfirmEditRules.FIELD_TO_DB_PROCESS;
 
 
-	// =========================================================
-	// PROCESS MAPPING
-	// =========================================================
 	private final FacConfirmProcessTimeRepository repository;
 
 	// =========================================================
@@ -52,12 +49,15 @@ public class FacConfirmProcessTimeService {
 
 		validateRequest(request);
 
+		String procGrp =
+				normalizeProcessGroup(
+						request.procGrp()
+				);
+
 		String updater = buildUpdater(
 				machineName,
 				request.employeeId()
 		);
-
-		int updatedCount = 0;
 
 		for (var change : request.changes()) {
 
@@ -66,6 +66,16 @@ public class FacConfirmProcessTimeService {
 					change.field(),
 					change.value()
 			);
+		}
+
+		validateEditableFields(
+				request.changes(),
+				procGrp
+		);
+
+		int updatedCount = 0;
+
+		for (var change : request.changes()) {
 
 			String processGrp =
 					PROCESS_MAPPING.get(
@@ -147,6 +157,107 @@ public class FacConfirmProcessTimeService {
 					"Maximum 500 changes per request"
 			);
 		}
+	}
+
+
+	// =========================================================
+	// VALIDATE EDITABLE FIELDS
+	//
+	// Theo FacConfirmEditRules.getEditableFields:
+	// - Có procGrp: field phải được sửa ở đúng công đoạn đó.
+	// - Không có procGrp: field phải được sửa ở ít nhất một công đoạn.
+	//
+	// Dòng không có Heat: Rough sửa To Drill + To CLG,
+	// không được sửa To Heat / Heat Start.
+	// =========================================================
+
+	private void validateEditableFields(
+			List<FacConfirmProcessTimeRequest.ProcessTimeItem> changes,
+			String procGrp
+	) {
+
+		Set<String> noHeatAufnrs =
+				new HashSet<>(
+						repository.findNoHeatNoteAufnrs(
+								changes.stream()
+										.map(change -> change.aufnr().trim())
+										.distinct()
+										.toList()
+						)
+				);
+
+		List<String> violations = new ArrayList<>();
+
+		for (var change : changes) {
+
+			String aufnr =
+					change.aufnr().trim();
+
+			FacConfirmEditRules.EditRow row =
+					new FacConfirmEditRules.EditRow(
+							aufnr,
+							noHeatAufnrs.contains(aufnr)
+					);
+
+			Collection<String> editableFields =
+					procGrp != null
+							? FacConfirmEditRules.getEditableFields(row, procGrp)
+							: FacConfirmEditRules.getEditableFieldsAnyProcess(row);
+
+			if (!editableFields.contains(change.field())) {
+
+				String violation =
+						aufnr
+								+ " ("
+								+ FacConfirmEditRules.labelOf(change.field())
+								+ (row.noHeat()
+								? ", Heat Note \"" + FacConfirmEditRules.NO_HEAT_NOTE_LABEL + "\""
+								: "")
+								+ ")";
+
+				if (!violations.contains(violation)) {
+					violations.add(violation);
+				}
+			}
+		}
+
+		if (!violations.isEmpty()) {
+			throw new IllegalArgumentException(
+					"Field not editable"
+							+ (procGrp != null ? " in " + procGrp : "")
+							+ ": "
+							+ String.join(", ", violations)
+			);
+		}
+	}
+
+
+	// =========================================================
+	// NORMALIZE PROCESS GROUP (optional)
+	// =========================================================
+
+	private String normalizeProcessGroup(
+			String value
+	) {
+
+		if (
+				value == null
+						|| value.isBlank()
+		) {
+			return null;
+		}
+
+		return FacConfirmEditRules.PROCESS_GROUPS
+				.stream()
+				.filter(item -> item.equalsIgnoreCase(value.trim()))
+				.findFirst()
+				.orElseThrow(() ->
+						new IllegalArgumentException(
+								"Invalid procGrp: "
+										+ value
+										+ ". Allowed values: Rough, Heat, Fine"
+						)
+				);
 	}
 
 

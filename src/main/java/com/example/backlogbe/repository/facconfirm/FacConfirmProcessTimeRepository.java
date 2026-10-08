@@ -53,7 +53,18 @@ public class FacConfirmProcessTimeRepository {
 				    fc.ProcessGrp AS processGrp,
 				    fc.ConfirmFnTime AS confirmFnTime,
 				    fc.Updater AS updater,
-				    fc.UpdatedAt AS updatedAt
+				    fc.UpdatedAt AS updatedAt,
+				
+				    CAST(
+				        CASE
+				            WHEN """
+				+ FacConfirmEditRules.NO_HEAT_CONDITION
+				+ """
+				            THEN 1
+				            ELSE 0
+				        END
+				        AS BIT
+				    ) AS noHeat
 				
 				FROM F2Database.dbo.F2_Backlog_Fac_Confirm fc
 				
@@ -133,9 +144,62 @@ public class FacConfirmProcessTimeRepository {
 									: null
 					);
 
+					// Công đoạn sở hữu ô (rough-no-heat: To CLG thuộc Rough)
+					row.put(
+							"ownerProcess",
+							FacConfirmEditRules.getOwnerProcess(
+									new FacConfirmEditRules.EditRow(
+											rs.getString("aufnr"),
+											rs.getBoolean("noHeat")
+									),
+									FacConfirmEditRules.fieldOfDbProcess(
+											rs.getString("processGrp")
+									)
+							)
+					);
+
 					return row;
 				},
 				cleanAufnrs.toArray()
+		);
+	}
+
+
+	// =========================================================
+	// FIND "KHÔNG CÓ HEAT" AUFNR (FacConfirmEditRules)
+	// =========================================================
+
+	public List<String> findNoHeatNoteAufnrs(
+			List<String> aufnrs
+	) {
+
+		if (aufnrs == null || aufnrs.isEmpty()) {
+			return List.of();
+		}
+
+		String placeholders = String.join(
+				",",
+				Collections.nCopies(
+						aufnrs.size(),
+						"?"
+				)
+		);
+
+		String sql = """
+				SELECT DISTINCT
+				    bl.AUFNR
+
+				FROM F2Database.dbo.F2_Backlog_Main bl
+
+				WHERE bl.AUFNR IN (%s)
+
+				  AND """.formatted(placeholders)
+				+ FacConfirmEditRules.NO_HEAT_CONDITION;
+
+		return jdbcTemplate.query(
+				sql,
+				(rs, rowNum) -> rs.getString("AUFNR"),
+				aufnrs.toArray()
 		);
 	}
 

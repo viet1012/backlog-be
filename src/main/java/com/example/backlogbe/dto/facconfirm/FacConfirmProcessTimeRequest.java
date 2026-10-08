@@ -5,7 +5,11 @@ import java.util.List;
 
 public record FacConfirmProcessTimeRequest(
 		String employeeId,
-		List<ProcessTimeItem> changes
+		List<ProcessTimeItem> changes,
+
+		// Tùy chọn: Rough / Heat / Fine.
+		// Có thì kiểm tra field theo đúng công đoạn (FacConfirmEditRules).
+		String procGrp
 ) {
 
 	public record ProcessTimeItem(

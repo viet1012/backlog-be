@@ -252,7 +252,7 @@ public class FacConfirmExcelService {
 
 					new ExcelColumn(
 							"Heat_Finish",
-							"Heat Finish",
+							"To CLG",
 							ColumnType.DATETIME,
 							18
 					),

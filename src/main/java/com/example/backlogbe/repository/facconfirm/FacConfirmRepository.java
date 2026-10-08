@@ -140,18 +140,14 @@ public class FacConfirmRepository {
 			
 			        -- =================================================
 			        -- HAS HEAT PROCESS
+			        -- = NOT "Không có Heat" (FacConfirmEditRules)
 			        -- =================================================
 			        CAST(
 			            CASE
-			                WHEN UPPER(
-			                    LTRIM(
-			                        RTRIM(
-			                            ISNULL(bl.Heat_Note, '')
-			                        )
-			                    )
-			                ) = 'NO HEAT'
+			                WHEN """
+					+ FacConfirmEditRules.NO_HEAT_CONDITION
+					+ """
 			                THEN 0
-			
 			                ELSE 1
 			            END
 			            AS BIT
@@ -197,6 +193,22 @@ public class FacConfirmRepository {
 			        ) AS IsMolypden,
 			
 			        -- =================================================
+			        -- IS NO HEAT NOTE
+			        -- Heat Note = "Không có Heat"
+			        -- Điều kiện gốc: FacConfirmEditRules
+			        -- =================================================
+			        CAST(
+			            CASE
+			                WHEN """
+					+ FacConfirmEditRules.NO_HEAT_CONDITION
+					+ """
+			                THEN 1
+			                ELSE 0
+			            END
+			            AS BIT
+			        ) AS IsNoHeatNote,
+			
+			        -- =================================================
 			        -- HEAT NOTE
 			        -- Theo đúng query nghiệp vụ
 			        -- =================================================
@@ -210,14 +222,10 @@ public class FacConfirmRepository {
 			            WHEN bl.WaitingDays = 7
 			            THEN N'Molypden chờ 7 ngày'
 			
-			            WHEN UPPER(
-			                LTRIM(
-			                    RTRIM(
-			                        ISNULL(bl.Heat_Note, '')
-			                    )
-			                )
-			            ) = 'NO HEAT'
-			            THEN N'Không có Heat'
+			            WHEN """
+					+ FacConfirmEditRules.NO_HEAT_CONDITION
+					+ "THEN N'" + FacConfirmEditRules.NO_HEAT_NOTE_LABEL + "'\n"
+					+ """
 			
 			            ELSE N''
 			        END AS Note,
@@ -366,6 +374,13 @@ public class FacConfirmRepository {
 		params.add(div);
 
 
+		// =====================================================
+		// HEAT: loại dòng "Không có Heat"
+		// =====================================================
+
+		params.add(procGrp);
+
+
 		StringBuilder where =
 				new StringBuilder(
 						"""
@@ -423,6 +438,13 @@ public class FacConfirmRepository {
 								
 								"""
 				);
+
+		// Khi procGrp = Heat: bỏ dòng Heat Note = "Không có Heat"
+		where.append(
+				" AND (? <> 'Heat' OR "
+						+ FacConfirmEditRules.hasHeatSql("d")
+						+ ")\n"
+		);
 
 
 		// =====================================================
@@ -1304,10 +1326,9 @@ public class FacConfirmRepository {
 						
 						    WHERE fc.ConfirmFnTime IS NOT NULL
 						
-						      AND fc.ProcessGrp IN (
-						          'To Heat',
-						          'Heat Finish',
-						          'To Packing'
+						      AND fc.ProcessGrp IN ("""
+						+ FacConfirmEditRules.finalProcessesSqlList()
+						+ """
 						      )
 						),
 						
@@ -1322,7 +1343,12 @@ public class FacConfirmRepository {
 						        1 AS SortOrder,
 						        b.AUFNR,
 						        b.FinalQty,
-						        'To Heat' AS FinalConfirmProcess
+						        -- Process cuối theo từng dòng (FacConfirmEditRules.getFinalProcess):
+						        -- dòng thường 'To Heat', dòng không có Heat 'Heat Finish' (To CLG)
+						        """
+						+ FacConfirmEditRules.finalProcessSql("b", FacConfirmEditRules.ROUGH)
+						+ " AS FinalConfirmProcess\n"
+						+ """
 						
 						    FROM FilteredBase b
 						
@@ -1343,7 +1369,10 @@ public class FacConfirmRepository {
 						        2 AS SortOrder,
 						        b.AUFNR,
 						        b.FinalQty,
-						        'Heat Finish' AS FinalConfirmProcess
+						        """
+						+ FacConfirmEditRules.finalProcessSql("b", FacConfirmEditRules.HEAT)
+						+ " AS FinalConfirmProcess\n"
+						+ """
 						
 						    FROM FilteredBase b
 						
@@ -1354,6 +1383,11 @@ public class FacConfirmRepository {
 						           )
 						           OR b.ProcessGrp2 IS NULL
 						    )
+
+						    -- bỏ dòng Heat Note = "Không có Heat"
+						    AND """
+						+ FacConfirmEditRules.hasHeatSql("b")
+						+ """
 						
 						
 						    UNION ALL
@@ -1367,7 +1401,10 @@ public class FacConfirmRepository {
 						        3 AS SortOrder,
 						        b.AUFNR,
 						        b.FinalQty,
-						        'To Packing' AS FinalConfirmProcess
+						        """
+						+ FacConfirmEditRules.finalProcessSql("b", FacConfirmEditRules.FINE)
+						+ " AS FinalConfirmProcess\n"
+						+ """
 						
 						    FROM FilteredBase b
 						
