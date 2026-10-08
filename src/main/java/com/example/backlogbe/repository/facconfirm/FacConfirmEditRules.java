@@ -430,6 +430,26 @@ public final class FacConfirmEditRules {
 		return value.format(TIME_FORMAT);
 	}
 
+	public static String formatTime(LocalDateTime value) {
+		return format(value);
+	}
+
+
+	// =====================================================
+	// BACKLOG LOCK
+	//
+	// Ô đã có giá trị trong F2_Backlog_Main (FIELD_TO_BACKLOG_COLUMN)
+	// thì không xác nhận qua Fac Confirm nữa: giá trị Backlog được ưu tiên
+	// hiển thị, bản ghi Fac Confirm sẽ bị che.
+	// =====================================================
+
+	public static boolean isLockedByBacklog(
+			String field,
+			Map<String, LocalDateTime> backlogValues
+	) {
+		return backlogValues.get(field) != null;
+	}
+
 
 	public static String labelOf(String field) {
 		return FIELD_LABELS.getOrDefault(field, field);

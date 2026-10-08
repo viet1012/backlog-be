@@ -86,6 +86,11 @@ public class FacConfirmProcessTimeService {
 				states
 		);
 
+		validateBacklogLocked(
+				request.changes(),
+				states
+		);
+
 		validateTimes(
 				request.changes(),
 				states
@@ -253,6 +258,55 @@ public class FacConfirmProcessTimeService {
 							+ (procGrp != null ? " in " + procGrp : "")
 							+ ": "
 							+ String.join(", ", violations)
+			);
+		}
+	}
+
+
+	// =========================================================
+	// VALIDATE BACKLOG LOCK (FacConfirmEditRules.isLockedByBacklog)
+	// =========================================================
+
+	private void validateBacklogLocked(
+			List<FacConfirmProcessTimeRequest.ProcessTimeItem> changes,
+			Map<String, FacConfirmEditState> states
+	) {
+
+		List<String> locked = new ArrayList<>();
+
+		for (var change : changes) {
+
+			String aufnr =
+					change.aufnr().trim();
+
+			Map<String, LocalDateTime> backlogValues =
+					stateOf(states, aufnr).backlogValues();
+
+			if (
+					FacConfirmEditRules.isLockedByBacklog(
+							change.field(),
+							backlogValues
+					)
+			) {
+
+				String item =
+						"PO " + aufnr + ": "
+								+ FacConfirmEditRules.labelOf(change.field())
+								+ " = "
+								+ FacConfirmEditRules.formatTime(
+										backlogValues.get(change.field())
+								);
+
+				if (!locked.contains(item)) {
+					locked.add(item);
+				}
+			}
+		}
+
+		if (!locked.isEmpty()) {
+			throw new IllegalArgumentException(
+					"Ô đã có dữ liệu từ Backlog, không xác nhận lại được: "
+							+ String.join("; ", locked)
 			);
 		}
 	}
