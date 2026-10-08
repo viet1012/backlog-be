@@ -206,6 +206,10 @@ public class FacConfirmProcessTimeRepository {
 
 	// =========================================================
 	// UPSERT PROCESS TIME
+	//
+	// MERGE ... WITH (HOLDLOCK): khóa range theo (AUNFR, ProcessGrp)
+	// trong transaction, nên 2 request lưu cùng lúc không tạo bản ghi trùng.
+	// Unique index: sql/fac_confirm_unique_index.sql (chạy sau khi dọn trùng).
 	// =========================================================
 
 	public int upsert(
@@ -216,29 +220,25 @@ public class FacConfirmProcessTimeRepository {
 	) {
 
 		String sql = """
-				IF EXISTS (
-				    SELECT 1
-				    FROM F2Database.dbo.F2_Backlog_Fac_Confirm
-				    WHERE AUNFR = ?
-				      AND ProcessGrp = ?
-				)
-				BEGIN
+				MERGE F2Database.dbo.F2_Backlog_Fac_Confirm WITH (HOLDLOCK) AS t
 				
-				    UPDATE F2Database.dbo.F2_Backlog_Fac_Confirm
+				USING (
+				    SELECT
+				        ? AS AUNFR,
+				        ? AS ProcessGrp
+				) AS s
 				
-				    SET
+				    ON t.AUNFR = s.AUNFR
+				   AND t.ProcessGrp = s.ProcessGrp
+				
+				WHEN MATCHED THEN
+				    UPDATE SET
 				        ConfirmFnTime = ?,
 				        Updater = ?,
 				        UpdatedAt = SYSDATETIME()
 				
-				    WHERE AUNFR = ?
-				      AND ProcessGrp = ?
-				
-				END
-				ELSE
-				BEGIN
-				
-				    INSERT INTO F2Database.dbo.F2_Backlog_Fac_Confirm
+				WHEN NOT MATCHED THEN
+				    INSERT
 				    (
 				        AUNFR,
 				        ProcessGrp,
@@ -248,14 +248,12 @@ public class FacConfirmProcessTimeRepository {
 				    )
 				    VALUES
 				    (
-				        ?,
-				        ?,
+				        s.AUNFR,
+				        s.ProcessGrp,
 				        ?,
 				        ?,
 				        SYSDATETIME()
-				    )
-				
-				END
+				    );
 				""";
 
 		Timestamp time =
@@ -264,19 +262,15 @@ public class FacConfirmProcessTimeRepository {
 		return jdbcTemplate.update(
 				sql,
 
-				// EXISTS
+				// USING
 				aufnr,
 				processGrp,
 
 				// UPDATE
 				time,
 				updater,
-				aufnr,
-				processGrp,
 
 				// INSERT
-				aufnr,
-				processGrp,
 				time,
 				updater
 		);
