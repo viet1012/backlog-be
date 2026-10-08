@@ -107,7 +107,7 @@ AND ISNULL(bl.WaitingDays, -1) NOT IN (2, 5, 7)
 | Heat | `heatFinish` | (không có, vì dòng không thuộc Heat) |
 | Fine | `toPk` | `toPk` |
 
-- `heatStart` **chỉ để xem** ở mọi công đoạn: `READ_ONLY_FIELDS`, `isReadOnlyField`.
+- **Công đoạn Heat chỉ xác nhận To CLG (`heatFinish`).** `heatStart` **chỉ để xem** ở mọi công đoạn (`READ_ONLY_FIELDS`, `isReadOnlyField`). Dữ liệu Heat Start vẫn trả về trong danh sách và export, bản ghi `Heat Start` cũ trong `F2_Backlog_Fac_Confirm` vẫn đọc và hiển thị bình thường.
 - Khi request lưu không gửi `procGrp`, BE chấp nhận field được phép ở **ít nhất một** công đoạn (`getEditableFieldsAnyProcess`).
 
 ### 3.3. Ô thuộc công đoạn nào
@@ -150,27 +150,36 @@ AND ISNULL(bl.WaitingDays, -1) NOT IN (2, 5, 7)
 
 ### 3.6. Validate thời gian
 
-BE **không** kiểm tra thứ tự thời gian (ví dụ To CLG trước To Drill), cũng không kiểm tra thời gian ở tương lai. `FacConfirmProcessTimeService.validateChange` chỉ yêu cầu `aufnr`, `field` hợp lệ và `value` khác null.
-> TODO: cần xác nhận: có cần kiểm tra thứ tự thời gian ở BE không? (FE có thể đang kiểm tra; repo này không có code FE.)
+`FacConfirmEditRules.validateTimes` (gọi từ `FacConfirmProcessTimeService.validateTimes`), lỗi trả 400, message tiếng Việt.
+
+| Quy tắc | Chi tiết | Vị trí |
+|---|---|---|
+| Không ở tương lai | `value` không được sau giờ server + 5 phút (lệch giờ máy) | `MAX_CLOCK_SKEW` |
+| Thứ tự, dòng thường | To Drill ≤ To Heat ≤ Heat Start ≤ To CLG ≤ To Packing | `NORMAL_TIME_ORDER`, `getTimeOrder` |
+| Thứ tự, dòng không có Heat | To Drill ≤ To CLG ≤ To Packing | `NO_HEAT_TIME_ORDER`, `getTimeOrder` |
+
+- So sánh với giá trị đang hiển thị (Backlog ưu tiên, sau đó Fac Confirm mới nhất; `FacConfirmEditState.currentValues`), cộng với các thay đổi khác trong cùng request.
+- Chỉ báo lỗi cho cặp có ít nhất một ô đang được sửa; dữ liệu cũ sai thứ tự mà không sửa thì không bị chặn.
+- So sánh dùng `LocalDateTime` (không có múi giờ): FE và server phải cùng giờ địa phương.
+- Ví dụ: `Thời gian không hợp lệ: PO 123456: To CLG (08/10/2026 10:00) không được trước To Drill (08/10/2026 11:00)`.
 
 ### 3.7. Ô có sẵn dữ liệu Backlog
 
 - Hiển thị: ô ưu tiên giá trị `F2_Backlog_Main` (mục 2).
 - `/confirmed-processes` chỉ trả bản ghi Fac Confirm của process mà cột tương ứng trong `F2_Backlog_Main` **đang NULL** (`FacConfirmProcessTimeRepository.findConfirmedProcesses`).
-- API lưu **không chặn** việc lưu ô đã có dữ liệu Backlog: bản ghi vẫn được ghi nhưng bị che khi hiển thị.
-  > TODO: cần xác nhận: có cần BE từ chối lưu ô đã có giá trị trong `F2_Backlog_Main` không?
+- API lưu **từ chối** ô đã có giá trị trong `F2_Backlog_Main` (`FacConfirmEditRules.isLockedByBacklog`, cột theo `FIELD_TO_BACKLOG_COLUMN`), lỗi 400: `Ô đã có dữ liệu từ Backlog, không xác nhận lại được: PO 123456: To Drill = 08/10/2026 09:00`.
 
 ### 3.8. Thêm quy tắc mới
 
 1. Sửa `FacConfirmEditRules`:
-   - Field mới: thêm hằng số field, `FIELD_TO_DB_PROCESS`, `FIELD_LABELS`, `DEFAULT_OWNER_PROCESS`.
+   - Field mới: thêm hằng số field, `FIELD_TO_DB_PROCESS`, `FIELD_TO_BACKLOG_COLUMN`, `FIELD_LABELS`, `DEFAULT_OWNER_PROCESS`, và vị trí trong `NORMAL_TIME_ORDER` / `NO_HEAT_TIME_ORDER`.
    - Quyền sửa: sửa `getEditableFields` (thứ tự field quan trọng: field **cuối** là process cuối của công đoạn).
+   - Field chỉ để xem: `READ_ONLY_FIELDS`.
    - Điều kiện dòng mới: thêm thuộc tính vào `EditRow`, cột cờ vào `FacData` trong `FacConfirmRepository.FAC_DATA_CTE`, và hàm sinh SQL tương tự `isNoHeatSql`.
 2. Field mới còn phải thêm vào: `FacConfirmDto`, `FacConfirmRowMapper`, `FacConfirmColumnMetadataProvider`, `FacConfirmFilterField`, danh sách cột trong `FacConfirmExcelService`, và cột `FacData` / `ConfirmPivot` / `findConfirmedProcesses`.
 3. Không viết lại điều kiện "không có Heat" hay process cuối ở chỗ khác; gọi qua `FacConfirmEditRules`.
 4. Thêm test vào `src/test/java/.../repository/facconfirm/FacConfirmEditRulesTest.java`.
-5. Đồng bộ FE: `src/config/facConfirmEditRules.ts` (repo backlog-web) phải khớp với `getEditableFields`, `getOwnerProcess`, `READ_ONLY_FIELDS` và nhãn hiển thị.
-   > TODO: cần xác nhận: đường dẫn và cấu trúc file FE trên (không có trong repo này nên chưa đối chiếu được).
+5. Đồng bộ FE: `backlog-web/src/config/facConfirmEditRules.ts`.
 
 ## 4. API
 
@@ -295,8 +304,11 @@ Body `FacConfirmProcessTimeRequest`:
 Xử lý (`FacConfirmProcessTimeService.save`, `@Transactional`):
 1. Validate toàn bộ request; có một lỗi là không lưu gì.
 2. `heatStart` bị từ chối ở mọi công đoạn.
-3. Kiểm tra quyền theo `getEditableFields` (mục 3.2).
-4. Upsert vào `F2_Backlog_Fac_Confirm` theo (`AUNFR`, `ProcessGrp`): `ConfirmFnTime`, `Updater = <tên máy>_<employeeId>`, `UpdatedAt = SYSDATETIME()`.
+3. Đọc trạng thái từng PO một lần (`FacConfirmProcessTimeRepository.findEditStates`): cờ không có Heat, giá trị Backlog, bản ghi Fac Confirm mới nhất.
+4. Kiểm tra quyền theo `getEditableFields` (mục 3.2).
+5. Từ chối ô đã có dữ liệu Backlog (mục 3.7).
+6. Kiểm tra thời gian (mục 3.6).
+7. Ghi vào `F2_Backlog_Fac_Confirm` theo (`AUNFR`, `ProcessGrp`) bằng `MERGE ... WITH (HOLDLOCK)` (`upsert`): `ConfirmFnTime`, `Updater = <tên máy>_<employeeId>`, `UpdatedAt = SYSDATETIME()`.
 
 Response:
 ```json
@@ -312,6 +324,9 @@ Lỗi 400:
 | `Invalid procGrp: X. Allowed values: Rough, Heat, Fine` |
 | `Heat Start chỉ để xem, không xác nhận được: <AUFNR>, ...` |
 | `Field not editable in Rough: 123456 (To Heat, Heat Note "Không có Heat"), ...` (không gửi `procGrp` thì không có phần `in Rough`) |
+| `Ô đã có dữ liệu từ Backlog, không xác nhận lại được: PO 123456: To Drill = 08/10/2026 09:00; ...` |
+| `Thời gian không hợp lệ: PO 123456: To CLG (...) không được trước To Drill (...); ...` |
+| `Thời gian không hợp lệ: PO 123456: To Drill (...) không được ở tương lai (cho phép lệch tối đa 5 phút)` |
 
 ### 4.7. `POST /api/fac-confirm/export/excel`: xuất Excel
 
@@ -319,24 +334,30 @@ Body `FacConfirmExcelExportRequest`: `div`, `expD`, `procGrp` (bắt buộc), `c
 
 - `columns` nhận key dạng DataGrid (`toDrill`, `heatFinish`, ...) hoặc tên cột (`ToDrill`, `Heat_Finish`, ...). Tiêu đề cột do BE đặt (`FacConfirmExcelService`, danh sách `ExcelColumn`), ví dụ `Heat_Finish` → **To CLG**.
 - Response: file `fac_confirm_yyyyMMdd_HHmmss.xlsx` (stream), sheet `Fac Confirm`, có phần thông tin báo cáo + filter ở đầu sheet.
-- Lỗi 400 (trước khi stream): `Export request is required`, `expD is required`, `div is required`, `procGrp is required`, `At least one export column is required`, `Unsupported export column: X`, `Duplicate export column: X`.
-- Giới hạn: tối đa 1.048.570 dòng dữ liệu (giới hạn của Excel). Vượt giới hạn thì lỗi xảy ra khi đang stream, nên FE nhận file hỏng chứ không nhận JSON.
+- Validate trước khi ghi file (`FacConfirmExcelService.validateExportRequest`, trả về `ExportPlan`), nên mọi lỗi đều là 400 JSON:
+  - Tham số lọc và filter: dùng chung `FacConfirmService.normalizeQuery` với `/search` (cùng lỗi như bảng lỗi chung ở trên).
+  - Cột: `At least one export column is required`, `Unsupported export column: X`, `Duplicate export column: X`.
+  - Giá trị filter sai (ngày / số) và số dòng: chạy `countSearch` trước khi ghi file.
+- Giới hạn: tối đa `FacConfirmExcelService.MAX_EXPORT_ROWS` = 1.048.570 dòng dữ liệu (giới hạn của Excel). Vượt giới hạn: 400 `Dữ liệu export có N dòng, vượt giới hạn 1048570 dòng. Hãy thu hẹp bộ lọc.` Lúc ghi file vẫn chặn theo cùng hằng số, phòng dữ liệu tăng giữa lúc đếm và lúc ghi.
 - Quy tắc áp dụng: 3.1, 3.5.
-  > TODO: cần xác nhận: export **không** kiểm tra giá trị `procGrp` / `classify` / `heatType` / `filters` như 4.2 (sai `procGrp` cho file rỗng, sai `classify` / `heatType` thì bị bỏ qua). Có cần thống nhất không?
 
-### 4.8. `GET /api/fac-confirm/debug-client`: debug
+### 4.8. `GET /api/fac-confirm/debug-client`: debug (chỉ profile `dev`)
 
 Trả `remoteAddr`, `xForwardedFor`, `xRealIp`, `resolvedClientIp`, `machineName` để kiểm tra cách BE nhận diện máy client (`ClientMachineService`).
-> TODO: cần xác nhận: endpoint này có cần giữ trên môi trường production không?
+
+- Chỉ bật khi chạy với profile `dev` (`--spring.profiles.active=dev`): `FacConfirmDebugController` có `@Profile("dev")`.
+- Profile khác (production): endpoint không được đăng ký, trả 404.
 
 ## 5. Bảng dữ liệu
 
 | Bảng | Đọc / ghi | Cột chính | Dùng ở |
 |---|---|---|---|
-| `F2_Backlog_Main` | Đọc | `AUFNR`, `FERTH`, `ProductGrp`, `ZGLOBAL_CODE`, `PNAME`, `IssueD`, `ExportD`, `RRONYU1` (CusId), `ShipBy`, `MTO_ID`, `PRT_ADDCMT2`, `CurrentProcess`, `FinalQty`, `Classify`, `ProcessGrp2`, `Div`, `WaitingDays`, `Heat_Note`, `PHCD`, `Status2`, `ToDrill`, `ToHeat`, `TimeSQuenching`, `TimeFHeat`, `ToPK` | `FAC_DATA_CTE`, `findConfirmedProcesses`, `findNoHeatNoteAufnrs` |
-| `F2Database.dbo.F2_Backlog_Fac_Confirm` | Đọc + ghi | `AUNFR` (mã PO, chú ý viết `AUNFR`), `ProcessGrp`, `ConfirmFnTime`, `Updater`, `UpdatedAt` | `FAC_DATA_CTE` (lấy bản ghi mới nhất theo `UpdatedAt` cho mỗi `AUNFR` + `ProcessGrp`), `findProcessGroups`, `findConfirmedProcesses`, `upsert` |
+| `F2_Backlog_Main` | Đọc | `AUFNR`, `FERTH`, `ProductGrp`, `ZGLOBAL_CODE`, `PNAME`, `IssueD`, `ExportD`, `RRONYU1` (CusId), `ShipBy`, `MTO_ID`, `PRT_ADDCMT2`, `CurrentProcess`, `FinalQty`, `Classify`, `ProcessGrp2`, `Div`, `WaitingDays`, `Heat_Note`, `PHCD`, `Status2`, `ToDrill`, `ToHeat`, `TimeSQuenching`, `TimeFHeat`, `ToPK` | `FAC_DATA_CTE`, `findConfirmedProcesses`, `findEditStates` |
+| `F2Database.dbo.F2_Backlog_Fac_Confirm` | Đọc + ghi | `AUNFR` (mã PO, chú ý viết `AUNFR`), `ProcessGrp`, `ConfirmFnTime`, `Updater`, `UpdatedAt` | `FAC_DATA_CTE` (lấy bản ghi mới nhất theo `UpdatedAt` cho mỗi `AUNFR` + `ProcessGrp`), `findProcessGroups`, `findConfirmedProcesses`, `findEditStates`, `upsert` |
 
 Không dùng view. `FacData` là CTE trong `FacConfirmRepository.FAC_DATA_CTE`.
+
+Script unique index (`AUNFR`, `ProcessGrp`): `sql/fac_confirm_unique_index.sql`. **Chưa chạy**: chạy sau khi đã dọn bản ghi trùng; script tự dừng nếu vẫn còn trùng.
 
 ## 6. Lưu ý và hạn chế đã biết
 
@@ -344,5 +365,5 @@ Không dùng view. `FacData` là CTE trong `FacConfirmRepository.FAC_DATA_CTE`.
 - `@CrossOrigin(origins = "*")` trên `FacConfirmController`.
 - Có hai danh sách field filter: `FacConfirmFilterField` (dùng để validate trong `FacConfirmService`) và `FacConfirmColumnMetadataProvider` (dùng để sinh SQL). Hàm `FacConfirmFilterField.column` (map sang `bl.*`) không được dùng.
 - `FacConfirmProcessTimeResponse` không được dùng; API lưu trả `Map` (mục 4.6).
-- `upsert` dùng `IF EXISTS … UPDATE … ELSE INSERT`, không khóa bản ghi. Hai request cùng lúc cho cùng (`AUNFR`, `ProcessGrp`) có thể tạo bản ghi trùng; khi đọc, BE lấy bản ghi có `UpdatedAt` mới nhất.
+- `upsert` dùng `MERGE ... WITH (HOLDLOCK)`, nên request mới không tạo bản ghi trùng. Dữ liệu cũ có thể đã trùng (`IF EXISTS … UPDATE … ELSE INSERT` trước đây không khóa): khi đọc, BE lấy bản ghi có `UpdatedAt` mới nhất; khi lưu, `MERGE` cập nhật mọi bản ghi trùng của cặp đó. Kiểm tra bằng bước 1 của `sql/fac_confirm_unique_index.sql`.
 - Không tìm thấy comment `TODO` / `FIXME` nào trong code Java.
