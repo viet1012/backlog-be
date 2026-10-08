@@ -66,10 +66,17 @@ public final class FacConfirmEditRules {
 	private static final Map<String, List<String>> DEFAULT_EDITABLE_FIELDS =
 			Map.of(
 					ROUGH, List.of(TO_DRILL, TO_HEAT),
-					HEAT, List.of(HEAT_START, HEAT_FINISH),
+					// Heat chỉ xác nhận To CLG; Heat Start chỉ để xem.
+					HEAT, List.of(HEAT_FINISH),
 					FINE, List.of(TO_PK)
 			);
 
+	// Field chỉ để xem, không công đoạn nào được xác nhận.
+	// Dữ liệu (kể cả bản ghi Fac Confirm cũ) vẫn đọc và hiển thị bình thường.
+	private static final Set<String> READ_ONLY_FIELDS =
+			Set.of(HEAT_START);
+
+	// Bản ghi 'Heat Start' cũ vẫn thuộc Heat khi hiển thị.
 	private static final Map<String, String> DEFAULT_OWNER_PROCESS =
 			Map.of(
 					TO_DRILL, ROUGH,
@@ -160,6 +167,10 @@ public final class FacConfirmEditRules {
 				procGrp,
 				List.of()
 		);
+	}
+
+	public static boolean isReadOnlyField(String field) {
+		return READ_ONLY_FIELDS.contains(field);
 	}
 
 	// Field được sửa ở ít nhất một công đoạn (khi request không gửi procGrp).

@@ -167,14 +167,28 @@ public class FacConfirmProcessTimeService {
 	// - Có procGrp: field phải được sửa ở đúng công đoạn đó.
 	// - Không có procGrp: field phải được sửa ở ít nhất một công đoạn.
 	//
-	// Dòng không có Heat: Rough sửa To Drill + To CLG,
-	// không được sửa To Heat / Heat Start.
+	// Heat Start chỉ để xem: từ chối ở mọi công đoạn.
+	// Dòng không có Heat: Rough sửa To Drill + To CLG, không được sửa To Heat.
 	// =========================================================
 
 	private void validateEditableFields(
 			List<FacConfirmProcessTimeRequest.ProcessTimeItem> changes,
 			String procGrp
 	) {
+
+		List<String> readOnlyAufnrs =
+				changes.stream()
+						.filter(change -> FacConfirmEditRules.isReadOnlyField(change.field()))
+						.map(change -> change.aufnr().trim())
+						.distinct()
+						.toList();
+
+		if (!readOnlyAufnrs.isEmpty()) {
+			throw new IllegalArgumentException(
+					"Heat Start chỉ để xem, không xác nhận được: "
+							+ String.join(", ", readOnlyAufnrs)
+			);
+		}
 
 		Set<String> noHeatAufnrs =
 				new HashSet<>(
