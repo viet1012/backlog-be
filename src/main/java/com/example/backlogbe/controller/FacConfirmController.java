@@ -106,39 +106,6 @@ public class FacConfirmController {
 		);
 	}
 
-	@GetMapping("/debug-client")
-	public Map<String, Object> debugClient(
-			HttpServletRequest request
-	) {
-
-		String clientIp =
-				clientMachineService.getClientIp(
-						request
-				);
-
-		return Map.of(
-				"remoteAddr",
-				String.valueOf(request.getRemoteAddr()),
-
-				"xForwardedFor",
-				String.valueOf(
-						request.getHeader("X-Forwarded-For")
-				),
-
-				"xRealIp",
-				String.valueOf(
-						request.getHeader("X-Real-IP")
-				),
-
-				"resolvedClientIp",
-				clientIp,
-
-				"machineName",
-				clientMachineService.resolveMachineName(
-						clientIp
-				)
-		);
-	}
 	// =========================================================
 	// PROCESS GROUPS
 	// =========================================================
