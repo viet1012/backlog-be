@@ -233,9 +233,11 @@ public ResponseEntity<StreamingResponseBody> exportExcel(
         FacConfirmExcelExportRequest request
 ) {
 
-    excelService.validateExportRequest(
-            request
-    );
+    // Validate + đếm dòng trước khi ghi file: mọi lỗi trả 400 JSON.
+    FacConfirmExcelService.ExportPlan plan =
+            excelService.validateExportRequest(
+                    request
+            );
 
 
     String timestamp =
@@ -268,7 +270,7 @@ public ResponseEntity<StreamingResponseBody> exportExcel(
             outputStream ->
                     excelService.export(
                             outputStream,
-                            request
+                            plan
                     );
 
 

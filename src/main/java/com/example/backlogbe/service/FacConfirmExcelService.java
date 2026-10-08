@@ -59,7 +59,9 @@ public class FacConfirmExcelService {
 			6;
 
 
-	private static final int MAX_DETAIL_ROWS =
+	// Giới hạn số dòng dữ liệu export (dùng chung cho kiểm tra
+	// trước khi ghi file và lúc đang ghi file).
+	public static final int MAX_EXPORT_ROWS =
 			EXCEL_MAX_ROWS - DETAIL_DATA_START_ROW;
 
 
@@ -70,6 +72,18 @@ public class FacConfirmExcelService {
 
 
 	private final FacConfirmRepository repository;
+
+	private final FacConfirmService facConfirmService;
+
+
+	// Request đã validate: tham số lọc chuẩn hóa + cột export.
+	public record ExportPlan(
+			FacConfirmExcelExportRequest request,
+			FacConfirmService.SearchQuery query,
+			List<ExcelColumn> columns,
+			long rowCount
+	) {
+	}
 
 
 	// =========================================================
@@ -448,10 +462,13 @@ public class FacConfirmExcelService {
 	// =========================================================
 	// EXPORT REQUEST VALIDATION
 	//
-	// Goi truoc khi stream bat dau de tra ve 400.
+	// Gọi trước khi stream bắt đầu, để mọi lỗi trả 400 JSON:
+	// - tham số lọc + filter: dùng chung FacConfirmService.normalizeQuery (giống /search)
+	// - cột export
+	// - filter value (ngày / số sai) và số dòng: chạy countSearch trước
 	// =========================================================
 
-	public void validateExportRequest(
+	public ExportPlan validateExportRequest(
 			FacConfirmExcelExportRequest request
 	) {
 
@@ -463,48 +480,55 @@ public class FacConfirmExcelService {
 		}
 
 
-		// =====================================================
-		// BASE FILTER
-		//
-		// Cung semantics voi FacConfirmService.
-		// =====================================================
+		FacConfirmService.SearchQuery query =
+				facConfirmService.normalizeQuery(
+						request.div(),
+						request.expD(),
+						request.procGrp(),
+						request.classify(),
+						request.heatType(),
+						request.search(),
+						request.filters(),
+						request.logicOperator()
+				);
 
-		if (request.expD() == null) {
+
+		List<ExcelColumn> columns =
+				resolveExportColumns(
+						request.columns()
+				);
+
+
+		long rowCount =
+				repository.countSearch(
+						query.div(),
+						query.expD(),
+						query.procGrp(),
+						query.classify(),
+						query.heatType(),
+						query.search(),
+						query.filters(),
+						query.logicOperator()
+				);
+
+
+		if (rowCount > MAX_EXPORT_ROWS) {
 
 			throw new IllegalArgumentException(
-					"expD is required"
+					"Dữ liệu export có "
+							+ rowCount
+							+ " dòng, vượt giới hạn "
+							+ MAX_EXPORT_ROWS
+							+ " dòng. Hãy thu hẹp bộ lọc."
 			);
 		}
 
 
-		if (
-				request.div() == null
-						|| request.div().isBlank()
-		) {
-
-			throw new IllegalArgumentException(
-					"div is required"
-			);
-		}
-
-
-		if (
-				request.procGrp() == null
-						|| request.procGrp().isBlank()
-		) {
-
-			throw new IllegalArgumentException(
-					"procGrp is required"
-			);
-		}
-
-
-		// =====================================================
-		// EXPORT COLUMNS
-		// =====================================================
-
-		resolveExportColumns(
-				request.columns()
+		return new ExportPlan(
+				request,
+				query,
+				columns,
+				rowCount
 		);
 	}
 
@@ -516,28 +540,20 @@ public class FacConfirmExcelService {
 	@Transactional(readOnly = true)
 	public void export(
 			OutputStream outputStream,
-			FacConfirmExcelExportRequest request
+			ExportPlan plan
 	) throws IOException {
 
-		if (request == null) {
+		FacConfirmExcelExportRequest request =
+				plan.request();
 
-			throw new IllegalArgumentException(
-					"Export request is required"
-			);
-		}
-
+		FacConfirmService.SearchQuery query =
+				plan.query();
 
 		String safeSearch =
-				request.search() == null
-								|| request.search().isBlank()
-						? null
-						: request.search().trim();
-
+				query.search();
 
 		List<ExcelColumn> exportColumns =
-				resolveExportColumns(
-						request.columns()
-				);
+				plan.columns();
 
 
 		// Keep only a limited number of rows in memory.
@@ -589,14 +605,14 @@ public class FacConfirmExcelService {
 
 
 			repository.streamSearchForExport(
-					request.div(),
-					request.expD(),
-					request.procGrp(),
-					request.classify(),
-					request.heatType(),
-					safeSearch,
-					request.filters(),
-					request.logicOperator(),
+					query.div(),
+					query.expD(),
+					query.procGrp(),
+					query.classify(),
+					query.heatType(),
+					query.search(),
+					query.filters(),
+					query.logicOperator(),
 
 					rs -> {
 
@@ -604,14 +620,16 @@ public class FacConfirmExcelService {
 								rowIndex.getAndIncrement();
 
 
+						// Đã kiểm tra số dòng trước khi ghi; chặn thêm phòng
+						// dữ liệu tăng giữa lúc đếm và lúc ghi file.
 						if (
-								excelRow
-										>= EXCEL_MAX_ROWS
+								excelRow - DETAIL_DATA_START_ROW
+										>= MAX_EXPORT_ROWS
 						) {
 
 							throw new IllegalStateException(
 									"Excel export exceeded "
-											+ MAX_DETAIL_ROWS
+											+ MAX_EXPORT_ROWS
 											+ " data rows"
 							);
 						}

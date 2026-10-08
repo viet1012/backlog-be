@@ -220,41 +220,23 @@ public class FacConfirmService {
 
 
 		// =====================================================
-		// BASE FILTER
+		// BASE FILTER + EXCEL FILTER + SEARCH
+		// (dùng chung với export Excel)
 		// =====================================================
 
-		String safeDiv =
-				normalizeDiv(
-						request.div()
+		SearchQuery query =
+				normalizeQuery(
+						request.div(),
+						request.expD(),
+						request.procGrp(),
+						request.classify(),
+						request.heatType(),
+						request.search(),
+						request.filters(),
+						request.logicOperator()
 				);
 
 
-		validateExportDate(
-				request.expD()
-		);
-
-
-		String safeProcGrp =
-				normalizeProcessGroup(
-						request.procGrp()
-				);
-
-
-		String safeClassify =
-				normalizeClassify(
-						request.classify()
-				);
-
-		String safeHeatType =
-				normalizeHeatType(
-						request.heatType()
-				);
-
-
-		String safeSearch =
-				normalizeSearch(
-						request.search()
-				);
 		// =====================================================
 		// PAGINATION
 		// =====================================================
@@ -272,35 +254,19 @@ public class FacConfirmService {
 
 
 		// =====================================================
-		// EXCEL FILTER
-		// =====================================================
-
-		List<FacConfirmFilterItem> safeFilters =
-				normalizeFilters(
-						request.filters()
-				);
-
-
-		String safeLogicOperator =
-				normalizeLogicOperator(
-						request.logicOperator()
-				);
-
-
-		// =====================================================
 		// COUNT
 		// =====================================================
 
 		long total =
 				repository.countSearch(
-						safeDiv,
-						request.expD(),
-						safeProcGrp,
-						safeClassify,
-						safeHeatType,
-						safeSearch,
-						safeFilters,
-						safeLogicOperator
+						query.div(),
+						query.expD(),
+						query.procGrp(),
+						query.classify(),
+						query.heatType(),
+						query.search(),
+						query.filters(),
+						query.logicOperator()
 				);
 
 
@@ -310,16 +276,16 @@ public class FacConfirmService {
 
 		List<FacConfirmDto> content =
 				repository.search(
-						safeDiv,
-						request.expD(),
-						safeProcGrp,
-						safeClassify,
-						safeHeatType,
-						safeSearch,
+						query.div(),
+						query.expD(),
+						query.procGrp(),
+						query.classify(),
+						query.heatType(),
+						query.search(),
 						safePage,
 						safeSize,
-						safeFilters,
-						safeLogicOperator
+						query.filters(),
+						query.logicOperator()
 				);
 
 
@@ -332,6 +298,54 @@ public class FacConfirmService {
 				safePage,
 				safeSize,
 				total
+		);
+	}
+
+
+	// =========================================================
+	// NORMALIZE QUERY
+	//
+	// Validate + chuẩn hóa tham số lọc dùng chung cho
+	// /search (search, countSearch) và export Excel.
+	// =========================================================
+
+	public record SearchQuery(
+			String div,
+			LocalDate expD,
+			String procGrp,
+			String classify,
+			String heatType,
+			String search,
+			List<FacConfirmFilterItem> filters,
+			String logicOperator
+	) {
+	}
+
+	public SearchQuery normalizeQuery(
+			String div,
+			LocalDate expD,
+			String procGrp,
+			String classify,
+			String heatType,
+			String search,
+			List<FacConfirmFilterItem> filters,
+			String logicOperator
+	) {
+
+		String safeDiv =
+				normalizeDiv(div);
+
+		validateExportDate(expD);
+
+		return new SearchQuery(
+				safeDiv,
+				expD,
+				normalizeProcessGroup(procGrp),
+				normalizeClassify(classify),
+				normalizeHeatType(heatType),
+				normalizeSearch(search),
+				normalizeFilters(filters),
+				normalizeLogicOperator(logicOperator)
 		);
 	}
 
