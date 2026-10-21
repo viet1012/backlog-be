@@ -275,6 +275,22 @@ Body `FacConfirmProcessGroupRequest`: `div`, `expD` (bắt buộc), `classify`, 
 ```
 Thẻ không có dòng nào thì không xuất hiện trong mảng. Quy tắc áp dụng: 3.4, 3.5.
 
+#### `GET /api/fac-confirm/daily-summary`: thẻ Rough / Heat / Fine theo ngày
+
+| Tham số | Bắt buộc | Ý nghĩa |
+|---|---|---|
+| `division` | có | như `div` |
+| `from`, `to` | có | `yyyy-MM-dd`, `from <= to`, tối đa 92 ngày |
+| `saleType` | không (mặc định `ALL`) | `ALL` / `SALE` / `STOCK` (= `classify`) |
+| `heatType` | không (mặc định `All`) | như 4.1 |
+| `dateBy` | không (mặc định `EXPORT`) | `EXPORT` / `CONFIRM` |
+
+Cùng định nghĩa với thẻ (3.4, `PROCESS_SCOPE_CTE` dùng chung), khác:
+- Cần xác nhận: theo `ExportD` trong `[from, to]` (thẻ dùng `ExportD <= expD`, tức lũy kế).
+- Đã xác nhận: `EXPORT` theo `ExportD`; `CONFIRM` theo `ConfirmFnTime` (bản ghi mới nhất theo `UpdatedAt`) của process cuối, chỉ xét `ExportD <= to`.
+- PO = `COUNT(DISTINCT AUFNR)`, Pcs = `SUM(FinalQty)`. Không áp dụng Excel filter.
+- Trả đủ mọi ngày, ngày không có dữ liệu = 0; `total` tính DISTINCT trên cả khoảng.
+
 ### 4.5. `POST /api/fac-confirm/confirmed-processes`: các ô đã được xác nhận qua Fac Confirm
 
 Body: mảng `aufnr`, ví dụ `["123456", "123457"]`. Rỗng thì trả `[]`.

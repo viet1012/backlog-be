@@ -1,5 +1,6 @@
 package com.example.backlogbe.repository.facconfirm;
 
+import java.math.BigDecimal;
 import java.sql.ResultSet;
 import java.sql.Timestamp;
 import java.time.LocalDate;
@@ -1093,47 +1094,130 @@ public class FacConfirmRepository {
 
 
 	// =========================================================
-	// PROCESS GROUP SUMMARY
+	// PROCESS SCOPE
+	//
+	// Dòng thuộc từng công đoạn + process cuối cần xác nhận.
+	// Định nghĩa duy nhất cho:
+	// - thẻ tổng hợp (findProcessGroups)
+	// - thống kê theo ngày (findDailySummary)
+	//
+	// Cần CTE FilteredBase đứng trước.
 	// =========================================================
 
+	private static final String PROCESS_SCOPE_CTE = """
+			ProcessScope AS (
 
-	public List<FacConfirmProcessGroupDto> findProcessGroups(
+			    -- =========================================
+			    -- ROUGH
+			    -- =========================================
+			    SELECT
+			        'Rough' AS ProcessGroup,
+			        1 AS SortOrder,
+			        b.AUFNR,
+			        b.FinalQty,
+			        b.ExportD,
+			        -- Process cuối theo từng dòng (FacConfirmEditRules.getFinalProcess):
+			        -- dòng thường 'To Heat', dòng không có Heat 'Heat Finish' (To CLG)
+			        """
+			+ FacConfirmEditRules.finalProcessSql("b", FacConfirmEditRules.ROUGH)
+			+ " AS FinalConfirmProcess\n"
+			+ """
+
+			    FROM FilteredBase b
+
+			    WHERE (
+			           b.ProcessGrp2 = 'Rough'
+			           OR b.ProcessGrp2 IS NULL
+			    )
+
+
+			    UNION ALL
+
+
+			    -- =========================================
+			    -- HEAT
+			    -- =========================================
+			    SELECT
+			        'Heat' AS ProcessGroup,
+			        2 AS SortOrder,
+			        b.AUFNR,
+			        b.FinalQty,
+			        b.ExportD,
+			        """
+			+ FacConfirmEditRules.finalProcessSql("b", FacConfirmEditRules.HEAT)
+			+ " AS FinalConfirmProcess\n"
+			+ """
+
+			    FROM FilteredBase b
+
+			    WHERE (
+			           b.ProcessGrp2 IN (
+			               'Heat',
+			               'Rough'
+			           )
+			           OR b.ProcessGrp2 IS NULL
+			    )
+
+			    -- bỏ dòng Heat Note = "Không có Heat"
+			    AND """
+			+ FacConfirmEditRules.hasHeatSql("b")
+			+ """
+
+
+			    UNION ALL
+
+
+			    -- =========================================
+			    -- FINE
+			    -- =========================================
+			    SELECT
+			        'Fine' AS ProcessGroup,
+			        3 AS SortOrder,
+			        b.AUFNR,
+			        b.FinalQty,
+			        b.ExportD,
+			        """
+			+ FacConfirmEditRules.finalProcessSql("b", FacConfirmEditRules.FINE)
+			+ " AS FinalConfirmProcess\n"
+			+ """
+
+			    FROM FilteredBase b
+
+			    WHERE (
+			           b.ProcessGrp2 IN (
+			               'Fine',
+			               'Heat',
+			               'Rough'
+			           )
+			           OR b.ProcessGrp2 IS NULL
+			    )
+			)
+			""";
+
+
+	// =========================================================
+	// SUMMARY FILTER WHERE
+	//
+	// Điều kiện lọc của thẻ tổng hợp, ngoài ngày xuất:
+	// Div, IsNoCount, Classify, Heat type.
+	// Trả về chuỗi bắt đầu bằng AND (nối sau điều kiện ngày).
+	// =========================================================
+
+	private String buildSummaryFilterWhere(
 			String div,
-			LocalDate expD,
 			String classify,
 			String heatType,
-			List<FacConfirmFilterItem> filters,
-			String logicOperator
+			List<Object> params
 	) {
 
-		List<Object> params =
-				new ArrayList<>();
-
-
-		// =========================================================
-		// BASE PARAMS
-		// =========================================================
-		params.add(
-				Timestamp.valueOf(
-						expD.atStartOfDay()
-				)
-		);
-
 		params.add(div);
 		params.add(div);
 
-
-		// =========================================================
-		// BASE WHERE
-		// Không có procGrp ở đây vì cần tính cả 3 nút cùng lúc
-		// =========================================================
 
 		StringBuilder where =
 				new StringBuilder(
 						"""
-								
-								WHERE d.ExportD <= ?
-								
+
 								  AND (
 										 d.Div = ?
 									  OR (
@@ -1141,9 +1225,9 @@ public class FacConfirmRepository {
 										   AND d.Div LIKE '%G'
 									  )
 								  )
-								
+
 								  AND d.IsNoCount = 0
-								
+
 								"""
 				);
 
@@ -1165,7 +1249,7 @@ public class FacConfirmRepository {
 
 				where.append(
 						"""
-								
+
 								AND LTRIM(
 									RTRIM(
 										ISNULL(
@@ -1174,7 +1258,7 @@ public class FacConfirmRepository {
 										)
 									)
 								) = 'Sale'
-								
+
 								"""
 				);
 
@@ -1186,7 +1270,7 @@ public class FacConfirmRepository {
 
 				where.append(
 						"""
-								
+
 								AND LTRIM(
 									RTRIM(
 										ISNULL(
@@ -1195,7 +1279,7 @@ public class FacConfirmRepository {
 										)
 									)
 								) <> 'Sale'
-								
+
 								"""
 				);
 			}
@@ -1221,11 +1305,11 @@ public class FacConfirmRepository {
 
 				where.append(
 						"""
-								
+
 								AND d.IsDC53 = 0
 								AND d.IsTD = 0
 								AND d.IsMolypden = 0
-								
+
 								"""
 				);
 
@@ -1237,9 +1321,9 @@ public class FacConfirmRepository {
 
 				where.append(
 						"""
-								
+
 								AND d.IsDC53 = 1
-								
+
 								"""
 				);
 
@@ -1251,9 +1335,9 @@ public class FacConfirmRepository {
 
 				where.append(
 						"""
-								
+
 								AND d.IsTD = 1
-								
+
 								"""
 				);
 
@@ -1265,13 +1349,64 @@ public class FacConfirmRepository {
 
 				where.append(
 						"""
-								
+
 								AND d.IsMolypden = 1
-								
+
 								"""
 				);
 			}
 		}
+
+		return where.toString();
+	}
+
+
+	// =========================================================
+	// PROCESS GROUP SUMMARY
+	// =========================================================
+
+
+	public List<FacConfirmProcessGroupDto> findProcessGroups(
+			String div,
+			LocalDate expD,
+			String classify,
+			String heatType,
+			List<FacConfirmFilterItem> filters,
+			String logicOperator
+	) {
+
+		List<Object> params =
+				new ArrayList<>();
+
+
+		// =========================================================
+		// BASE WHERE
+		// Không có procGrp ở đây vì cần tính cả 3 nút cùng lúc
+		// =========================================================
+
+		params.add(
+				Timestamp.valueOf(
+						expD.atStartOfDay()
+				)
+		);
+
+		StringBuilder where =
+				new StringBuilder(
+						"""
+
+								WHERE d.ExportD <= ?
+
+								"""
+				);
+
+		where.append(
+				buildSummaryFilterWhere(
+						div,
+						classify,
+						heatType,
+						params
+				)
+		);
 
 
 		// =========================================================
@@ -1300,145 +1435,65 @@ public class FacConfirmRepository {
 		String sql =
 				FAC_DATA_CTE
 						+ """
-						
+
 						,
 						FilteredBase AS (
-						
+
 						    SELECT
 						        d.*
-						
+
 						    FROM FacData d
-						
+
 						"""
 						+ where
 						+ """
-						
+
 						),
-						
-						
+
+
 						Confirmed AS (
-						
+
 						    SELECT DISTINCT
 						        fc.AUNFR,
 						        fc.ProcessGrp
-						
+
 						    FROM F2Database.dbo.F2_Backlog_Fac_Confirm fc
-						
+
 						    WHERE fc.ConfirmFnTime IS NOT NULL
-						
+
 						      AND fc.ProcessGrp IN ("""
 						+ FacConfirmEditRules.finalProcessesSqlList()
 						+ """
 						      )
 						),
-						
-						
-						ProcessScope AS (
-						
-						    -- =========================================
-						    -- ROUGH
-						    -- =========================================
-						    SELECT
-						        'Rough' AS ProcessGroup,
-						        1 AS SortOrder,
-						        b.AUFNR,
-						        b.FinalQty,
-						        -- Process cuối theo từng dòng (FacConfirmEditRules.getFinalProcess):
-						        -- dòng thường 'To Heat', dòng không có Heat 'Heat Finish' (To CLG)
-						        """
-						+ FacConfirmEditRules.finalProcessSql("b", FacConfirmEditRules.ROUGH)
-						+ " AS FinalConfirmProcess\n"
-						+ """
-						
-						    FROM FilteredBase b
-						
-						    WHERE (
-						           b.ProcessGrp2 = 'Rough'
-						           OR b.ProcessGrp2 IS NULL
-						    )
-						
-						
-						    UNION ALL
-						
-						
-						    -- =========================================
-						    -- HEAT
-						    -- =========================================
-						    SELECT
-						        'Heat' AS ProcessGroup,
-						        2 AS SortOrder,
-						        b.AUFNR,
-						        b.FinalQty,
-						        """
-						+ FacConfirmEditRules.finalProcessSql("b", FacConfirmEditRules.HEAT)
-						+ " AS FinalConfirmProcess\n"
-						+ """
-						
-						    FROM FilteredBase b
-						
-						    WHERE (
-						           b.ProcessGrp2 IN (
-						               'Heat',
-						               'Rough'
-						           )
-						           OR b.ProcessGrp2 IS NULL
-						    )
 
-						    -- bỏ dòng Heat Note = "Không có Heat"
-						    AND """
-						+ FacConfirmEditRules.hasHeatSql("b")
+
+						"""
+						+ PROCESS_SCOPE_CTE
 						+ """
-						
-						
-						    UNION ALL
-						
-						
-						    -- =========================================
-						    -- FINE
-						    -- =========================================
-						    SELECT
-						        'Fine' AS ProcessGroup,
-						        3 AS SortOrder,
-						        b.AUFNR,
-						        b.FinalQty,
-						        """
-						+ FacConfirmEditRules.finalProcessSql("b", FacConfirmEditRules.FINE)
-						+ " AS FinalConfirmProcess\n"
-						+ """
-						
-						    FROM FilteredBase b
-						
-						    WHERE (
-						           b.ProcessGrp2 IN (
-						               'Fine',
-						               'Heat',
-						               'Rough'
-						           )
-						           OR b.ProcessGrp2 IS NULL
-						    )
-						),
-						
-						
+						,
+
+
 						Summary AS (
-						
+
 						    SELECT
 						        ps.ProcessGroup,
 						        ps.SortOrder,
-						
+
 						        COUNT_BIG(*)
 						            AS RequiredOrderCount,
-						
+
 						        SUM(
 						            CAST(
 						                ps.FinalQty
 						                AS DECIMAL(18, 2)
 						            )
 						        ) AS RequiredTotalQty,
-						
+
 						        COUNT_BIG(
 						            c.AUNFR
 						        ) AS ConfirmedOrderCount,
-						
+
 						        SUM(
 						            CASE
 						                WHEN c.AUNFR IS NOT NULL
@@ -1446,49 +1501,49 @@ public class FacConfirmRepository {
 						                    ps.FinalQty
 						                    AS DECIMAL(18, 2)
 						                )
-						
+
 						                ELSE CAST(
 						                    0
 						                    AS DECIMAL(18, 2)
 						                )
 						            END
 						        ) AS ConfirmedTotalQty
-						
+
 						    FROM ProcessScope ps
-						
+
 						    LEFT JOIN Confirmed c
 						        ON c.AUNFR = ps.AUFNR
 						       AND c.ProcessGrp =
 						           ps.FinalConfirmProcess
-						
+
 						    GROUP BY
 						        ps.ProcessGroup,
 						        ps.SortOrder
 						)
-						
-						
+
+
 						SELECT
 						    ProcessGroup,
-						
+
 						    RequiredOrderCount,
-						
+
 						    ISNULL(
 						        RequiredTotalQty,
 						        0
 						    ) AS RequiredTotalQty,
-						
+
 						    ConfirmedOrderCount,
-						
+
 						    ISNULL(
 						        ConfirmedTotalQty,
 						        0
 						    ) AS ConfirmedTotalQty
-						
+
 						FROM Summary
-						
+
 						ORDER BY
 						    SortOrder
-						
+
 						""";
 
 
@@ -1518,6 +1573,272 @@ public class FacConfirmRepository {
 										"ConfirmedTotalQty"
 								)
 						),
+
+				params.toArray()
+		);
+	}
+
+
+	// =========================================================
+	// DAILY SUMMARY
+	//
+	// Cùng định nghĩa với thẻ tổng hợp (FilteredBase + ProcessScope
+	// + process cuối có ConfirmFnTime), chỉ thêm GROUP BY ngày.
+	//
+	// - Cần xác nhận: theo ngày Export Date (ExportD trong [from, to]).
+	// - Đã xác nhận:
+	//     EXPORT : theo Export Date (tập con của Cần xác nhận).
+	//     CONFIRM: theo ConfirmFnTime của process cuối (bản ghi mới nhất
+	//              theo UpdatedAt, như LatestConfirm), ExportD <= to.
+	// - PO = COUNT DISTINCT AUFNR, Pcs = SUM FinalQty.
+	// - Dòng tổng (ReportDay = NULL) tính bằng GROUPING SETS, nên PO tổng
+	//   là DISTINCT trên cả khoảng.
+	// =========================================================
+
+	public record DailySummaryRow(
+			String processGroup,
+			LocalDate day,
+			long needPo,
+			BigDecimal needPcs,
+			long donePo,
+			BigDecimal donePcs
+	) {
+	}
+
+
+	public List<DailySummaryRow> findDailySummary(
+			String div,
+			LocalDate from,
+			LocalDate to,
+			boolean byConfirmDate,
+			String classify,
+			String heatType
+	) {
+
+		Timestamp fromTs =
+				Timestamp.valueOf(
+						from.atStartOfDay()
+				);
+
+		Timestamp toExclusiveTs =
+				Timestamp.valueOf(
+						to.plusDays(1).atStartOfDay()
+				);
+
+		List<Object> params =
+				new ArrayList<>();
+
+
+		// =========================================================
+		// BASE WHERE
+		// EXPORT : chỉ cần ExportD trong [from, to]
+		// CONFIRM: PO xuất trước from vẫn có thể xác nhận trong khoảng
+		// =========================================================
+
+		StringBuilder where =
+				new StringBuilder(
+						"""
+
+								WHERE d.ExportD < ?
+
+								"""
+				);
+
+		params.add(toExclusiveTs);
+
+		if (!byConfirmDate) {
+
+			where.append(
+					"""
+
+							  AND d.ExportD >= ?
+
+							"""
+			);
+
+			params.add(fromTs);
+		}
+
+		where.append(
+				buildSummaryFilterWhere(
+						div,
+						classify,
+						heatType,
+						params
+				)
+		);
+
+
+		// =========================================================
+		// ĐÃ XÁC NHẬN: ngày + điều kiện theo dateBy
+		// =========================================================
+
+		String doneDay;
+		String doneWhere;
+
+		if (byConfirmDate) {
+
+			doneDay = "CAST(ct.ConfirmFnTime AS date)";
+
+			doneWhere =
+					"""
+							WHERE ct.ConfirmFnTime >= ?
+							  AND ct.ConfirmFnTime < ?
+							""";
+
+		} else {
+
+			doneDay = "CAST(ps.ExportD AS date)";
+
+			doneWhere =
+					"""
+							WHERE ps.ExportD >= ?
+							""";
+		}
+
+
+		String sql =
+				FAC_DATA_CTE
+						+ """
+
+						,
+						FilteredBase AS (
+
+						    SELECT
+						        d.*
+
+						    FROM FacData d
+
+						"""
+						+ where
+						+ """
+
+						),
+
+
+						-- Process cuối đã xác nhận, kèm thời điểm (bản ghi mới nhất)
+						ConfirmTime AS (
+
+						    SELECT
+						        lc.AUNFR,
+						        lc.ProcessGrp,
+						        lc.ConfirmFnTime
+
+						    FROM LatestConfirm lc
+
+						    WHERE lc.rn = 1
+
+						      AND lc.ProcessGrp IN ("""
+						+ FacConfirmEditRules.finalProcessesSqlList()
+						+ """
+						      )
+						),
+
+
+						"""
+						+ PROCESS_SCOPE_CTE
+						+ """
+						,
+
+
+						Events AS (
+
+						    -- Cần xác nhận
+						    SELECT
+						        ps.ProcessGroup,
+						        ps.AUFNR,
+						        CAST(ps.FinalQty AS DECIMAL(18, 2)) AS Qty,
+						        CAST(ps.ExportD AS date) AS ReportDay,
+						        0 AS IsDone
+
+						    FROM ProcessScope ps
+
+						    WHERE ps.ExportD >= ?
+
+
+						    UNION ALL
+
+
+						    -- Đã xác nhận
+						    SELECT
+						        ps.ProcessGroup,
+						        ps.AUFNR,
+						        CAST(ps.FinalQty AS DECIMAL(18, 2)) AS Qty,
+						        """
+						+ doneDay
+						+ """
+						 AS ReportDay,
+						        1 AS IsDone
+
+						    FROM ProcessScope ps
+
+						    JOIN ConfirmTime ct
+						        ON ct.AUNFR = ps.AUFNR
+						       AND ct.ProcessGrp =
+						           ps.FinalConfirmProcess
+
+						"""
+						+ doneWhere
+						+ """
+						)
+
+
+						SELECT
+						    ProcessGroup,
+						    ReportDay,
+						    GROUPING(ReportDay) AS IsTotal,
+
+						    COUNT(DISTINCT CASE WHEN IsDone = 0 THEN AUFNR END)
+						        AS NeedPo,
+
+						    ISNULL(SUM(CASE WHEN IsDone = 0 THEN Qty END), 0)
+						        AS NeedPcs,
+
+						    COUNT(DISTINCT CASE WHEN IsDone = 1 THEN AUFNR END)
+						        AS DonePo,
+
+						    ISNULL(SUM(CASE WHEN IsDone = 1 THEN Qty END), 0)
+						        AS DonePcs
+
+						FROM Events
+
+						GROUP BY GROUPING SETS (
+						    (ProcessGroup, ReportDay),
+						    (ProcessGroup)
+						)
+
+						""";
+
+
+		params.add(fromTs);
+
+		if (byConfirmDate) {
+			params.add(fromTs);
+			params.add(toExclusiveTs);
+		} else {
+			params.add(fromTs);
+		}
+
+
+		return jdbcTemplate.query(
+				sql,
+
+				(rs, rowNum) -> {
+
+					java.sql.Date day =
+							rs.getInt("IsTotal") == 1
+									? null
+									: rs.getDate("ReportDay");
+
+					return new DailySummaryRow(
+							rs.getString("ProcessGroup"),
+							day == null ? null : day.toLocalDate(),
+							rs.getLong("NeedPo"),
+							rs.getBigDecimal("NeedPcs"),
+							rs.getLong("DonePo"),
+							rs.getBigDecimal("DonePcs")
+					);
+				},
 
 				params.toArray()
 		);

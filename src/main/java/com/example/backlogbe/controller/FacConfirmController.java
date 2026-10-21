@@ -23,6 +23,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
 
 import com.example.backlogbe.dto.PageResponse;
+import com.example.backlogbe.dto.facconfirm.FacConfirmDailySummaryDto;
 import com.example.backlogbe.dto.facconfirm.FacConfirmDto;
 import com.example.backlogbe.dto.facconfirm.FacConfirmExcelExportRequest;
 import com.example.backlogbe.dto.facconfirm.FacConfirmFilterOptionsRequest;
@@ -164,6 +165,60 @@ public class FacConfirmController {
 		return ResponseEntity.ok(
 				service.getFilterOptions(
 						request
+				)
+		);
+	}
+
+
+	// =========================================================
+	// DAILY SUMMARY
+	//
+	// GET /api/fac-confirm/daily-summary
+	// =========================================================
+
+	@GetMapping("/daily-summary")
+	public ResponseEntity<FacConfirmDailySummaryDto> getDailySummary(
+
+			// Không đánh dấu required để service trả lỗi tiếng Việt
+			@RequestParam(required = false)
+			String division,
+
+			@RequestParam(required = false)
+			@DateTimeFormat(
+					iso = DateTimeFormat.ISO.DATE
+			)
+			LocalDate from,
+
+			@RequestParam(required = false)
+			@DateTimeFormat(
+					iso = DateTimeFormat.ISO.DATE
+			)
+			LocalDate to,
+
+			@RequestParam(
+					defaultValue = "ALL"
+			)
+			String saleType,
+
+			@RequestParam(
+					defaultValue = "All"
+			)
+			String heatType,
+
+			@RequestParam(
+					defaultValue = "EXPORT"
+			)
+			String dateBy
+	) {
+
+		return ResponseEntity.ok(
+				service.getDailySummary(
+						division,
+						from,
+						to,
+						saleType,
+						heatType,
+						dateBy
 				)
 		);
 	}

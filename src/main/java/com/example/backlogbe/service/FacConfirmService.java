@@ -2,6 +2,7 @@ package com.example.backlogbe.service;
 
 import com.example.backlogbe.dto.PageResponse;
 import com.example.backlogbe.dto.facconfirm.*;
+import com.example.backlogbe.repository.facconfirm.FacConfirmEditRules;
 import com.example.backlogbe.repository.facconfirm.FacConfirmFilterField;
 import com.example.backlogbe.repository.facconfirm.FacConfirmRepository;
 import lombok.RequiredArgsConstructor;
@@ -9,7 +10,11 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
+import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 
@@ -539,6 +544,233 @@ public class FacConfirmService {
 				safeHeatType,
 				safeFilters,
 				safeLogicOperator
+		);
+	}
+
+
+	// =========================================================
+	// DAILY SUMMARY
+	//
+	// Thống kê Cần / Đã xác nhận theo ngày cho Rough / Heat / Fine.
+	// Trả đủ mọi ngày trong [from, to], ngày không có dữ liệu = 0.
+	// =========================================================
+
+	private static final int MAX_DAILY_RANGE_DAYS = 92;
+
+	private static final String DATE_BY_EXPORT = "EXPORT";
+
+	private static final String DATE_BY_CONFIRM = "CONFIRM";
+
+
+	@Transactional(readOnly = true)
+	public FacConfirmDailySummaryDto getDailySummary(
+			String division,
+			LocalDate from,
+			LocalDate to,
+			String saleType,
+			String heatType,
+			String dateBy
+	) {
+
+		// =====================================================
+		// VALIDATE
+		// =====================================================
+
+		if (
+				division == null
+						|| division.isBlank()
+		) {
+			throw new IllegalArgumentException(
+					"division là bắt buộc"
+			);
+		}
+
+		if (from == null || to == null) {
+			throw new IllegalArgumentException(
+					"from và to là bắt buộc (định dạng yyyy-MM-dd)"
+			);
+		}
+
+		if (from.isAfter(to)) {
+			throw new IllegalArgumentException(
+					"from phải nhỏ hơn hoặc bằng to"
+			);
+		}
+
+		long rangeDays =
+				ChronoUnit.DAYS.between(from, to) + 1;
+
+		if (rangeDays > MAX_DAILY_RANGE_DAYS) {
+			throw new IllegalArgumentException(
+					"Khoảng ngày tối đa "
+							+ MAX_DAILY_RANGE_DAYS
+							+ " ngày (đang chọn "
+							+ rangeDays
+							+ " ngày)"
+			);
+		}
+
+		String safeClassify =
+				normalizeSaleType(saleType);
+
+		String safeDateBy =
+				normalizeDateBy(dateBy);
+
+		String safeHeatType =
+				normalizeHeatType(heatType);
+
+
+		// =====================================================
+		// DATA
+		// =====================================================
+
+		List<FacConfirmRepository.DailySummaryRow> rows =
+				repository.findDailySummary(
+						division.trim(),
+						from,
+						to,
+						DATE_BY_CONFIRM.equals(safeDateBy),
+						safeClassify,
+						safeHeatType
+				);
+
+
+		// =====================================================
+		// GOM THEO NGÀY / CÔNG ĐOẠN
+		// =====================================================
+
+		Map<LocalDate, Map<String, FacConfirmDailyCountDto>> byDay =
+				new HashMap<>();
+
+		Map<String, FacConfirmDailyCountDto> totals =
+				new HashMap<>();
+
+		for (FacConfirmRepository.DailySummaryRow row : rows) {
+
+			FacConfirmDailyCountDto count =
+					new FacConfirmDailyCountDto(
+							row.needPo(),
+							row.needPcs(),
+							row.donePo(),
+							row.donePcs()
+					);
+
+			if (row.day() == null) {
+				totals.put(row.processGroup(), count);
+			} else {
+				byDay
+						.computeIfAbsent(row.day(), d -> new HashMap<>())
+						.put(row.processGroup(), count);
+			}
+		}
+
+
+		List<FacConfirmDailySummaryDto.Day> days =
+				new ArrayList<>((int) rangeDays);
+
+		for (
+				LocalDate day = from;
+				!day.isAfter(to);
+				day = day.plusDays(1)
+		) {
+
+			Map<String, FacConfirmDailyCountDto> counts =
+					byDay.getOrDefault(day, Map.of());
+
+			days.add(
+					new FacConfirmDailySummaryDto.Day(
+							day,
+							countOf(counts, FacConfirmEditRules.ROUGH),
+							countOf(counts, FacConfirmEditRules.HEAT),
+							countOf(counts, FacConfirmEditRules.FINE)
+					)
+			);
+		}
+
+
+		return new FacConfirmDailySummaryDto(
+				from,
+				to,
+				safeDateBy,
+				days,
+				new FacConfirmDailySummaryDto.Total(
+						countOf(totals, FacConfirmEditRules.ROUGH),
+						countOf(totals, FacConfirmEditRules.HEAT),
+						countOf(totals, FacConfirmEditRules.FINE)
+				)
+		);
+	}
+
+
+	private FacConfirmDailyCountDto countOf(
+			Map<String, FacConfirmDailyCountDto> counts,
+			String processGroup
+	) {
+		return counts.getOrDefault(
+				processGroup,
+				FacConfirmDailyCountDto.ZERO
+		);
+	}
+
+
+	// ALL -> null (không lọc), SALE -> Sale, STOCK -> Stock
+	private String normalizeSaleType(
+			String saleType
+	) {
+
+		if (
+				saleType == null
+						|| saleType.isBlank()
+						|| saleType.trim().equalsIgnoreCase("ALL")
+		) {
+			return null;
+		}
+
+		String value =
+				saleType.trim();
+
+		if (value.equalsIgnoreCase("SALE")) {
+			return "Sale";
+		}
+
+		if (value.equalsIgnoreCase("STOCK")) {
+			return "Stock";
+		}
+
+		throw new IllegalArgumentException(
+				"saleType không hợp lệ: "
+						+ saleType
+						+ ". Giá trị cho phép: ALL, SALE, STOCK"
+		);
+	}
+
+
+	private String normalizeDateBy(
+			String dateBy
+	) {
+
+		if (
+				dateBy == null
+						|| dateBy.isBlank()
+		) {
+			return DATE_BY_EXPORT;
+		}
+
+		String value =
+				dateBy.trim();
+
+		if (value.equalsIgnoreCase(DATE_BY_EXPORT)) {
+			return DATE_BY_EXPORT;
+		}
+
+		if (value.equalsIgnoreCase(DATE_BY_CONFIRM)) {
+			return DATE_BY_CONFIRM;
+		}
+
+		throw new IllegalArgumentException(
+				"dateBy không hợp lệ: "
+						+ dateBy
+						+ ". Giá trị cho phép: EXPORT, CONFIRM"
 		);
 	}
 
