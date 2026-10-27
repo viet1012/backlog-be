@@ -383,3 +383,38 @@ Script unique index (`AUNFR`, `ProcessGrp`): `sql/fac_confirm_unique_index.sql`.
 - `FacConfirmProcessTimeResponse` không được dùng; API lưu trả `Map` (mục 4.6).
 - `upsert` dùng `MERGE ... WITH (HOLDLOCK)`, nên request mới không tạo bản ghi trùng. Dữ liệu cũ có thể đã trùng (`IF EXISTS … UPDATE … ELSE INSERT` trước đây không khóa): khi đọc, BE lấy bản ghi có `UpdatedAt` mới nhất; khi lưu, `MERGE` cập nhật mọi bản ghi trùng của cặp đó. Kiểm tra bằng bước 1 của `sql/fac_confirm_unique_index.sql`.
 - Không tìm thấy comment `TODO` / `FIXME` nào trong code Java.
+
+
+---
+
+# MACHINE LOCATOR
+
+Lưu bản đồ vị trí máy (thay JSON dev store `vite-plugins/machineLocatorDevStore.ts` của FE).
+Bảng tạo tay: `dbo.F2_MachineLocator_Floor`, `dbo.F2_MachineLocator_Machine`, `dbo.F2_MachineLocator_History`.
+
+Code: `MachineLocatorController` → `MachineLocatorService` → `MachineLocatorRepository` (NamedParameterJdbcTemplate).
+
+## Quy tắc
+- Đọc (`GET`) không cần đăng nhập. Ghi cần header `X-Employee-Id` (MSNV); tài khoản phải có trong `HSE_Patrol_Account` và có role `ADMIN` (tính như lúc login). Thiếu header / không có tài khoản → 401, không phải ADMIN → 403.
+- Mọi request ghi gửi `ifVersion`; lệch version trong DB → `409 { status, message, version }`. Thành công → `version + 1` (1 lần / request), mỗi máy thay đổi ghi 1 dòng `F2_MachineLocator_History`.
+- Mã máy: `^[AL]-\d{2,5}$`. `b`, `p`, `fit` phải cùng độ dài. `b` làm tròn 1 chữ số, `p` 2 chữ số.
+- PUT không có `keepStatus` → `src='manual'`, `u=false`, bỏ `r` (`review = 0`, cột NOT NULL). Có `keepStatus` → giữ `u/src/r` trong DB. Response chỉ có `r` khi `review = 1`.
+- Mọi lệnh ghi trả về floor đầy đủ như `GET /floors/{id}`: `{id, name, drawingTitle, imageUrl, crop, page, ppp, exportMeta, version, m}`.
+- `GET /floors`: mảng `{id, name, drawingTitle, imageUrl, exportMeta}` (`exportMeta = null` nếu chưa có).
+- CORS: `@CrossOrigin(origins = "*")` như controller khác, khai báo thêm `allowedHeaders = Content-Type, X-Employee-Id`.
+- Import: chỉ cập nhật `crop/page/ppp` + upsert máy trong file (máy không có trong file giữ nguyên). Máy `src` = `cad`/`old` được chép thêm vào `cad_*` để revert.
+
+## API (`/api/machine-locator`)
+| Method | Path | Body |
+|---|---|---|
+| GET | `/floors` | |
+| GET | `/floors/{id}` | |
+| PUT | `/floors/{id}/machines/{code}` | `{boxes, keepStatus?, ifVersion}` |
+| DELETE | `/floors/{id}/machines/{code}?ifVersion=` | |
+| POST | `/floors/{id}/machines/{code}/rename` | `{to, ifVersion}` |
+| POST | `/floors/{id}/machines/{code}/confirm` | `{ifVersion}` |
+| POST | `/floors/{id}/machines/{code}/revert` | `{ifVersion}` |
+| POST | `/floors/{id}/bulk` | `{ops:[{type:'set'\|'del', code, boxes}], keepStatus?, ifVersion}` |
+| POST | `/floors/{id}/import?ifVersion=` (tùy chọn) | file LayoutData `{crop, page, ppp, m}` (`b` dạng mảng) |
+
+`boxes` của PUT / bulk là mảng object `{x, y, w, h, p?, fit?}` (`p` = `Polygon[] | null`, `Polygon = [[x, y], ...]`). BE tách thành `boxes_json` = `[[x,y,w,h], ...]`, `polys_json` và `fit_json` là mảng song song; nếu mọi `p` (hoặc mọi `fit`) đều null/thiếu thì lưu NULL. Response vẫn là RawMachine `{b, p?, fit?, u, src, r?}`.

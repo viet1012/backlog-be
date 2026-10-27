@@ -14,6 +14,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Optional;
 
 @Service
 @RequiredArgsConstructor
@@ -170,6 +171,37 @@ public class ProductionControlAuthService {
 				hr != null ? hr.group() : null,
 				STATUS_ACTIVE,
 				roles
+		);
+	}
+
+	// =========================================================
+	// ACCOUNT ROLES
+	//
+	// Cho API khác kiểm tra quyền: tính role giống login.
+	// Không có tài khoản HSE_Patrol_Account -> Optional.empty().
+	// =========================================================
+
+	public Optional<List<String>> findAccountRoles(
+			String employeeId
+	) {
+		String safeEmployeeId =
+				normalizeEmployeeId(employeeId);
+
+		if (
+				safeEmployeeId.isBlank()
+						|| !repository.existsPatrolAccount(safeEmployeeId)
+		) {
+			return Optional.empty();
+		}
+
+		ProductionControlHrProfile hr =
+				repository.findHrByEmployeeId(safeEmployeeId)
+						.orElse(null);
+
+		return Optional.of(
+				hr != null
+						? determineRoles(hr)
+						: List.of(ROLE_USER)
 		);
 	}
 
