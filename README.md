@@ -418,3 +418,71 @@ Code: `MachineLocatorController` → `MachineLocatorService` → `MachineLocator
 | POST | `/floors/{id}/import?ifVersion=` (tùy chọn) | file LayoutData `{crop, page, ppp, m}` (`b` dạng mảng) |
 
 `boxes` của PUT / bulk là mảng object `{x, y, w, h, p?, fit?}` (`p` = `Polygon[] | null`, `Polygon = [[x, y], ...]`). BE tách thành `boxes_json` = `[[x,y,w,h], ...]`, `polys_json` và `fit_json` là mảng song song; nếu mọi `p` (hoặc mọi `fit`) đều null/thiếu thì lưu NULL. Response vẫn là RawMachine `{b, p?, fit?, u, src, r?}`.
+
+
+---
+
+# COST MONITORING
+
+Dựng lại 9 chart của file Excel "KVH Cost Monitoring": Div (`PR`, `MO`, `Guide`) × Chart (`OT`, `T&SL`, `RM`), trục X là các ngày trong tháng. Đơn vị: **K$**. Chỉ đọc, không cần đăng nhập.
+
+Code: `CostMonitoringController` → `CostMonitoringService` → `CostMonitoringRepository` (NamedParameterJdbcTemplate). Mọi tính toán nằm trong SQL; service chỉ validate tham số và gom nhóm.
+
+## Object SQL (chạy theo thứ tự trong `sql/`)
+| File | Object | Vai trò |
+|---|---|---|
+| `01_cost_master.sql` | `[KVH].dbo.CostCenterMaster`, `CostCodeMaster` | Mapping PL cost center name / mã RM → cost center (từ sheet MasterCost). Excel đổi master thì chạy lại. |
+| `02_fn_cost_actual_daily.sql` | `[KVH].dbo.fn_CostActualDaily(@From, @To)` | Actual theo ngày (K$) cho T&SL và RM |
+| `04_sp_cost_monitoring_chart.sql` | `[KVH].dbo.sp_CostMonitoringChart(@MonthStart, @SimuWeek)` | 1 dòng / chart / ngày, API gọi trực tiếp |
+
+BE luôn gọi bằng tên đầy đủ `[KVH].[dbo]...` / `[F2Database].[dbo]...`, không phụ thuộc database mặc định của datasource (`F2Database`).
+
+## Quy tắc tính (theo SP)
+- **Target** (`[F2Database].dbo.F2_PL_TGT`, `Month` dạng `'2026.10'`): Div `PR/MO/Guide` ↔ `PRESS/MOLD/GUIDE`, Chart `OT/T&SL/RM` ↔ Cate `OverTime/Tools/RM`.
+  - `fcTgt` = DataType `FC`, `bp` = DataType `BP`.
+  - `plTgt` = tuần `Simu_W*` được chọn. Không truyền `simuWeek` thì SP lấy **tuần Simu mới nhất có số khác 0, riêng từng Div/Cate** (các chart có thể dùng tuần khác nhau).
+- **PL_MTD**: `plTgt` × (số ngày làm việc lũy kế / tổng ngày làm việc trong tháng). Ngày làm việc lấy từ `WD_All` của `[F2Database].dbo.F2_Working_Date`. Ngày không có dòng trong bảng này được tính là ngày làm việc.
+- **Act_MTD**: lũy kế actual.
+  - `OT`: chưa có nguồn actual, nên luôn `null`.
+  - `T&SL`: tính đến hôm qua. `RM`: tính đến hôm kia. Sau mốc này `actMtd = null`.
+- **Est_MTD**:
+  - Từ ngày có actual cuối cùng trở về trước: `null`.
+  - Sau ngày đó: `actual cuối + (PL_MTD ngày đó − PL_MTD tại ngày actual cuối)`.
+  - Chart không có actual nào (vd `OT`): `Est_MTD = PL_MTD`.
+- **Fluct_TGT**: `fcTgt × (1 + Adj_Ratio_{PR|MO|GU})` của ngày đó (`F2_Working_Date`). Từ hôm nay trở đi dùng tỷ lệ của hôm qua.
+- **Actual** (`fn_CostActualDaily`):
+  - `T&SL`: lấy từ `[KVH].dbo.CostTool` với Factory `612*`, GL `570300` / `570400`.
+    - Chi phí chung `HT2`, `F2`, `HT-G` được phân bổ theo tỷ lệ **hardcode** (bảng `TTL!F2:J4` của Excel). Excel đổi thì sửa CTE `R` trong function.
+  - `RM`: lấy từ `[KVH].dbo.CostRm` với Factory `612K`.
+    - Bỏ GL `580000` và Movingtype `551` / `552`.
+    - Chỉ tính cost center `614100` (PR), `614200` (MO), `614600` / `614700` (Guide).
+  - Số được chia 1000 để ra K$. SP làm tròn 3 chữ số.
+
+## API (`/api/cost-monitoring`)
+| Method | Path | Mô tả |
+|---|---|---|
+| GET | `/chart?month=yyyy-MM&simuWeek=Simu_W3` | 9 chart của tháng |
+| GET | `/months` | Các tháng có trong `F2_PL_TGT`, mới nhất trước, vd `["2026.10","2026.09"]` |
+
+Tham số `/chart`:
+- `month`: dạng `yyyy-MM`. Bỏ trống thì lấy tháng hiện tại.
+- `simuWeek`: bỏ trống, hoặc một trong `Simu_W1`..`Simu_W5`.
+- Sai định dạng → `400 { status, message }`. Lỗi khác (vd lỗi SQL) → `500` với message chung, chi tiết chỉ ghi log.
+- `/months` trả dạng `2026.10`. FE cần đổi sang `2026-10` khi gọi `/chart`.
+
+Response `/chart`:
+```json
+{
+  "month": "2026-10", "simuWeek": "Simu_W3", "unit": "K$",
+  "charts": [
+    { "div": "PR", "chart": "OT", "fcTgt": 120.5, "plTgt": 118.0, "bp": 125.0,
+      "actMtdLatest": null, "estMonthEnd": 118.0,
+      "points": [ { "date": "2026-10-01", "plMtd": 3.9, "actMtd": null, "estMtd": 3.9, "fluctTgt": 121.2 } ] }
+  ]
+}
+```
+- `charts` luôn có đủ 9 phần tử, thứ tự PR, MO, Guide × OT, T&SL, RM. Div/Chart lạ (nếu SP trả thêm) được xếp cuối.
+- `fcTgt`, `plTgt`, `bp` lấy từ dòng đầu của chart. Mọi số đều có thể `null`, BE không ép về 0.
+- `actMtdLatest`: `actMtd` khác null cuối cùng.
+- `estMonthEnd`: `estMtd` của ngày cuối tháng. Với tháng đã qua mà actual phủ hết tháng, giá trị này là `null` (xem quy tắc Est_MTD), nên FE dùng `actMtdLatest`.
+- `simuWeek` trong response là giá trị request gửi lên. Khi bỏ trống thì trả `null`, không cho biết SP đã chọn tuần nào.
