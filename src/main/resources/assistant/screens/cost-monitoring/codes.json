@@ -1,0 +1,23 @@
+{
+  "MAIN_CAUSE": { "vi": "kết luận chính", "en": "main cause" },
+  "ExcessVsPace": { "vi": "chi vượt tiến độ", "en": "excess vs pace" },
+  "PaceStatus": { "vi": "tiến độ", "en": "pace" },
+  "ForecastStatus": { "vi": "kết luận dự báo", "en": "forecast outlook" },
+  "FASTER_THAN_PACE": { "vi": "chi nhanh hơn tiến độ", "en": "spending faster than pace" },
+  "ON_PACE": { "vi": "đúng tiến độ", "en": "on pace" },
+  "SLOWER_THAN_PACE": { "vi": "chi chậm hơn tiến độ", "en": "spending slower than pace" },
+  "WILL_EXCEED": { "vi": "dự báo vượt Fluct", "en": "forecast to exceed Fluct" },
+  "WITHIN": { "vi": "dự báo trong Fluct", "en": "forecast within Fluct" },
+  "IN_PROGRESS": { "vi": "chưa vượt Fluct", "en": "not over Fluct yet" },
+  "CLOSED_WITHIN": { "vi": "tháng đã kết thúc, trong Fluct", "en": "month closed, within Fluct" },
+  "MONTH_CLOSED": { "vi": "tháng đã kết thúc", "en": "month closed" },
+  "EARLY_OVERSPEND": { "vi": "đang chi nhiều hơn tiến độ", "en": "spending ahead of pace" },
+  "ON_TRACK": { "vi": "chi trong tiến độ", "en": "within pace" },
+  "TARGET_CUT": { "vi": "target bị hạ", "en": "target cut" },
+  "OVER_SPEND": { "vi": "chi vượt FC", "en": "spending above FC" },
+  "NO_ACTUAL": { "vi": "chưa có actual", "en": "no actual yet" },
+  "NO_TARGET": { "vi": "chưa có target", "en": "no target" },
+  "NO_DATA": { "vi": "chưa đủ dữ liệu", "en": "not enough data" },
+  "HIGH": { "vi": "rủi ro cao", "en": "high risk" },
+  "WATCH": { "vi": "cần theo dõi", "en": "needs watching" }
+}

@@ -1,0 +1,38 @@
+[
+  {
+    "question": "FC TGT là gì?",
+    "month": "2026-11",
+    "mustContain": ["Forecast"],
+    "mustNotContain": ["\\[", "\\frac", "MAIN_CAUSE"]
+  },
+  {
+    "question": "nếu ko có pl thì có dc ko",
+    "month": "2026-11",
+    "mustContain": ["Fluct"],
+    "mustNotContain": ["FASTER_THAN_PACE", "WILL_EXCEED"]
+  },
+  {
+    "question": "tháng này có khung nào vượt không",
+    "month": "2026-11",
+    "mustContain": [],
+    "mustNotContain": ["WILL_EXCEED", "HIGH", "WATCH", "MAIN_CAUSE", "IN_PROGRESS"]
+  },
+  {
+    "question": "vì sao T&SL PRESS chi nhiều vậy",
+    "month": "2026-11",
+    "mustContain": [],
+    "mustNotContain": ["EARLY_OVERSPEND", "ExcessVsPace", "TARGET_CUT", "OVER_SPEND"]
+  },
+  {
+    "question": "cứ chi như vậy thì RM MOLD có vượt FC không",
+    "month": "2026-11",
+    "mustContain": ["FC"],
+    "mustNotContain": ["có thể tiếp tục chi", "nên chi thêm"]
+  },
+  {
+    "question": "bộ phận nào có rủi ro T&SL cao nhất",
+    "month": "2026-11",
+    "mustContain": [],
+    "mustNotContain": ["MAIN_CAUSE", "HIGH", "WATCH"]
+  }
+]

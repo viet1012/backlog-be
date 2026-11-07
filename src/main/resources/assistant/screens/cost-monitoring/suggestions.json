@@ -1,0 +1,201 @@
+{
+    "screenKey": "cost-monitoring",
+    "dynamic": [
+        {
+            "when": "over",
+            "vi": "Vì sao {div} {cost} vượt target?",
+            "en": "Why is {div} {cost} over target?"
+        },
+        {
+            "when": "over",
+            "vi": "{div} {cost} vượt bao nhiêu so với FC và Fluct?",
+            "en": "How far is {div} {cost} over FC and Fluct?"
+        },
+        {
+            "when": "forecast_over",
+            "vi": "Vì sao {div} {cost} dự báo vượt?",
+            "en": "Why is {div} {cost} forecast to exceed?"
+        },
+        {
+            "when": "forecast_over",
+            "vi": "Ngày nào {div} {cost} chi nhiều nhất?",
+            "en": "Which day did {div} {cost} spend the most?"
+        },
+        {
+            "when": "forecast_over",
+            "vi": "Cứ chi như vậy thì {div} {cost} có vượt FC không?",
+            "en": "If spending continues like this, will {div} {cost} exceed FC?"
+        },
+        {
+            "when": "watch",
+            "vi": "{div} {cost} đang chi nhanh hơn tiến độ, có đáng lo không?",
+            "en": "{div} {cost} is spending faster than pace, should I worry?"
+        },
+        {
+            "when": "no_actual",
+            "vi": "Vì sao {div} {cost} chưa có actual?",
+            "en": "Why does {div} {cost} have no actual yet?"
+        },
+        {
+            "when": "no_pl",
+            "vi": "Tháng này chưa có PL TGT thì có ảnh hưởng gì không?",
+            "en": "No PL TGT this month, does it matter?"
+        },
+        {
+            "when": "fluct_below_fc",
+            "vi": "Vì sao target của {div} bị hạ thấp hơn FC?",
+            "en": "Why is {div}'s target lowered below FC?"
+        },
+        {
+            "when": "fluct_above_fc",
+            "vi": "Vì sao target của {div} được nâng cao hơn FC?",
+            "en": "Why is {div}'s target raised above FC?"
+        }
+    ],
+    "static": {
+        "overview": [
+            {
+                "vi": "Tháng này có khung nào vượt target không?",
+                "en": "Is any panel over target this month?"
+            },
+            {
+                "vi": "Khung nào đang có rủi ro cao nhất?",
+                "en": "Which panel has the highest risk?"
+            },
+            {
+                "vi": "Tóm tắt tình hình chi phí tháng này giúp tôi",
+                "en": "Summarize this month's cost status"
+            },
+            {
+                "vi": "Bộ phận nào đang chi tốt nhất so với tiến độ?",
+                "en": "Which division is doing best against pace?"
+            },
+            {
+                "vi": "Hạng mục nào đang chi vượt tiến độ nhiều nhất?",
+                "en": "Which item is most ahead of pace?"
+            },
+            {
+                "vi": "Đánh giá T&SL của 3 bộ phận giúp tôi",
+                "en": "Evaluate T&SL across the 3 divisions"
+            },
+            {
+                "vi": "Đánh giá RM của 3 bộ phận giúp tôi",
+                "en": "Evaluate RM across the 3 divisions"
+            },
+            {
+                "vi": "Dự báo cuối tháng của PRESS thế nào?",
+                "en": "What is PRESS's month-end forecast?"
+            }
+        ],
+        "concept": [
+            {
+                "vi": "Giải thích T&SL giúp tôi",
+                "en": "Explain T&SL"
+            },
+            {
+                "vi": "RM là gì?",
+                "en": "What is RM?"
+            },
+            {
+                "vi": "Fluctuating TGT khác FC TGT thế nào?",
+                "en": "How does Fluctuating TGT differ from FC TGT?"
+            },
+            {
+                "vi": "PL TGT dùng để làm gì?",
+                "en": "What is PL TGT for?"
+            },
+            {
+                "vi": "Badge OK 27% nghĩa là gì?",
+                "en": "What does the badge OK 27% mean?"
+            },
+            {
+                "vi": "Estimate được tính như thế nào?",
+                "en": "How is Estimate calculated?"
+            },
+            {
+                "vi": "Nếu Actual vượt FC thì có bị tính là vượt target không?",
+                "en": "If Actual exceeds FC, is it over target?"
+            },
+            {
+                "vi": "Tiến độ chuẩn là gì?",
+                "en": "What is the standard pace?"
+            },
+            {
+                "vi": "Dự báo cuối tháng tính theo cách nào?",
+                "en": "How is the month-end forecast calculated?"
+            },
+            {
+                "vi": "Vì sao Fluct thay đổi theo ngày?",
+                "en": "Why does Fluct change by day?"
+            }
+        ],
+        "analysis": [
+            {
+                "vi": "Vì sao PRESS T&SL chi nhiều?",
+                "en": "Why is PRESS T&SL spending high?"
+            },
+            {
+                "vi": "Vật tư nào chi nhiều nhất ở MOLD T&SL?",
+                "en": "Which items cost the most in MOLD T&SL?"
+            },
+            {
+                "vi": "Loại vật tư nào chiếm phần lớn RM của PRESS?",
+                "en": "Which material category dominates PRESS RM?"
+            },
+            {
+                "vi": "Cost center nào chi T&SL nhiều nhất?",
+                "en": "Which cost center spends the most T&SL?"
+            },
+            {
+                "vi": "Máy nào dùng nhiều vật tư nhất ở PRESS?",
+                "en": "Which machine uses the most supplies in PRESS?"
+            },
+            {
+                "vi": "Phần phân bổ chung chiếm bao nhiêu trong T&SL của GUIDE?",
+                "en": "How much of GUIDE T&SL is shared allocation?"
+            }
+        ],
+        "trend": [
+            {
+                "vi": "T&SL PRESS tăng mạnh từ ngày nào?",
+                "en": "From which day did PRESS T&SL jump?"
+            },
+            {
+                "vi": "Ngày nào chi RM nhiều nhất tháng này?",
+                "en": "Which day had the highest RM spend this month?"
+            },
+            {
+                "vi": "Chi phí MOLD theo ngày có gì bất thường không?",
+                "en": "Anything unusual in MOLD daily cost?"
+            }
+        ],
+        "compare": [
+            {
+                "vi": "T&SL PRESS so với tháng trước thế nào?",
+                "en": "How does PRESS T&SL compare to last month?"
+            },
+            {
+                "vi": "RM GUIDE cùng kỳ tháng trước là bao nhiêu?",
+                "en": "What was GUIDE RM in the same period last month?"
+            },
+            {
+                "vi": "Tháng này MOLD chi nhiều hơn hay ít hơn tháng trước?",
+                "en": "Is MOLD spending more or less than last month?"
+            }
+        ],
+        "scenario": [
+            {
+                "vi": "Cứ chi như hiện tại thì cuối tháng PRESS T&SL là bao nhiêu?",
+                "en": "At the current rate, where will PRESS T&SL end?"
+            },
+            {
+                "vi": "Mỗi ngày còn lại được chi tối đa bao nhiêu để không vượt target?",
+                "en": "How much can we spend per remaining day to stay on target?"
+            },
+            {
+                "vi": "Nếu không có PL TGT thì có được không?",
+                "en": "Is it OK without PL TGT?"
+            }
+        ]
+    }
+}
