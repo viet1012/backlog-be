@@ -1,0 +1,18 @@
+{
+  "screenKey": "template",
+  "dynamic": [
+    {
+      "when": "over",
+      "vi": "Vì sao {div} vượt?",
+      "en": "Why is {div} over?"
+    }
+  ],
+  "static": {
+    "overview": [
+      { "vi": "Tháng này có vấn đề gì không?", "en": "Any issues this month?" }
+    ],
+    "concept": [
+      { "vi": "<Chỉ số A> là gì?", "en": "What is <metric A>?" }
+    ]
+  }
+}

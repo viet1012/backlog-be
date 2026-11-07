@@ -1,0 +1,8 @@
+[
+  {
+    "question": "<Chỉ số A> là gì?",
+    "month": "2026-11",
+    "mustContain": ["<từ khóa phải có>"],
+    "mustNotContain": ["\\[", "\\frac", "STATUS_OVER"]
+  }
+]
