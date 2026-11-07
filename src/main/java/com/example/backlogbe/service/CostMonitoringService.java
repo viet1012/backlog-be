@@ -4,6 +4,7 @@ import com.example.backlogbe.dto.costmonitoring.CostChartDto;
 import com.example.backlogbe.dto.costmonitoring.CostChartPointDto;
 import com.example.backlogbe.dto.costmonitoring.CostChartRowDto;
 import com.example.backlogbe.dto.costmonitoring.CostMonitoringChartResponse;
+import com.example.backlogbe.dto.costmonitoring.CostPlWeeksResponse;
 import com.example.backlogbe.repository.costmonitoring.CostMonitoringRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -12,11 +13,15 @@ import java.time.LocalDate;
 import java.time.YearMonth;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeSet;
 
 // =========================================================
 // COST MONITORING
@@ -109,6 +114,43 @@ public class CostMonitoringService {
 				.filter(month -> month != null && !month.isBlank())
 				.map(String::trim)
 				.toList();
+	}
+
+
+	// =========================================================
+	// PL SIMULATION WEEK
+	// =========================================================
+
+	// month: yyyy-MM (bỏ trống = tháng hiện tại)
+	public CostPlWeeksResponse getPlWeeks(String month) {
+
+		YearMonth safeMonth = parseMonth(month);
+		// F2_PL_TGT.[Month] dạng '2026.10'
+		String tgtMonth = String.format("%d.%02d", safeMonth.getYear(), safeMonth.getMonthValue());
+
+		TreeSet<String> weeks = new TreeSet<>();
+		// tuần mới nhất của từng khung (Div|Cate) – giống ROW_NUMBER ... ORDER BY DataType DESC trong SP
+		Map<String, String> latestByFrame = new HashMap<>();
+
+		for (CostMonitoringRepository.PlWeekRow row : repository.findPlWeekRows(tgtMonth)) {
+			String week = row.dataType();
+			if (!SIMU_WEEKS.contains(week)) {
+				continue;
+			}
+
+			weeks.add(week);
+			latestByFrame.merge(row.div() + "|" + row.cate(), week,
+					(a, b) -> a.compareTo(b) >= 0 ? a : b);
+		}
+
+		Set<String> latestWeeks = new HashSet<>(latestByFrame.values());
+
+		return new CostPlWeeksResponse(
+				safeMonth.toString(),
+				List.copyOf(weeks),
+				weeks.isEmpty() ? null : Collections.max(latestWeeks),
+				latestWeeks.size() > 1
+		);
 	}
 
 

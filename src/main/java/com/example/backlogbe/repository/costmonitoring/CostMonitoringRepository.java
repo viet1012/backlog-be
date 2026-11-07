@@ -88,6 +88,50 @@ public class CostMonitoringRepository {
 
 
 	// =========================================================
+	// PL SIMULATION WEEK
+	// =========================================================
+
+	// Một dòng = 1 khung (Div, Cate) có số ở tuần Simu đó trong tháng.
+	public record PlWeekRow(
+			String div,
+			String cate,
+			String dataType
+	) {
+	}
+
+	/*
+	 * Tuần Simu có số theo từng khung – cùng điều kiện với LatestSimu trong sp_CostMonitoringChart:
+	 * gom theo (Div, Cate, DataType), tổng KUsd <> 0; chỉ 9 khung màn hình dùng
+	 * (Div PRESS/MOLD/GUIDE × Cate OverTime/Tools/RM).
+	 * month dạng '2026.10'.
+	 */
+	public List<PlWeekRow> findPlWeekRows(String month) {
+
+		String sql = """
+				SELECT RTRIM([Div]) AS Div, RTRIM([Cate]) AS Cate, RTRIM([DataType]) AS DataType
+				FROM [F2Database].[dbo].[F2_PL_TGT]
+				WHERE [Month] = :month
+				  AND RTRIM([DataType]) LIKE N'Simu[_]W%'
+				  AND RTRIM([Div]) IN (N'PRESS', N'MOLD', N'GUIDE')
+				  AND RTRIM([Cate]) IN (N'OverTime', N'Tools', N'RM')
+				GROUP BY RTRIM([Div]), RTRIM([Cate]), RTRIM([DataType])
+				HAVING ISNULL(SUM([KUsd]), 0) <> 0
+				""";
+
+		return jdbcTemplate.query(
+				sql,
+				new MapSqlParameterSource()
+						.addValue("month", month, Types.NVARCHAR),
+				(rs, rowNum) -> new PlWeekRow(
+						rs.getString("Div"),
+						rs.getString("Cate"),
+						rs.getString("DataType")
+				)
+		);
+	}
+
+
+	// =========================================================
 	// NULLABLE COLUMN
 	// =========================================================
 

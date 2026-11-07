@@ -1,6 +1,7 @@
 package com.example.backlogbe.controller;
 
 import com.example.backlogbe.dto.costmonitoring.CostMonitoringChartResponse;
+import com.example.backlogbe.dto.costmonitoring.CostPlWeeksResponse;
 import com.example.backlogbe.service.CostMonitoringService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -36,6 +37,23 @@ public class CostMonitoringController {
 
 		return ResponseEntity.ok(
 				service.getChart(month, simuWeek)
+		);
+	}
+
+
+	// =========================================================
+	// PL SIMULATION WEEK
+	// =========================================================
+
+	// Tuần Simulation có số trong F2_PL_TGT của tháng + tuần "Mới nhất" đang dùng
+	@GetMapping("/pl-weeks")
+	public ResponseEntity<CostPlWeeksResponse> getPlWeeks(
+			// yyyy-MM; bỏ trống = tháng hiện tại
+			@RequestParam(required = false) String month
+	) {
+
+		return ResponseEntity.ok(
+				service.getPlWeeks(month)
 		);
 	}
 
