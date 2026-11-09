@@ -15,7 +15,8 @@
     "question": "tháng này có khung nào vượt không",
     "month": "2026-11",
     "mustContain": [],
-    "mustNotContain": ["WILL_EXCEED", "HIGH", "WATCH", "MAIN_CAUSE", "IN_PROGRESS"]
+    "mustNotContain": ["WILL_EXCEED", "HIGH", "WATCH", "MAIN_CAUSE", "IN_PROGRESS"],
+    "llmCallCount": 0
   },
   {
     "question": "vì sao T&SL PRESS chi nhiều vậy",
@@ -26,13 +27,139 @@
   {
     "question": "cứ chi như vậy thì RM MOLD có vượt FC không",
     "month": "2026-11",
-    "mustContain": ["FC"],
-    "mustNotContain": ["có thể tiếp tục chi", "nên chi thêm"]
+    "mustContain": ["FC", "K$/ngày"],
+    "mustNotContain": ["có thể tiếp tục chi", "nên chi thêm"],
+    "llmCallCount": 0
+  },
+  {
+    "question": "Cứ chi như vậy thì PRESS T&SL có vượt FC không?",
+    "month": "2026-11",
+    "mustContain": ["FC", "K$/ngày", "cuối tháng"],
+    "mustNotContain": ["có thể tiếp tục chi", "nên chi thêm", "WILL_EXCEED"],
+    "llmCallCount": 0
+  },
+  {
+    "question": "PRESS T&SL có vượt không, còn khung nào khác không?",
+    "month": "2026-11",
+    "mustContain": ["PRESS T&SL", "Fluct"],
+    "mustNotContain": ["WILL_EXCEED", "HIGH", "WATCH", "MAIN_CAUSE", "Chỉ gửi dữ liệu khung"]
+  },
+  {
+    "question": "còn RM thì sao?",
+    "month": "2026-11",
+    "params": {"factory": "PRESS", "category": "T&SL"},
+    "mustContain": ["RM"],
+    "mustNotContain": ["MOLD", "GUIDE", "WILL_EXCEED", "MAIN_CAUSE"]
+  },
+  {
+    "question": "trong tất cả vật tư của PRESS T&SL, cái nào chi nhiều nhất?",
+    "month": "2026-11",
+    "mustContain": ["PRESS", "K$"],
+    "mustNotContain": ["MOLD", "GUIDE", "MAIN_CAUSE"]
   },
   {
     "question": "bộ phận nào có rủi ro T&SL cao nhất",
     "month": "2026-11",
     "mustContain": [],
-    "mustNotContain": ["MAIN_CAUSE", "HIGH", "WATCH"]
+    "mustNotContain": ["MAIN_CAUSE", "HIGH", "WATCH"],
+    "llmCallCount": 0
+  },
+  {
+    "question": "hôm nay có gì bất thường? cần theo dõi gì?",
+    "month": "2026-11",
+    "mustContain": ["dự báo vượt", "Fluct"],
+    "mustNotContain": ["không có bất thường", "không có gì bất thường", "WILL_EXCEED", "MAIN_CAUSE"],
+    "llmCallCount": 0
+  },
+  {
+    "question": "Hôm nay có gì bất thường?",
+    "month": "2026-11",
+    "mustContain": ["khung dự báo vượt Fluct", "vượt Fluct +", "cuối tháng", "%)"],
+    "mustNotContain": ["không có bất thường", "không có gì bất thường", "Không có bất kỳ khung nào", "KẾT LUẬN", "WILL_EXCEED", "|---", "Không có khung nào", "không khung nào đã vượt", "Không khung nào dự báo vượt"],
+    "llmCallCount": 0
+  },
+  {
+    "question": "thông tin chi tiết những bất thường giúp toi?",
+    "month": "2026-11",
+    "mustContain": ["khung dự báo vượt Fluct", "vượt Fluct +", "cuối tháng"],
+    "mustNotContain": ["không có bất thường", "Không có bất kỳ khung nào", "KẾT LUẬN", "|---", "Không có khung nào", "Không khung nào dự báo vượt", "Không có khung dự báo vượt FC nhưng"],
+    "llmCallCount": 0
+  },
+  {
+    "question": "Cứ chi như vậy thì MOLD T&SL có vượt FC không?",
+    "month": "2026-11",
+    "mustContain": ["tốc độ chi hiện tại", "K$/ngày", "vượt FC +", "vượt Fluct +"],
+    "mustNotContain": ["KẾT LUẬN", "WILL_EXCEED", "có thể tiếp tục chi", "nên chi thêm"],
+    "llmCallCount": 0
+  },
+  {
+    "question": "vì sao MOLD T&SL dự báo vượt?",
+    "month": "2026-11",
+    "mustContain": ["MOLD T&SL", "tiến độ", "K$"],
+    "mustNotContain": ["Ratio dương làm", "do Ratio tăng", "do Fluct cao hơn FC", "KẾT LUẬN", "EARLY_OVERSPEND", "MAIN_CAUSE"]
+  },
+  {
+    "question": "bộ phận nào xài tiền T&SL bất thường nhất",
+    "month": "2026-11",
+    "mustContain": ["%", "Fluct", "T&SL"],
+    "mustNotContain": ["MAIN_CAUSE", "HIGH", "WATCH"],
+    "llmCallCount": 0
+  },
+  {
+    "question": "Bộ phận nào xài T&SL bất thường nhất?",
+    "month": "2026-11",
+    "mustContain": ["% Fluct", "T&SL", "FC", "K$"],
+    "mustNotContain": ["tỷ trọng", "KẾT LUẬN", "MAIN_CAUSE", "HIGH", "WATCH", "|---"],
+    "llmCallCount": 0
+  },
+  {
+    "question": "Tháng này có vượt không?",
+    "month": "2026-11",
+    "mustContain": ["cuối tháng", "Fluct", "FC"],
+    "mustNotContain": ["KẾT LUẬN", "WILL_EXCEED", "HIGH", "WATCH", "Nếu cứ chi như hiện tại", "|---"],
+    "llmCallCount": 0
+  },
+  {
+    "question": "cứ chi như vậy thì tháng này có vượt không?",
+    "month": "2026-11",
+    "mustContain": ["tốc độ chi hiện tại", "cuối tháng", "Fluct", "FC"],
+    "mustNotContain": ["KẾT LUẬN", "WILL_EXCEED", "|---"],
+    "llmCallCount": 0
+  },
+  {
+    "question": "dự báo cuối tháng PRESS T&SL bao nhiêu, có vượt FC không?",
+    "month": "2026-11",
+    "mustContain": ["cuối tháng", "Fluct", "FC", "PRESS T&SL"],
+    "mustNotContain": ["KẾT LUẬN", "WILL_EXCEED", "K$/ngày"],
+    "llmCallCount": 0
+  },
+  {
+    "question": "MOLD T&SL có vượt FC không",
+    "month": "2026-11",
+    "mustContain": ["FC", "Fluct", "cuối tháng"],
+    "mustNotContain": ["WILL_EXCEED", "có thể tiếp tục chi", "nên chi thêm"],
+    "llmCallCount": 0
+  },
+  {
+    "question": "so sánh giữa Press T&SL vs Mold T&SL ? chart nào đang làm tốt ?",
+    "month": "2026-11",
+    "mustContain": ["PRESS", "MOLD"],
+    "mustNotContain": ["GUIDE", "KẾT LUẬN", "WILL_EXCEED"],
+    "answerSource": "llm",
+    "answerIntent": "compare"
+  },
+  {
+    "question": "bô phận nào xài tiền T&SL bất thường nhất",
+    "month": "2026-11",
+    "mustContain": ["T&SL", "Fluct"],
+    "mustNotContain": ["MAIN_CAUSE", "HIGH", "WATCH"],
+    "answerIntent": "ranking"
+  },
+  {
+    "question": "đánh giá chart PRESS RM",
+    "month": "2026-11",
+    "mustContain": ["PRESS", "RM"],
+    "mustNotContain": ["KẾT LUẬN", "MAIN_CAUSE"],
+    "answerSource": "llm"
   }
 ]
