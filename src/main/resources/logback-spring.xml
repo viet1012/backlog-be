@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Cấu hình log.
+  - Log chung: giữ mặc định của Spring Boot (console; logging.level.* trong application*.properties vẫn có hiệu lực).
+  - Audit trợ lý AI (logger "assistant.audit"): file JSONL riêng, 1 dòng / request /api/assistant/chat,
+    KHÔNG ghi vào log chung (additivity=false). Rolling theo ngày, giữ 90 ngày, ghi bất đồng bộ.
+    Thư mục: assistant.audit.dir (mặc định logs/assistant). Bật/tắt: assistant.audit.enabled (code kiểm tra).
+-->
+<configuration>
+
+	<include resource="org/springframework/boot/logging/logback/defaults.xml"/>
+	<include resource="org/springframework/boot/logging/logback/console-appender.xml"/>
+
+	<springProperty scope="context" name="ASSISTANT_AUDIT_DIR" source="assistant.audit.dir" defaultValue="logs/assistant"/>
+
+	<appender name="ASSISTANT_AUDIT_FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+		<!-- Không có <file>: file đang ghi cũng mang ngày, vd logs/assistant/assistant-audit-2026-11-09.jsonl -->
+		<!-- Chỉ mở file khi có dòng đầu tiên (tắt audit thì không tạo file) -->
+		<lazy>true</lazy>
+		<rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+			<fileNamePattern>${ASSISTANT_AUDIT_DIR}/assistant-audit-%d{yyyy-MM-dd}.jsonl</fileNamePattern>
+			<maxHistory>90</maxHistory>
+		</rollingPolicy>
+		<encoder>
+			<!-- Message đã là 1 dòng JSON hoàn chỉnh -->
+			<pattern>%msg%n</pattern>
+			<charset>UTF-8</charset>
+		</encoder>
+	</appender>
+
+	<appender name="ASSISTANT_AUDIT" class="ch.qos.logback.classic.AsyncAppender">
+		<appender-ref ref="ASSISTANT_AUDIT_FILE"/>
+		<queueSize>1024</queueSize>
+		<!-- Không bỏ dòng INFO khi hàng đợi gần đầy (mặc định AsyncAppender bỏ INFO ở 80%) -->
+		<discardingThreshold>0</discardingThreshold>
+		<!-- Hàng đợi đầy thì bỏ dòng thay vì chặn request -->
+		<neverBlock>true</neverBlock>
+		<includeCallerData>false</includeCallerData>
+	</appender>
+
+	<logger name="assistant.audit" level="INFO" additivity="false">
+		<appender-ref ref="ASSISTANT_AUDIT"/>
+	</logger>
+
+	<root level="INFO">
+		<appender-ref ref="CONSOLE"/>
+	</root>
+
+</configuration>
