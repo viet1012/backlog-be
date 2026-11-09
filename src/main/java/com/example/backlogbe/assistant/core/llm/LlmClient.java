@@ -16,5 +16,16 @@ public interface LlmClient {
 	 * @return content (đã bỏ reasoning, có thể rỗng) + tool_calls + finish_reason
 	 * @throws LlmUnavailableException LLM lỗi HTTP / timeout / không kết nối / không có body
 	 */
-	LlmResponse chat(List<ChatMessage> messages, List<AssistantTool> tools, Duration timeout);
+	default LlmResponse chat(List<ChatMessage> messages, List<AssistantTool> tools, Duration timeout) {
+		return chat(messages, tools, timeout, TOOL_CHOICE_AUTO);
+	}
+
+	/**
+	 * Như trên, chỉ định "tool_choice" (chỉ gửi khi tools không rỗng).
+	 * TOOL_CHOICE_NONE: vẫn gửi tools (giữ prefix prompt cho KV cache) nhưng yêu cầu model không gọi tool.
+	 */
+	LlmResponse chat(List<ChatMessage> messages, List<AssistantTool> tools, Duration timeout, String toolChoice);
+
+	String TOOL_CHOICE_AUTO = "auto";
+	String TOOL_CHOICE_NONE = "none";
 }

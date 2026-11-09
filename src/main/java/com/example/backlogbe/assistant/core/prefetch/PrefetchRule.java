@@ -20,6 +20,12 @@ public interface PrefetchRule {
 	// question: câu hỏi gốc của người dùng (đã trim, chưa thêm lưu ý hệ thống)
 	boolean matches(String question, String screenKey);
 
+	// Như trên, kèm params màn hình (tháng đang xem) để quy tắc dựa vào trạng thái màn hình (vd ô đang mở).
+	// ChatOrchestrator gọi hàm này; mặc định bỏ qua params.
+	default boolean matches(String question, String screenKey, Map<String, String> params) {
+		return matches(question, screenKey);
+	}
+
 	// arguments của ToolCall: chuỗi JSON object, như tool call của model
 	List<ToolCall> calls(String question, Map<String, String> params);
 

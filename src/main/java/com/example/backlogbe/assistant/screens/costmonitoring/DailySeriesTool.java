@@ -11,6 +11,8 @@ import org.springframework.stereotype.Component;
 
 import java.time.DayOfWeek;
 import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
@@ -33,6 +35,8 @@ import static com.example.backlogbe.assistant.screens.costmonitoring.CostMonitor
 //   % đã dùng    = Actual cộng dồn / FluctDay × 100
 //   % thời gian  = ngày / N × 100
 // So sánh trong ngày dùng FluctDay, không dùng Fluct cuối tháng.
+// Dòng đối chiếu cuối: Σ chi trong ngày = Actual cộng dồn mới nhất (telescoping trên số 1 chữ số),
+//   kèm danh sách ngày âm (trả hàng / điều chỉnh) – CostMonitoringDetailService dùng cùng cách tính.
 // Tháng lấy từ tham số màn hình (model không tự đặt).
 // =========================================================
 @Slf4j
@@ -65,8 +69,8 @@ public class DailySeriesTool implements AssistantTool {
 	@Override
 	public String execute(Map<String, Object> args, Map<String, String> screenParams, String lang) {
 
-		String div = CostMonitoringToolArgs.div(args);
-		String cost = CostMonitoringToolArgs.cost(args, CostMonitoringSnapshot.COSTS);
+		String div = CostMonitoringToolArgs.div(args, screenParams);
+		String cost = CostMonitoringToolArgs.cost(args, CostMonitoringSnapshot.COSTS, screenParams);
 
 		CostMonitoringSnapshot snapshot = loader.load(screenParams);
 		CostChartDto chart = snapshot.find(div, cost);
@@ -100,6 +104,10 @@ public class DailySeriesTool implements AssistantTool {
 						+ "|Fluct by pace|% used|% of time")).append('\n');
 
 		Double lastMtd = 0.0;
+		// Σ chi trong ngày (1 chữ số) và các ngày âm, để đối chiếu với Actual cộng dồn
+		double dailySum = 0.0;
+		boolean hasActual = false;
+		List<String> negativeDays = new ArrayList<>();
 
 		for (CostChartPointDto point : chart.points()) {
 
@@ -114,6 +122,11 @@ public class DailySeriesTool implements AssistantTool {
 			if (point.actMtd() != null) {
 				daily = CmText.subR1(point.actMtd(), lastMtd);
 				lastMtd = point.actMtd();
+				hasActual = true;
+				dailySum = CmText.r1(dailySum + daily);
+				if (daily < 0) {
+					negativeDays.add(String.format("%02d", day) + " (" + fmt(daily) + ")");
+				}
 			}
 
 			Double fluctDay = point.fluctTgt();
@@ -135,6 +148,19 @@ public class DailySeriesTool implements AssistantTool {
 					.append('|').append(fmt(fluctByPace))
 					.append('|').append(pct(usedPct))
 					.append('|').append(pct(timePct))
+					.append('\n');
+		}
+
+		// Đối chiếu: Σ chi trong ngày = Actual cộng dồn mới nhất (cùng số làm tròn 1 chữ số).
+		// Model không tự cộng một vài ngày rồi so với Actual; ngày âm (trả hàng / điều chỉnh) cũng được tính.
+		if (hasActual) {
+			sb.append(t(lang, "Tổng chi trong ngày (mọi ngày đến ngày có actual mới nhất)=",
+							"Sum of daily spending (all days up to latest actual)="))
+					.append(fmt(dailySum)).append(" K$")
+					.append(t(lang, "|Actual cộng dồn mới nhất=", "|Latest cumulative actual="))
+					.append(fmt(lastMtd)).append(" K$")
+					.append(t(lang, "|Ngày âm (trả hàng / điều chỉnh)=", "|Negative days (returns / adjustments)="))
+					.append(negativeDays.isEmpty() ? CmText.none(lang) : String.join(", ", negativeDays))
 					.append('\n');
 		}
 

@@ -4,6 +4,7 @@ import com.example.backlogbe.assistant.core.config.AssistantProperties;
 import com.example.backlogbe.assistant.core.api.dto.ChatMessage;
 import com.example.backlogbe.assistant.core.api.dto.ToolCall;
 import com.example.backlogbe.assistant.core.tool.AssistantTool;
+import com.example.backlogbe.logging.RequestTiming;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -74,7 +75,7 @@ public class OpenAiCompatibleClient implements LlmClient {
 		this.props = props;
 		this.objectMapper = objectMapper;
 
-		String baseUrl = stripTrailingSlash(props.getBaseUrl());
+		String baseUrl = stripTrailingSlash(props.getLlm().getBaseUrl());
 		this.chatUrl = baseUrl + CHAT_PATH;
 
 		// Ép HTTP/1.1: JDK HttpClient mặc định thử nâng cấp h2c (Upgrade header),
@@ -84,7 +85,7 @@ public class OpenAiCompatibleClient implements LlmClient {
 				.connectTimeout(CONNECT_TIMEOUT)
 				.build();
 
-		this.configuredTimeout = Duration.ofSeconds(Math.max(1, props.getTimeoutSeconds()));
+		this.configuredTimeout = Duration.ofSeconds(Math.max(1, props.getLlm().getTimeoutSeconds()));
 
 		this.restClient = restClientBuilder
 				.baseUrl(baseUrl)
@@ -96,11 +97,12 @@ public class OpenAiCompatibleClient implements LlmClient {
 	public LlmResponse chat(
 			List<ChatMessage> messages,
 			List<AssistantTool> tools,
-			Duration timeout
+			Duration timeout,
+			String toolChoice
 	) {
 
 		// Serialize trước thành byte[] để gửi kèm Content-Length (không chunked)
-		byte[] payload = serialize(buildBody(messages, tools));
+		byte[] payload = serialize(buildBody(messages, tools, toolChoice));
 
 		// Timeout lần gọi = min(cấu hình, thời gian còn lại service cho phép)
 		Duration callTimeout = timeout != null && timeout.compareTo(configuredTimeout) < 0
@@ -112,10 +114,12 @@ public class OpenAiCompatibleClient implements LlmClient {
 				: restClient.mutate().requestFactory(requestFactory(callTimeout)).build();
 
 		log.info(
-				"LLM call start: url={} model={} tools={} timeoutMs={}",
+				"LLM call start: rid={} url={} model={} tools={} toolChoice={} timeoutMs={}",
+				RequestTiming.rid(),
 				chatUrl,
-				props.getModel(),
+				props.getLlm().getModel(),
 				tools == null ? 0 : tools.size(),
+				tools == null || tools.isEmpty() ? "-" : toolChoice,
 				callTimeout.toMillis()
 		);
 
@@ -132,7 +136,7 @@ public class OpenAiCompatibleClient implements LlmClient {
 					.body(JsonNode.class);
 
 			if (response == null) {
-				log.warn("LLM call: empty body durationMs={}", elapsedMs(start));
+				log.warn("LLM call: rid={} empty body durationMs={}", RequestTiming.rid(), elapsedMs(start));
 				throw new LlmEmptyException("none");
 			}
 
@@ -144,7 +148,8 @@ public class OpenAiCompatibleClient implements LlmClient {
 
 			// Chỉ log metadata, không log nội dung
 			log.info(
-					"LLM call: finish_reason={} promptTokens={} completionTokens={} toolCalls={} durationMs={}",
+					"LLM call: rid={} finish_reason={} promptTokens={} completionTokens={} toolCalls={} durationMs={}",
+					RequestTiming.rid(),
 					finishReason,
 					usage.path("prompt_tokens").asText("?"),
 					usage.path("completion_tokens").asText("?"),
@@ -153,17 +158,20 @@ public class OpenAiCompatibleClient implements LlmClient {
 			);
 
 			JsonNode promptTokens = usage.path("prompt_tokens");
+			JsonNode completionTokens = usage.path("completion_tokens");
 
 			return new LlmResponse(
 					extractAnswer(message.path("content").asText("")),
 					toolCalls,
 					finishReason,
-					promptTokens.canConvertToInt() ? promptTokens.asInt() : null
+					promptTokens.canConvertToInt() ? promptTokens.asInt() : null,
+					completionTokens.canConvertToInt() ? completionTokens.asInt() : null
 			);
 
 		} catch (RestClientResponseException e) {
 			log.warn(
-					"LLM call: HTTP {} durationMs={} body={}",
+					"LLM call: rid={} HTTP {} durationMs={} body={}",
+					RequestTiming.rid(),
 					e.getStatusCode().value(),
 					elapsedMs(start),
 					abbreviate(e.getResponseBodyAsString())
@@ -172,7 +180,8 @@ public class OpenAiCompatibleClient implements LlmClient {
 
 		} catch (RestClientException e) {
 			log.warn(
-					"LLM call: failed {} durationMs={}",
+					"LLM call: rid={} failed {} durationMs={}",
+					RequestTiming.rid(),
 					e.getClass().getSimpleName(),
 					elapsedMs(start)
 			);
@@ -187,25 +196,26 @@ public class OpenAiCompatibleClient implements LlmClient {
 
 	private Map<String, Object> buildBody(
 			List<ChatMessage> messages,
-			List<AssistantTool> tools
+			List<AssistantTool> tools,
+			String toolChoice
 	) {
 
 		Map<String, Object> body = new LinkedHashMap<>();
 
-		body.put("model", props.getModel());
+		body.put("model", props.getLlm().getModel());
 		body.put("messages", messages.stream().map(OpenAiCompatibleClient::toMessage).toList());
 
 		if (tools != null && !tools.isEmpty()) {
 			body.put("tools", tools.stream().map(OpenAiCompatibleClient::toTool).toList());
-			body.put("tool_choice", "auto");
+			body.put("tool_choice", TOOL_CHOICE_NONE.equals(toolChoice) ? TOOL_CHOICE_NONE : TOOL_CHOICE_AUTO);
 		}
 
-		body.put("max_tokens", props.getMaxTokens());
-		body.put("temperature", props.getTemperature());
+		body.put("max_tokens", props.getLlm().getMaxTokens());
+		body.put("temperature", props.getLlm().getTemperature());
 		body.put("stream", false);
 
-		if (props.getReasoningEffort() != null && !props.getReasoningEffort().isBlank()) {
-			body.put("reasoning_effort", props.getReasoningEffort().trim());
+		if (props.getLlm().getReasoningEffort() != null && !props.getLlm().getReasoningEffort().isBlank()) {
+			body.put("reasoning_effort", props.getLlm().getReasoningEffort().trim());
 		}
 
 		return body;

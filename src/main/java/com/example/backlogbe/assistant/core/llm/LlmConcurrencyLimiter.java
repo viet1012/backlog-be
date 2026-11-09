@@ -18,7 +18,7 @@ public class LlmConcurrencyLimiter {
 	private final Semaphore semaphore;
 
 	public LlmConcurrencyLimiter(AssistantProperties props) {
-		this.semaphore = new Semaphore(Math.max(1, props.getMaxConcurrent()));
+		this.semaphore = new Semaphore(Math.max(1, props.getLlm().getMaxConcurrent()));
 	}
 
 	public <T> T run(Supplier<T> task) {

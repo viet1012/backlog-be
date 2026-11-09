@@ -43,8 +43,8 @@ public class ComparePreviousMonthTool implements AssistantTool {
 	@Override
 	public String execute(Map<String, Object> args, Map<String, String> screenParams, String lang) {
 
-		String div = CostMonitoringToolArgs.div(args);
-		String cost = CostMonitoringToolArgs.cost(args, CostMonitoringSnapshot.COSTS);
+		String div = CostMonitoringToolArgs.div(args, screenParams);
+		String cost = CostMonitoringToolArgs.cost(args, CostMonitoringSnapshot.COSTS, screenParams);
 
 		CostMonitoringSnapshot current = loader.load(screenParams);
 		// PL TGT không dùng ở đây -> tháng trước để SP tự chọn tuần Simu

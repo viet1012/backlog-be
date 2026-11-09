@@ -2,6 +2,7 @@ package com.example.backlogbe.assistant.screens.costmonitoring;
 
 import com.example.backlogbe.assistant.core.suggestion.SuggestionCondition;
 import com.example.backlogbe.dto.costmonitoring.CostChartDto;
+import com.example.backlogbe.dto.costmonitoring.CostChartForecastDto;
 import com.example.backlogbe.dto.costmonitoring.CostPlWeeksResponse;
 import com.example.backlogbe.service.CostMonitoringService;
 import lombok.RequiredArgsConstructor;
@@ -17,7 +18,8 @@ import java.util.Map;
 //
 // Theo từng khung (CostMonitoringAssessment):
 //   over           Act > Fluct                        tier 0, weight = Act − Fluct
-//   forecast_over  chưa vượt, dự báo cuối tháng > Fluct tier 1, weight = phần dự báo vượt
+//   forecast_over  chưa vượt, dự báo cuối tháng CHÍNH (PL Estimate; không PL thì Act + Fluct / N × (N − D)) > Fluct
+//                  tier 1, weight = estimateOver. Cùng trạng thái với /chart (CostMonitoringAssessment.mainStatus).
 //   watch          Rủi ro "Cần theo dõi"              tier 2, weight = Pct − Pace
 //   no_actual      chưa có Actual                     tier 3
 // Theo tháng:
@@ -62,11 +64,14 @@ public class CostMonitoringSuggestionConditions {
 			String div = CostMonitoringSnapshot.divName(chart.div());
 			String cost = chart.chart();
 
-			if (CostMonitoringAssessment.MODE_OVER.equals(a.mode())) {
+			// Cùng trạng thái chính với /chart (CostMonitoringAssessment.mainStatus): OVER, rồi WILL_EXCEED theo PL Estimate
+			String status = a.mainStatus();
+
+			if (CostChartForecastDto.STATUS_OVER.equals(status)) {
 				result.add(new SuggestionCondition("over", div, cost, TIER_OVER, a.act() - a.fluct()));
-			} else if (CostMonitoringAssessment.WILL_EXCEED.equals(a.forecastStatus())) {
+			} else if (CostChartForecastDto.STATUS_WILL_EXCEED.equals(status)) {
 				result.add(new SuggestionCondition("forecast_over", div, cost, TIER_FORECAST_OVER,
-						a.forecastGap() != null ? a.forecastGap() : 0));
+						a.estimateOver() != null ? a.estimateOver() : 0));
 			}
 
 			if (CostMonitoringAssessment.RISK_WATCH.equals(a.risk())) {

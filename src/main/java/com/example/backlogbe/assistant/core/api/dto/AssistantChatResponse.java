@@ -10,14 +10,21 @@ import java.util.List;
  *                theo thứ tự gọi (pre-fetch trước)
  * answeredMonth: yyyy-MM khi câu trả lời dùng dữ liệu tháng khác tháng đang xem
  *                (câu hỏi nhắc tháng khác và đã dựng context tháng đó); không có -> bỏ khỏi JSON
+ * suggestions  : câu hỏi gợi ý tiếp theo [{text, kind}] (hiện chỉ có ở câu trả lời template, AnswerGuide.suggestions);
+ *                rỗng -> bỏ khỏi JSON
  */
 public record AssistantChatResponse(
 		String answer,
 		List<AssistantSource> sources,
-		@JsonInclude(JsonInclude.Include.NON_NULL) String answeredMonth
+		@JsonInclude(JsonInclude.Include.NON_NULL) String answeredMonth,
+		@JsonInclude(JsonInclude.Include.NON_EMPTY) List<AssistantSuggestion> suggestions
 ) {
 
 	public AssistantChatResponse(String answer, List<AssistantSource> sources) {
-		this(answer, sources, null);
+		this(answer, sources, null, List.of());
+	}
+
+	public AssistantChatResponse(String answer, List<AssistantSource> sources, String answeredMonth) {
+		this(answer, sources, answeredMonth, List.of());
 	}
 }

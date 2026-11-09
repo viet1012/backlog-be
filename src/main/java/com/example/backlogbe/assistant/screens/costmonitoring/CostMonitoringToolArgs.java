@@ -37,6 +37,43 @@ final class CostMonitoringToolArgs {
 		return value;
 	}
 
+	// Model bỏ trống div / cost -> lấy theo ô đang mở từ drawer (CostMonitoringFocus), nếu có
+	static String div(Map<String, Object> args, Map<String, String> screenParams) {
+		return div(withFocus(args, screenParams));
+	}
+
+	static String divOrAll(Map<String, Object> args, Map<String, String> screenParams) {
+		return divOrAll(withFocus(args, screenParams));
+	}
+
+	static String cost(Map<String, Object> args, List<String> allowed, Map<String, String> screenParams) {
+		return cost(withFocus(args, screenParams), allowed);
+	}
+
+	private static Map<String, Object> withFocus(Map<String, Object> args, Map<String, String> screenParams) {
+
+		CostMonitoringFocus focus = CostMonitoringFocus.from(screenParams);
+
+		if (focus == null) {
+			return args;
+		}
+
+		Map<String, Object> result = new LinkedHashMap<>(args);
+
+		if (isBlank(result.get("div"))) {
+			result.put("div", focus.div());
+		}
+		if (isBlank(result.get("cost"))) {
+			result.put("cost", focus.cost());
+		}
+
+		return result;
+	}
+
+	private static boolean isBlank(Object value) {
+		return value == null || value.toString().isBlank();
+	}
+
 	static final String ALL = "ALL";
 
 	static final List<String> DIVS_WITH_ALL = List.of("PRESS", "MOLD", "GUIDE", ALL);

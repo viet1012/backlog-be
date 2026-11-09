@@ -26,6 +26,8 @@ import static com.example.backlogbe.assistant.screens.costmonitoring.CmText.t;
 //   Top vật tư     : Code|Text|Category|tổng Qty + QtyUnit|K$   (tổng âm -> "(điều chỉnh)")
 //   Top cost center: PLcostcentername (PLcostcenter)|K$
 //   Top máy        : Machine|K$   (bỏ Machine rỗng)
+// Mỗi dòng có "% của Actual" (tỷ trọng); cuối mỗi phần: "Tổng top N …" = K$ cộng sẵn + % của Actual
+//   (model không tự cộng / tự tính %).
 // Dòng cuối: tổng K$ mọi dòng thỏa bộ lọc (gồm dòng âm) + ghi chú chưa gồm phân bổ.
 // K$ = Amount / 1000, làm tròn 2 chữ số.
 // Khoảng ngày: đầu tháng -> mốc actual (T&SL: hôm qua, RM: hôm kia), không quá cuối tháng.
@@ -70,8 +72,8 @@ public class TopItemsTool implements AssistantTool {
 	@Override
 	public String execute(Map<String, Object> args, Map<String, String> screenParams, String lang) {
 
-		String div = CostMonitoringToolArgs.div(args);
-		String cost = CostMonitoringToolArgs.cost(args, COSTS);
+		String div = CostMonitoringToolArgs.div(args, screenParams);
+		String cost = CostMonitoringToolArgs.cost(args, COSTS, screenParams);
 		int limit = CostMonitoringToolArgs.intValue(args, "limit", DEFAULT_LIMIT, 1, MAX_LIMIT);
 
 		YearMonth month = loader.month(screenParams);
@@ -124,6 +126,8 @@ public class TopItemsTool implements AssistantTool {
 			}
 			sb.append('|').append(pctAct(item.amountK(), act)).append('\n');
 		}
+		appendTopTotal(sb, items.stream().map(CostTopItemDto::amountK).toList(),
+				t(lang, "vật tư", "items"), act, lang);
 
 		sb.append(t(lang,
 				"[Top cost center] cột=PLcostcentername (PLcostcenter)|K$|% của Actual",
@@ -140,6 +144,8 @@ public class TopItemsTool implements AssistantTool {
 					.append('|').append(pctAct(center.amountK(), act))
 					.append('\n');
 		}
+		appendTopTotal(sb, centers.stream().map(CostTopCostCenterDto::amountK).toList(),
+				t(lang, "cost center", "cost centers"), act, lang);
 
 		sb.append(t(lang,
 				"[Top máy] cột=Machine|K$|% của Actual",
@@ -153,6 +159,8 @@ public class TopItemsTool implements AssistantTool {
 					.append('|').append(pctAct(machine.amountK(), act))
 					.append('\n');
 		}
+		appendTopTotal(sb, machines.stream().map(CostTopMachineDto::amountK).toList(),
+				t(lang, "máy", "machines"), act, lang);
 
 		// Tổng mọi dòng thỏa bộ lọc (gồm dòng âm), chỉ cost center trực tiếp
 		sb.append(t(lang, "Tổng chi phí trực tiếp=", "Total direct cost=")).append(k(total))
@@ -168,6 +176,34 @@ public class TopItemsTool implements AssistantTool {
 	// =========================================================
 	// FORMAT
 	// =========================================================
+
+	// "Tổng top 5 vật tư=12.34 K$|% của Actual=45.6%": cộng các K$ đã làm tròn 2 chữ số đúng như từng dòng
+	// (khớp phép cộng người đọc tự làm), % tính từ tổng đó. Danh sách rỗng -> không ghi.
+	private static void appendTopTotal(StringBuilder sb, List<Double> amounts, String label, Double act, String lang) {
+
+		double sum = 0;
+		int count = 0;
+
+		for (Double amount : amounts) {
+			Double rounded = CmText.r2(amount);
+			if (rounded != null) {
+				sum += rounded;
+				count++;
+			}
+		}
+
+		if (count == 0) {
+			return;
+		}
+
+		sb.append(t(lang, "Tổng top ", "Total of top ")).append(count).append(' ').append(label)
+				.append('=').append(k(sum))
+				.append(t(lang, "|% của Actual=", "|% of Actual=")).append(pctAct(sum, act))
+				.append(t(lang,
+						" (dùng đúng số này, không tự cộng)",
+						" (use this number, do not add up yourself)"))
+				.append('\n');
+	}
 
 	// amount / Act × 100 (%); thiếu số -> trống
 	private static String pctAct(Double amountK, Double act) {

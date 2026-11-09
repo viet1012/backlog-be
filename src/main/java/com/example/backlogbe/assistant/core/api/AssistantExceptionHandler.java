@@ -41,13 +41,37 @@ import java.util.Map;
 @RestControllerAdvice(assignableTypes = {AssistantController.class, AssistantEvalController.class})
 public class AssistantExceptionHandler {
 
-	static final String CODE_BAD_REQUEST = "BAD_REQUEST";
-	static final String CODE_RATE_LIMITED = "RATE_LIMITED";
-	static final String CODE_LLM_BUSY = "LLM_BUSY";
-	static final String CODE_LLM_ERROR = "LLM_ERROR";
-	static final String CODE_LLM_TRUNCATED = "LLM_TRUNCATED";
-	static final String CODE_LLM_EMPTY = "LLM_EMPTY";
-	static final String CODE_INTERNAL = "INTERNAL";
+	public static final String CODE_BAD_REQUEST = "BAD_REQUEST";
+	public static final String CODE_RATE_LIMITED = "RATE_LIMITED";
+	public static final String CODE_LLM_BUSY = "LLM_BUSY";
+	public static final String CODE_LLM_ERROR = "LLM_ERROR";
+	public static final String CODE_LLM_TRUNCATED = "LLM_TRUNCATED";
+	public static final String CODE_LLM_EMPTY = "LLM_EMPTY";
+	public static final String CODE_INTERNAL = "INTERNAL";
+
+	// Mã lỗi trả cho FE theo loại exception (dùng chung với audit log)
+	public static String codeOf(Throwable ex) {
+
+		if (ex instanceof IllegalArgumentException) {
+			return CODE_BAD_REQUEST;
+		}
+		if (ex instanceof RateLimitedException) {
+			return CODE_RATE_LIMITED;
+		}
+		if (ex instanceof LlmBusyException) {
+			return CODE_LLM_BUSY;
+		}
+		if (ex instanceof LlmTruncatedException) {
+			return CODE_LLM_TRUNCATED;
+		}
+		if (ex instanceof LlmEmptyException) {
+			return CODE_LLM_EMPTY;
+		}
+		if (ex instanceof LlmUnavailableException) {
+			return CODE_LLM_ERROR;
+		}
+		return CODE_INTERNAL;
+	}
 
 	private static final String RATE_LIMITED_MESSAGE =
 			"Too many requests. Please wait a moment and try again.";

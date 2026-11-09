@@ -74,7 +74,7 @@ public class RatioTrendTool implements AssistantTool {
 	@Override
 	public String execute(Map<String, Object> args, Map<String, String> screenParams, String lang) {
 
-		String div = CostMonitoringToolArgs.div(args);
+		String div = CostMonitoringToolArgs.div(args, screenParams);
 
 		CostMonitoringSnapshot snapshot = loader.load(screenParams);
 		String header = div + t(lang, "|Tháng=", "|Month=") + snapshot.month();

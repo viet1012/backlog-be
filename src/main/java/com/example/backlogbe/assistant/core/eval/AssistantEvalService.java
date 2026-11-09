@@ -3,6 +3,7 @@ package com.example.backlogbe.assistant.core.eval;
 import com.example.backlogbe.assistant.core.api.dto.AssistantChatRequest;
 import com.example.backlogbe.assistant.core.api.dto.AssistantChatResponse;
 import com.example.backlogbe.assistant.core.api.dto.AssistantSource;
+import com.example.backlogbe.assistant.core.audit.AssistantAuditTrace;
 import com.example.backlogbe.assistant.core.chat.ChatOrchestrator;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -16,6 +17,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.UncheckedIOException;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -25,7 +27,8 @@ import java.util.Map;
 //
 // Đọc resources/assistant/screens/{screenKey}/eval.json, hỏi lần lượt từng câu qua ChatOrchestrator
 // (cùng luồng với /api/assistant/chat, không qua rate limit), so câu trả lời với
-// mustContain / mustNotContain (không phân biệt hoa thường).
+// mustContain / mustNotContain (không phân biệt hoa thường) và kỳ vọng (nếu có) llmCallCount / answerSource /
+// answerIntent (đọc từ audit trace của câu đó).
 // Không phải unit test: gọi LLM thật, chạy tuần tự nên có thể mất vài phút.
 // =========================================================
 @Slf4j
@@ -68,15 +71,21 @@ public class AssistantEvalService {
 	private EvalResult runCase(String screenKey, int index, EvalCase c) {
 
 		long start = System.nanoTime();
+		AssistantAuditTrace trace = new AssistantAuditTrace(AssistantAuditTrace.SOURCE_EVAL, null);
 
 		try {
-			AssistantChatResponse response = chatOrchestrator.chat(new AssistantChatRequest(
+			Map<String, String> params = new HashMap<>(c.params() != null ? c.params() : Map.of());
+			if (c.month() != null && !c.month().isBlank()) {
+				params.put("month", c.month());
+			}
+
+			AssistantChatResponse response = chatOrchestrator.chatWithTrace(new AssistantChatRequest(
 					screenKey,
-					c.month() != null && !c.month().isBlank() ? Map.of("month", c.month()) : Map.of(),
+					params,
 					c.question(),
 					List.of(),
 					LANG
-			));
+			), trace);
 
 			String answer = response.answer() != null ? response.answer() : "";
 			String lower = answer.toLowerCase(Locale.ROOT);
@@ -99,11 +108,24 @@ public class AssistantEvalService {
 					? List.of()
 					: response.sources().stream().map(AssistantEvalService::sourceText).toList();
 
+			// Kỳ vọng số lần gọi LLM (vd 0 = câu trả lời template), nguồn câu trả lời, loại câu hỏi
+			List<String> mismatches = new ArrayList<>();
+			if (c.llmCallCount() != null && c.llmCallCount() != trace.llmCallCount()) {
+				mismatches.add(mismatch("llmCallCount", c.llmCallCount(), trace.llmCallCount()));
+			}
+			if (c.answerSource() != null && !c.answerSource().equals(trace.answerSource())) {
+				mismatches.add(mismatch("answerSource", c.answerSource(), trace.answerSource()));
+			}
+			if (c.answerIntent() != null && !c.answerIntent().equals(trace.answerIntent())) {
+				mismatches.add(mismatch("answerIntent", c.answerIntent(), trace.answerIntent()));
+			}
+
 			return new EvalResult(
 					index, c.question(), c.month(),
-					missing.isEmpty() && unexpected.isEmpty(),
+					missing.isEmpty() && unexpected.isEmpty() && mismatches.isEmpty(),
 					missing, unexpected, answer, tools, null,
-					elapsedMs(start)
+					elapsedMs(start),
+					trace.llmCallCount(), trace.answerSource(), trace.answerIntent(), mismatches
 			);
 
 		} catch (RuntimeException e) {
@@ -112,9 +134,14 @@ public class AssistantEvalService {
 					index, c.question(), c.month(),
 					false, List.of(), List.of(), null, List.of(),
 					e.getClass().getSimpleName() + (e.getMessage() != null ? ": " + e.getMessage() : ""),
-					elapsedMs(start)
+					elapsedMs(start),
+					trace.llmCallCount(), trace.answerSource(), trace.answerIntent(), List.of()
 			);
 		}
+	}
+
+	private static String mismatch(String field, Object expected, Object actual) {
+		return field + ": expected=" + expected + " actual=" + actual;
 	}
 
 	private List<EvalCase> loadCases(String screenKey) {

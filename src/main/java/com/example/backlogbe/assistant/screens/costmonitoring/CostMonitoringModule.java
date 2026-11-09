@@ -1,6 +1,7 @@
 package com.example.backlogbe.assistant.screens.costmonitoring;
 
 import com.example.backlogbe.assistant.core.prefetch.PrefetchRule;
+import com.example.backlogbe.assistant.core.screen.AnswerGuide;
 import com.example.backlogbe.assistant.core.screen.ParamSpec;
 import com.example.backlogbe.assistant.core.screen.ScreenModule;
 import com.example.backlogbe.assistant.core.suggestion.SuggestionCondition;
@@ -15,11 +16,18 @@ import java.util.Map;
 // =========================================================
 // MÀN HÌNH COST MONITORING
 //
-// Params : month (yyyy-MM | yyyy.MM, trống = tháng hiện tại), simuWeek / plTgtMode (Simu_W1..Simu_W5).
+// Params : month (yyyy-MM | yyyy.MM, trống = tháng hiện tại), simuWeek / plTgtMode (Simu_W1..Simu_W5),
+//          factory + category (ô đang mở từ drawer, tùy chọn – CostMonitoringFocus).
 // Context: CostMonitoringContextProvider (đầy đủ / rút gọn cho tháng được hỏi).
 // Tool   : get_daily_series, get_top_items, compare_previous_month, explain_variance, get_ratio_trend
 //          (thứ tự giữ nguyên khi gửi cho LLM).
-// Prefetch: RatioTrendPrefetchRule.
+// Prefetch: RatioTrendPrefetchRule (get_ratio_trend), ExplainVariancePrefetchRule (explain_variance cho câu hỏi
+//          dự báo, câu hỏi phân tích 1 khung, câu hỏi từ drawer), DailySeriesPrefetchRule (get_daily_series cho câu
+//          hỏi theo ngày về 1 khung).
+// Context: câu hỏi xác định được đúng 1 khung -> chỉ gửi khung đó (CostMonitoringContextProvider).
+// AnswerGuide: CostMonitoringAnswerGuide (khối KẾT LUẬN cho câu hỏi tổng quan / xếp hạng / dự báo chung;
+//          pre-fetch đủ -> tool_choice none) + câu trả lời template không gọi LLM (CostMonitoringAnswerTemplate)
+//          cho tổng quan / xếp hạng / dự báo.
 // Gợi ý  : CostMonitoringSuggestionConditions.
 // Tháng khác: hỗ trợ; tool chạy cho tháng khác thì bỏ simuWeek / plTgtMode (tuần Simu mới nhất).
 // Văn bản: resources/assistant/screens/cost-monitoring/{knowledge.md, rules.md, codes.json,
@@ -35,13 +43,19 @@ public class CostMonitoringModule implements ScreenModule {
 	private static final List<ParamSpec> PARAMS = List.of(
 			ParamSpec.of("month", "^\\d{4}[-.]\\d{2}$", "Tháng đang xem yyyy-MM hoặc yyyy.MM; trống = tháng hiện tại"),
 			ParamSpec.of("simuWeek", SIMU_WEEK_REGEX, "Tuần PL simulation; trống = tuần mới nhất có số"),
-			ParamSpec.of("plTgtMode", SIMU_WEEK_REGEX, "Tên khác của simuWeek")
+			ParamSpec.of("plTgtMode", SIMU_WEEK_REGEX, "Tên khác của simuWeek"),
+			// Mở chat từ drawer của 1 ô: tool mặc định tra đúng ô này (CostMonitoringFocus)
+			ParamSpec.of(CostMonitoringFocus.PARAM_FACTORY, "(?i)^(PRESS|MOLD|GUIDE|PR|MO|GU)$",
+					"Bộ phận của ô đang mở (drawer); trống = không có"),
+			ParamSpec.of(CostMonitoringFocus.PARAM_CATEGORY, "(?i)^(OT|T&SL|TSL|RM)$",
+					"Loại chi phí của ô đang mở (drawer); trống = không có")
 	);
 
 	private final CostMonitoringContextProvider contextProvider;
 	private final CostMonitoringSuggestionConditions suggestionConditions;
 	private final List<AssistantTool> tools;
 	private final List<PrefetchRule> prefetchRules;
+	private final CostMonitoringAnswerGuide answerGuide;
 
 	public CostMonitoringModule(
 			CostMonitoringContextProvider contextProvider,
@@ -51,13 +65,17 @@ public class CostMonitoringModule implements ScreenModule {
 			ComparePreviousMonthTool comparePreviousMonthTool,
 			ExplainVarianceTool explainVarianceTool,
 			RatioTrendTool ratioTrendTool,
-			RatioTrendPrefetchRule ratioTrendPrefetchRule
+			RatioTrendPrefetchRule ratioTrendPrefetchRule,
+			ExplainVariancePrefetchRule explainVariancePrefetchRule,
+			DailySeriesPrefetchRule dailySeriesPrefetchRule,
+			CostMonitoringAnswerGuide answerGuide
 	) {
+		this.answerGuide = answerGuide;
 		this.contextProvider = contextProvider;
 		this.suggestionConditions = suggestionConditions;
 		this.tools = List.of(dailySeriesTool, topItemsTool, comparePreviousMonthTool, explainVarianceTool,
 				ratioTrendTool);
-		this.prefetchRules = List.of(ratioTrendPrefetchRule);
+		this.prefetchRules = List.of(ratioTrendPrefetchRule, explainVariancePrefetchRule, dailySeriesPrefetchRule);
 	}
 
 	@Override
@@ -76,6 +94,11 @@ public class CostMonitoringModule implements ScreenModule {
 	}
 
 	@Override
+	public String buildContext(Map<String, String> params, String lang, String question) {
+		return contextProvider.buildContext(params, lang, question);
+	}
+
+	@Override
 	public List<AssistantTool> tools() {
 		return tools;
 	}
@@ -83,6 +106,12 @@ public class CostMonitoringModule implements ScreenModule {
 	@Override
 	public List<PrefetchRule> prefetchRules() {
 		return prefetchRules;
+	}
+
+	// Khối KẾT LUẬN + cấm gọi thêm tool cho câu hỏi tổng quan / xếp hạng / dự báo (CostMonitoringAnswerGuide)
+	@Override
+	public AnswerGuide answerGuide(String question, Map<String, String> params, String lang) {
+		return answerGuide.guide(question, params, lang);
 	}
 
 	@Override

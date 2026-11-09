@@ -102,7 +102,8 @@ public final class CmText {
 
 		// Nếu giữ tốc độ hiện tại
 		StringBuilder linear = new StringBuilder(
-				t(lang, "Nếu giữ tốc độ hiện tại: ", "If current rate continues: "));
+				t(lang, "Nếu giữ tốc độ hiện tại (dự báo theo tốc độ chi hiện tại): ",
+						"If current rate continues (projection at current spending rate): "));
 		if (a.linearForecast() == null) {
 			linear.append(noData(lang));
 		} else {
@@ -126,6 +127,109 @@ public final class CmText {
 		parts.add(budget.toString());
 
 		return parts;
+	}
+
+	/*
+	 * Dự báo cuối tháng theo tốc độ chi hiện tại (projectedEom / projectedOver / projectedOverFc của
+	 * CostMonitoringAssessment), 2 dòng cho explain_variance, kết luận do code so sánh (model không tự so):
+	 *   "Kết luận nếu cứ chi như hiện tại=Dự báo VƯỢT Fluct +86.0 K$; dự báo VƯỢT FC +98.8 K$"
+	 *   "Dự báo cuối tháng theo tốc độ chi hiện tại=274.0 K$|Tốc độ chi hiện tại=9.13 K$/ngày (× N=30 ngày)
+	 *    |Dự báo so với Fluct=+86.0 K$ (dự báo vượt Fluct)|Dự báo so với FC=+98.8 K$ (dự báo vượt FC)"
+	 * Không có số (thiếu Actual / tháng đã kết thúc) -> "".
+	 */
+	/*
+	 * Dự báo CHÍNH (PL Estimate; không PL thì theo nhịp Fluct) – 1 dòng, đặt trước dòng tốc độ chi hiện tại:
+	 *   "Dự báo cuối tháng (CHÍNH, theo PL)=231.0 K$|Dự báo bằng % Fluct=125.3%|Vượt Fluct %=+25.3%
+	 *    |Dự báo so với Fluct=+46.7 K$ (dự báo vượt Fluct)|Dự báo so với FC=+55.8 K$ (dự báo vượt FC)"
+	 * Không có dự báo (thiếu Actual / tháng đã kết thúc) -> "".
+	 */
+	public static String estimateLine(CostMonitoringAssessment a, String lang) {
+
+		if (a.estimateEom() == null) {
+			return "";
+		}
+
+		String base = forecastBase(a.estimateBase(), lang);
+
+		return t(lang, "Dự báo cuối tháng (CHÍNH", "Month-end forecast (MAIN")
+				+ (base.isEmpty() ? "" : ", " + base) + ")=" + k1(a.estimateEom())
+				+ t(lang, "|Dự báo bằng % Fluct=", "|Forecast as % of Fluct=") + pct1(a.estimatePctOfFluct())
+				+ t(lang, "|Vượt Fluct %=", "|Over Fluct %=") + signedPct1(a.estimateOverPct())
+				+ t(lang, "|Dự báo so với Fluct=", "|Forecast vs Fluct=")
+				+ signedK(a.estimateOver(),
+				t(lang, "dự báo vượt Fluct", "forecast above Fluct"),
+				t(lang, "dự báo dưới Fluct, còn dư", "forecast below Fluct, headroom"))
+				+ t(lang, "|Dự báo so với FC=", "|Forecast vs FC=")
+				+ signedK(a.estimateOverFc(),
+				t(lang, "dự báo vượt FC", "forecast above FC"),
+				t(lang, "dự báo dưới FC, còn dư", "forecast below FC, headroom"));
+	}
+
+	public static String projectedLine(CostMonitoringAssessment a, int n, String lang) {
+
+		if (a.projectedEom() == null) {
+			return "";
+		}
+
+		return t(lang, "Kết luận nếu cứ chi như hiện tại (PHỤ – chỉ dùng cho câu \"cứ chi như vậy / giữ tốc độ\")=",
+				"Outlook if spending continues at current rate (SECONDARY – only for \"at this rate\" questions)=")
+				+ projectedVerdict(a.projectedOver(), "Fluct", lang)
+				+ "; " + projectedVerdict(a.projectedOverFc(), "FC", lang)
+				+ '\n'
+				+ t(lang, "Dự báo cuối tháng theo tốc độ chi hiện tại=", "Month-end projection at current spending rate=")
+				+ k1(a.projectedEom())
+				+ t(lang, "|Tốc độ chi hiện tại=", "|Current spending rate=") + rate(a.currentRate(), lang)
+				+ " (× N=" + n + t(lang, " ngày)", " days)")
+				+ t(lang, "|Dự báo so với Fluct=", "|Projection vs Fluct=")
+				+ signedK(a.projectedOver(),
+				t(lang, "dự báo vượt Fluct", "projected above Fluct"),
+				t(lang, "dự báo dưới Fluct, còn dư", "projected below Fluct, headroom"))
+				+ t(lang, "|Dự báo bằng % Fluct=", "|Projection as % of Fluct=") + pct1(a.projectedPctOfFluct())
+				+ t(lang, "|Vượt Fluct %=", "|Over Fluct %=") + signedPct1(a.projectedOverPct())
+				+ t(lang, "|Dự báo so với FC=", "|Projection vs FC=")
+				+ signedK(a.projectedOverFc(),
+				t(lang, "dự báo vượt FC", "projected above FC"),
+				t(lang, "dự báo dưới FC, còn dư", "projected below FC, headroom"));
+	}
+
+	/*
+	 * Tóm tắt dự báo theo tốc độ chi hiện tại của 1 khung (dòng tổng hợp trong context):
+	 *   "cuối tháng khoảng 274.0 K$; so với Fluct=+86.0 K$ (bằng 146.0% Fluct, Vượt Fluct % +46.0%); so với FC=+98.8 K$;
+	 *    tốc độ=9.13 K$/ngày"
+	 * Không có dự báo -> "".
+	 */
+	public static String projectedSummary(CostMonitoringAssessment a, String lang) {
+
+		if (a.projectedEom() == null) {
+			return "";
+		}
+
+		return t(lang, "cuối tháng khoảng ", "month-end about ") + k1(a.projectedEom())
+				+ t(lang, "; so với Fluct=", "; vs Fluct=") + signedK(a.projectedOver())
+				+ (a.projectedPctOfFluct() == null ? ""
+				: t(lang, " (bằng ", " (") + pct1(a.projectedPctOfFluct()) + t(lang, " Fluct, Vượt Fluct % ", " of Fluct, Over Fluct % ")
+				+ signedPct1(a.projectedOverPct()) + ")")
+				+ t(lang, "; so với FC=", "; vs FC=") + signedK(a.projectedOverFc())
+				+ t(lang, "; tốc độ=", "; rate=") + rate(a.currentRate(), lang);
+	}
+
+	// diff = projectedEom − mốc (số đã làm tròn): "Dự báo VƯỢT Fluct +86.0 K$" / "Dự báo KHÔNG vượt Fluct, còn dư 4.5 K$"
+	private static String projectedVerdict(Double diff, String name, String lang) {
+
+		String text = signedK(diff);
+
+		if (text.isEmpty()) {
+			return t(lang, "so với " + name + ": ", "vs " + name + ": ") + noData(lang);
+		}
+
+		if (text.startsWith("0.0")) {
+			return t(lang, "Dự báo BẰNG " + name, "Projected EQUAL to " + name);
+		}
+
+		return diff > 0
+				? t(lang, "Dự báo VƯỢT " + name + " ", "Projected ABOVE " + name + " by ") + text
+				: t(lang, "Dự báo KHÔNG vượt " + name + ", còn dư ", "Projected NOT above " + name + ", headroom ")
+				+ k1(-diff);
 	}
 
 	// "; so với Fluct=+5.1 K$ (vượt Fluct)" / "; so với FC=-3.0 K$ (dưới FC, còn dư)"
@@ -379,6 +483,97 @@ public final class CmText {
 	// "19%" (số nguyên); null -> trống
 	public static String pct0(Double value) {
 		return value == null || value.isNaN() || value.isInfinite() ? "" : Math.round(value) + "%";
+	}
+
+	// "125.3%" (1 chữ số thập phân); null -> trống
+	public static String pct1(Double value) {
+		return value == null || value.isNaN() || value.isInfinite()
+				? ""
+				: String.format(Locale.ROOT, "%.1f%%", value);
+	}
+
+	// "+25.3%" / "-4.0%" / "0.0%" (có dấu, 1 chữ số); null -> trống
+	public static String signedPct1(Double value) {
+
+		if (value == null || value.isNaN() || value.isInfinite()) {
+			return "";
+		}
+
+		String number = String.format(Locale.ROOT, "%.1f", value);
+
+		if (number.equals("0.0") || number.equals("-0.0")) {
+			return "0.0%";
+		}
+
+		return (value > 0 ? "+" : "") + number + "%";
+	}
+
+	/*
+	 * So sánh dự báo cuối tháng với 1 mốc, chữ theo dấu (số đã làm tròn 1 chữ số):
+	 *   "vượt Fluct +46.7 K$ (+25.3%)" / "dưới Fluct -2.0 K$ (-1.5%)" / "bằng Fluct"
+	 * overPct null -> không ghi phần %.
+	 */
+	public static String versus(String name, Double diff, Double overPct, String lang) {
+
+		String k = signedK(diff);
+
+		if (k.isEmpty()) {
+			return t(lang, "so với " + name + ": ", "vs " + name + ": ") + noData(lang);
+		}
+
+		if (k.startsWith("0.0")) {
+			return t(lang, "bằng " + name, "equal to " + name);
+		}
+
+		String pct = overPct == null ? "" : " (" + signedPct1(overPct) + ")";
+
+		return (diff > 0 ? t(lang, "vượt ", "above ") : t(lang, "dưới ", "below ")) + name + " " + k + pct;
+	}
+
+	// Dòng 1 khung theo dự báo CHÍNH (PL Estimate; không PL thì theo nhịp Fluct):
+	//   "cuối tháng khoảng 231.0 K$ (theo PL, bằng 125.3% Fluct); vượt Fluct +46.7 K$ (+25.3%); vượt FC +55.8 K$"
+	public static String estimateBrief(CostMonitoringAssessment a, String lang) {
+
+		if (a.estimateEom() == null) {
+			return t(lang, "chưa có dự báo", "no forecast");
+		}
+
+		String base = forecastBase(a.estimateBase(), lang);
+		String pct = a.estimatePctOfFluct() == null ? ""
+				: t(lang, "bằng ", "") + pct1(a.estimatePctOfFluct()) + t(lang, " Fluct", " of Fluct");
+		String paren = base.isEmpty() && pct.isEmpty() ? ""
+				: " (" + base + (base.isEmpty() || pct.isEmpty() ? "" : ", ") + pct + ")";
+
+		return t(lang, "cuối tháng khoảng ", "month-end about ") + k1(a.estimateEom()) + paren
+				+ "; " + versus("Fluct", a.estimateOver(), a.estimateOverPct(), lang)
+				+ "; " + versus("FC", a.estimateOverFc(), null, lang);
+	}
+
+	// Ghi chú khi 2 cách dự báo trái chiều (CostMonitoringAssessment.projectionsDisagree):
+	//   "theo tốc độ chi hiện tại thì cuối tháng khoảng 150.2 K$, dưới Fluct -4.0 K$ (-2.6%)"
+	public static String projectedNote(CostMonitoringAssessment a, String lang) {
+
+		if (a.projectedEom() == null) {
+			return "";
+		}
+
+		return t(lang, "theo tốc độ chi hiện tại thì cuối tháng khoảng ", "at the current spending rate, month-end about ")
+				+ k1(a.projectedEom()) + ", " + versus("Fluct", a.projectedOver(), a.projectedOverPct(), lang);
+	}
+
+	// Dòng 1 khung cho bản tóm tắt / khối KẾT LUẬN (dự báo PHỤ – tốc độ chi hiện tại):
+	//   "cuối tháng khoảng 231.0 K$ (bằng 125.3% Fluct); vượt Fluct +46.7 K$ (+25.3%); vượt FC +55.8 K$"
+	public static String projectedBrief(CostMonitoringAssessment a, String lang) {
+
+		if (a.projectedEom() == null) {
+			return t(lang, "chưa có dự báo", "no projection");
+		}
+
+		return t(lang, "cuối tháng khoảng ", "month-end about ") + k1(a.projectedEom())
+				+ (a.projectedPctOfFluct() == null ? ""
+				: t(lang, " (bằng ", " (") + pct1(a.projectedPctOfFluct()) + t(lang, " Fluct)", " of Fluct)"))
+				+ "; " + versus("Fluct", a.projectedOver(), a.projectedOverPct(), lang)
+				+ "; " + versus("FC", a.projectedOverFc(), null, lang);
 	}
 
 

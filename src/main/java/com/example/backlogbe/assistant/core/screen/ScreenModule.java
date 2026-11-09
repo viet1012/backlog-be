@@ -38,6 +38,12 @@ public interface ScreenModule {
 	// Context "Dữ liệu hiện tại" cho prompt. params không null; lang "vi" | "en"
 	String buildContext(Map<String, String> params, String lang);
 
+	// Như trên, kèm câu hỏi gốc: module có thể thu gọn context theo câu hỏi (vd chỉ gửi đối tượng được hỏi
+	// để giảm token). ChatOrchestrator gọi hàm này; mặc định bỏ qua câu hỏi.
+	default String buildContext(Map<String, String> params, String lang, String question) {
+		return buildContext(params, lang);
+	}
+
 	// Tool model được gọi trên màn hình này (thứ tự giữ nguyên khi gửi cho LLM)
 	default List<AssistantTool> tools() {
 		return List.of();
@@ -46,6 +52,13 @@ public interface ScreenModule {
 	// Quy tắc tự chạy tool trước khi gọi LLM
 	default List<PrefetchRule> prefetchRules() {
 		return List.of();
+	}
+
+	// Hướng dẫn trả lời tính sẵn cho câu hỏi (khối kết luận + pre-fetch đã đủ hay chưa), xem AnswerGuide.
+	// params: params tháng đang xem. Chỉ gọi khi câu hỏi không nhắc tháng khác tháng đang xem.
+	// null = không có (mặc định). Lỗi -> ChatOrchestrator bỏ qua (log WARN), trả lời như bình thường.
+	default AnswerGuide answerGuide(String question, Map<String, String> params, String lang) {
+		return null;
 	}
 
 	// Điều kiện cho câu gợi ý động. null = màn hình không có gợi ý động / greeting.

@@ -3,6 +3,7 @@ package com.example.backlogbe.assistant.screens.costmonitoring;
 import com.example.backlogbe.assistant.screens.costmonitoring.repository.CostWorkingDateRepository;
 import com.example.backlogbe.assistant.screens.costmonitoring.repository.CostWorkingDateRepository.DailyRatio;
 import com.example.backlogbe.dto.costmonitoring.CostChartDto;
+import com.example.backlogbe.dto.costmonitoring.CostChartForecastDto;
 import com.example.backlogbe.dto.costmonitoring.CostPlWeeksResponse;
 import com.example.backlogbe.service.CostMonitoringService;
 import lombok.RequiredArgsConstructor;
@@ -60,8 +61,20 @@ public class CostMonitoringContextProvider {
 	private final CostWorkingDateRepository workingDateRepository;
 
 	public String buildContext(Map<String, String> params, String lang) {
+		return buildContext(params, lang, null);
+	}
+
+	/*
+	 * question != null và xác định được đúng 1 khung (CostMonitoringQuestion.frame: câu hỏi, phần thiếu lấy từ
+	 * ô drawer) -> context THU GỌN để giảm token: chỉ dòng của khung đó + Ratio bộ phận đó, thay 5 dòng tổng hợp
+	 * bằng 1 dòng ghi chú (khung khác: gọi tool). Không xác định được / khung không có trong snapshot -> đầy đủ.
+	 */
+	public String buildContext(Map<String, String> params, String lang, String question) {
 
 		CostMonitoringSnapshot snapshot = loader.load(params);
+
+		CostMonitoringFocus frame = question == null ? null : CostMonitoringQuestion.frame(question, params);
+		CostChartDto frameChart = frame == null ? null : snapshot.find(frame.div(), frame.cost());
 		String simuWeek = snapshot.response().simuWeek();
 		CostPlWeeksResponse plWeeks = costMonitoringService.getPlWeeks(snapshot.response().month());
 
@@ -82,6 +95,7 @@ public class CostMonitoringContextProvider {
 		}
 		sb.append('\n');
 		sb.append(plTgtLine(simuWeek, plWeeks, lang)).append('\n');
+		appendFocus(sb, params, snapshot, lang);
 
 		sb.append(t(lang, "Ngày có dữ liệu mới nhất (D)=", "Latest data day (D)=")).append(d)
 				.append(t(lang, "|Số ngày trong tháng (N)=", "|Days in month (N)=")).append(n)
@@ -95,10 +109,24 @@ public class CostMonitoringContextProvider {
 					"No actual yet this month; D counts calendar days passed.")).append('\n');
 		}
 
-		appendSummary(sb, snapshot, d, n, lang);
+		if (frameChart == null) {
+			appendSummary(sb, snapshot, d, n, lang);
+		} else {
+			String name = frame.div() + " " + frame.cost();
+			sb.append(t(lang,
+							"Chỉ gửi dữ liệu khung " + name + " (câu hỏi về 1 khung). Khung khác hoặc tổng hợp cả tháng: "
+									+ "gọi explain_variance (nhiều bộ phận: div=ALL).",
+							"Only data for " + name + " is included (question about 1 chart). Other charts or month "
+									+ "summary: call explain_variance (several divisions: div=ALL)."))
+					.append('\n');
+		}
 
 		// Mỗi khung 1 dòng: "PRESS T&SL: FC=…|PL=…|Fluct=…|Actual=…|Estimate=…|Badge=…|…"
 		for (CostChartDto chart : snapshot.response().charts()) {
+
+			if (frameChart != null && chart != frameChart) {
+				continue;
+			}
 
 			CostMonitoringAssessment a = CostMonitoringAssessment.of(snapshot, chart);
 
@@ -136,7 +164,7 @@ public class CostMonitoringContextProvider {
 			sb.append('\n');
 		}
 
-		appendRatios(sb, snapshot, lang);
+		appendRatios(sb, snapshot, frameChart != null ? frame.div() : null, lang);
 		sb.append(t(lang, "Giá trị trống = chưa có dữ liệu.", "Empty value = no data."));
 
 		return sb.toString();
@@ -202,9 +230,40 @@ public class CostMonitoringContextProvider {
 			sb.append('\n');
 		}
 
-		appendRatios(sb, snapshot, lang);
+		appendRatios(sb, snapshot, null, lang);
 
 		return sb.toString().trim();
+	}
+
+	/*
+	 * FE mở chat từ drawer của 1 ô (params factory + category): 1 dòng
+	 *   "Ô đang xem (mở từ drawer): PRESS T&SL, tháng 2026-10. Câu hỏi không nêu bộ phận / loại chi phí
+	 *    thì hiểu là ô này; gọi tool với div=PRESS, cost=T&SL."
+	 * Không có focus -> không ghi gì.
+	 */
+	private static void appendFocus(
+			StringBuilder sb,
+			Map<String, String> params,
+			CostMonitoringSnapshot snapshot,
+			String lang
+	) {
+
+		CostMonitoringFocus focus = CostMonitoringFocus.from(params);
+
+		if (focus == null) {
+			return;
+		}
+
+		String name = focus.div() + " " + focus.cost();
+
+		sb.append(t(lang, "Ô đang xem (mở từ drawer): ", "Cell in focus (opened from drawer): "))
+				.append(name)
+				.append(t(lang, ", tháng ", ", month ")).append(snapshot.month())
+				.append(t(lang,
+						". Câu hỏi không nêu bộ phận / loại chi phí thì hiểu là ô này; gọi tool với div=",
+						". If the question names no division / cost type, it refers to this cell; call tools with div="))
+				.append(focus.div()).append(", cost=").append(focus.cost()).append('.')
+				.append('\n');
 	}
 
 	// Có ít nhất 1 khung có FC hoặc Actual
@@ -226,10 +285,15 @@ public class CostMonitoringContextProvider {
 	}
 
 	/*
-	 * 3 dòng tổng hợp do code tính sẵn (model trả lời câu hỏi chung về vượt target theo đúng 3 dòng này):
-	 *   Đã vượt thực tế : Act > Fluct                                  "PRESS T&SL (Vượt 137%)"
-	 *   Dự báo sẽ vượt  : chưa vượt nhưng dự báo cuối tháng > Fluct   "MOLD RM (+12.3 K$)"
-	 *   Cần theo dõi    : Risk = WATCH (chi nhanh hơn tiến độ, dự báo vẫn trong target)
+	 * Dòng tổng hợp do code tính sẵn (model trả lời câu hỏi chung "có vượt không" theo các dòng này).
+	 * Trạng thái CHÍNH giống /chart và /suggestions (CostMonitoringAssessment.mainStatus, CostMonitoringAssessment.of):
+	 *   "Dự báo vượt Fluct (chính, theo PL; chưa vượt thực tế): N khung – X (CmText.estimateBrief)"   WILL_EXCEED
+	 *   "Dự báo vượt FC nhưng trong Fluct (chính): M khung – …"     chưa vượt, estimateOver ≤ 0, estimateOverFc > 0
+	 *   "Đã vượt thực tế: K khung – PRESS T&SL (Vượt 137%)"          OVER
+	 *   2 cách dự báo trái chiều -> thêm "; theo tốc độ chi hiện tại thì …" (CmText.projectedNote)
+	 * PHỤ (chỉ cho câu "cứ chi như vậy"):
+	 *   "Theo tốc độ chi hiện tại (phụ…) – dự báo vượt Fluct: L khung – X (CmText.projectedSummary)"  projectedOver > 0
+	 *   Cần theo dõi: Risk = WATCH (chi nhanh hơn tiến độ, dự báo chính vẫn trong target)
 	 * Không có khung nào -> "không có".
 	 */
 	private static void appendSummary(StringBuilder sb, CostMonitoringSnapshot snapshot, int d, int n, String lang) {
@@ -264,17 +328,32 @@ public class CostMonitoringContextProvider {
 			return;
 		}
 
+		List<String> estimateOverFcOnly = new ArrayList<>();
+		List<String> projectedOverFluct = new ArrayList<>();
+
 		for (CostChartDto chart : snapshot.response().charts()) {
 
-			CostMonitoringAssessment a = CostMonitoringAssessment.of(chart, d, n);
+			// Cùng cách tính với /chart, /detail, /suggestions
+			CostMonitoringAssessment a = CostMonitoringAssessment.of(snapshot, chart);
 			String name = CostMonitoringSnapshot.divName(chart.div()) + " " + chart.chart();
 
-			boolean alreadyOver = CostMonitoringAssessment.MODE_OVER.equals(a.mode());
+			// Ghi chú khi 2 cách dự báo trái chiều
+			String note = a.projectionsDisagree() ? "; " + CmText.projectedNote(a, lang) : "";
 
-			if (alreadyOver) {
-				over.add(name + " (" + badgeText(a, lang) + ")");
-			} else if (CostMonitoringAssessment.WILL_EXCEED.equals(a.forecastStatus())) {
-				willExceed.add(name + " (" + CmText.signedK(a.forecastGap()) + ")");
+			// Trạng thái CHÍNH (giống /chart, /suggestions): đã vượt -> dự báo vượt (PL Estimate)
+			String status = a.mainStatus();
+
+			if (CostChartForecastDto.STATUS_OVER.equals(status)) {
+				over.add(name + " (" + badgeText(a, lang) + note + ")");
+			} else if (CostChartForecastDto.STATUS_WILL_EXCEED.equals(status)) {
+				willExceed.add(name + " (" + CmText.estimateBrief(a, lang) + note + ")");
+			} else if (positive(a.estimateOverFc())) {
+				estimateOverFcOnly.add(name + " (" + CmText.estimateBrief(a, lang) + note + ")");
+			}
+
+			// PHỤ: theo tốc độ chi hiện tại (chỉ cho câu "cứ chi như vậy")
+			if (positive(a.projectedOver())) {
+				projectedOverFluct.add(name + " (" + CmText.projectedSummary(a, lang) + ")");
 			}
 
 			if (CostMonitoringAssessment.RISK_WATCH.equals(a.risk())) {
@@ -282,20 +361,44 @@ public class CostMonitoringContextProvider {
 			}
 		}
 
+		sb.append(t(lang, "Dự báo vượt Fluct (chính: theo PL, chưa có PL thì theo nhịp Fluct; chưa vượt thực tế): ",
+						"Forecast above Fluct (main: based on PL, Fluct pace when no PL; not yet over): "))
+				.append(countedList(willExceed, none, lang)).append('\n');
+		sb.append(t(lang, "Dự báo vượt FC nhưng trong Fluct (chính): ",
+						"Forecast above FC but within Fluct (main): "))
+				.append(countedList(estimateOverFcOnly, none, lang)).append('\n');
 		sb.append(t(lang, "Đã vượt thực tế: ", "Already over target: "))
-				.append(over.isEmpty() ? none : String.join(", ", over)).append('\n');
-		sb.append(t(lang, "Dự báo sẽ vượt: ", "Forecast to exceed: "))
-				.append(willExceed.isEmpty() ? none : String.join(", ", willExceed)).append('\n');
+				.append(countedList(over, none, lang)).append('\n');
+		sb.append(t(lang,
+						"Theo tốc độ chi hiện tại (phụ, chỉ cho câu \"cứ chi như vậy\") – dự báo vượt Fluct: ",
+						"At current spending rate (secondary, only for \"at this rate\" questions) – projected above Fluct: "))
+				.append(countedList(projectedOverFluct, none, lang)).append('\n');
 		sb.append(t(lang, "Cần theo dõi: ", "Needs watching: "))
 				.append(watch.isEmpty() ? none : String.join(", ", watch)).append('\n');
+	}
+
+	// Số đã làm tròn 1 chữ số > 0 (cùng cách hiển thị signedK)
+	private static boolean positive(Double value) {
+		return value != null && Math.round(value * 10) > 0;
+	}
+
+	// "2 khung – A (…), B (…)"; rỗng -> "không có"
+	private static String countedList(List<String> items, String none, String lang) {
+
+		if (items.isEmpty()) {
+			return none;
+		}
+
+		return items.size() + t(lang, " khung – ", " charts – ") + String.join(", ", items);
 	}
 
 	/*
 	 * Mỗi bộ phận 1 dòng: "<DIV> Ratio mới nhất = x% | KVH = y%"
 	 *   Ratio = Adj_Ratio_PR/_MO/_GU khác null cuối cùng từ ngày 1 đến min(cuối tháng, hôm qua);
 	 *   KVH = Adj_Ratio_KVH khác null cuối cùng trong cùng khoảng. Lỗi đọc -> 1 dòng "chưa có dữ liệu".
+	 *   onlyDiv != null -> chỉ dòng của bộ phận đó (context thu gọn 1 khung).
 	 */
-	private void appendRatios(StringBuilder sb, CostMonitoringSnapshot snapshot, String lang) {
+	private void appendRatios(StringBuilder sb, CostMonitoringSnapshot snapshot, String onlyDiv, String lang) {
 
 		LocalDate from = snapshot.month().atDay(1);
 		LocalDate until = RatioTrendTool.lastRatioDay(snapshot);
@@ -312,7 +415,7 @@ public class CostMonitoringContextProvider {
 			sb.append(t(lang, "Ratio theo bộ phận: chưa có dữ liệu.", "Ratio by division: no data.")).append('\n');
 		} else {
 			Double kvh = latest(ratios, null);
-			for (String div : CostMonitoringSnapshot.DIVS) {
+			for (String div : onlyDiv != null ? List.of(onlyDiv) : CostMonitoringSnapshot.DIVS) {
 				sb.append(div)
 						.append(t(lang, " Ratio mới nhất = ", " Latest ratio = ")).append(RatioTrendTool.pct(latest(ratios, div)))
 						.append(" | KVH = ").append(RatioTrendTool.pct(kvh))

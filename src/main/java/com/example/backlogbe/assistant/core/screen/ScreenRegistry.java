@@ -51,6 +51,11 @@ public class ScreenRegistry {
 
 	// Không có module -> ""; module trả null -> ""
 	public String buildContext(String screenKey, Map<String, String> params, String lang) {
+		return buildContext(screenKey, params, lang, null);
+	}
+
+	// question: câu hỏi gốc (null = context đầy đủ)
+	public String buildContext(String screenKey, Map<String, String> params, String lang, String question) {
 
 		ScreenModule module = find(screenKey);
 
@@ -58,7 +63,10 @@ public class ScreenRegistry {
 			return "";
 		}
 
-		String context = module.buildContext(params != null ? params : Map.of(), lang);
+		Map<String, String> safeParams = params != null ? params : Map.of();
+		String context = question == null
+				? module.buildContext(safeParams, lang)
+				: module.buildContext(safeParams, lang, question);
 
 		return context != null ? context : "";
 	}

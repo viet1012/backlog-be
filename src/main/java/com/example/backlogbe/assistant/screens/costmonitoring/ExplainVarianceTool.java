@@ -57,6 +57,11 @@ import static com.example.backlogbe.assistant.screens.costmonitoring.CmText.t;
 //     tỷ trọng 3 vật tư = tổng 3 dòng / chi phí trực tiếp của ngày đó.
 //     Luôn xuất (đặt trước phần so cùng kỳ để không bị cắt khi kết quả dài).
 //   T&SL / RM: "Khoản lớn bất thường" (xem appendUnusual), cũng đặt trước phần so cùng kỳ.
+//   Dự báo cuối tháng, tháng đang diễn ra, đặt NGAY SAU dòng FC|Fluct|PL|Actual (trước phân tích, không bị cắt):
+//     CHÍNH (CmText.estimateLine): PL Estimate (không PL thì theo nhịp Fluct) – estimateEom / % Fluct / so với Fluct, FC
+//     PHỤ   (CmText.projectedLine): tốc độ chi hiện tại (projectedEom…, tốc độ chi/ngày), mở đầu bằng
+//           "Kết luận nếu cứ chi như hiện tại" – chỉ dùng cho câu "cứ chi như vậy / giữ tốc độ".
+//   Dự báo / Kết luận dự báo theo PL (đường Estimate) ghi rõ "(theo PL)" / "(theo Fluct)" để không lẫn.
 //   Kịch bản cuối tháng: CmText.scenarioParts (giống context).
 //   Vật tư hiển thị "Tên (Code)", tên từ [Text] cắt tối đa 40 ký tự (CmText.itemLabel).
 // RM, T&SL: so cùng kỳ tháng trước theo Category và theo vật tư (Code + Text):
@@ -104,6 +109,11 @@ public class ExplainVarianceTool implements AssistantTool {
 	private static final int TOP_INCREASE_ALL = 3;
 	private static final int MAX_RESULT_LENGTH_ALL = 5000;
 
+	// div=ALL + summary=true (pre-fetch câu hỏi tổng quan): ≤ 1200 ký tự / loại chi phí
+	// (tối đa 3 loại ≈ 3600 ký tự ≈ 1.5k token)
+	static final String ARG_SUMMARY = "summary";
+	private static final int MAX_RESULT_LENGTH_SUMMARY = 1200;
+
 	private final CostMonitoringSnapshotLoader loader;
 	private final CostTopItemsRepository repository;
 
@@ -117,7 +127,10 @@ public class ExplainVarianceTool implements AssistantTool {
 		return "Phân tích vì sao 1 khung vượt, có nguy cơ vượt hoặc thấp hơn Fluctuating TGT: "
 				+ "khi chưa vượt thì so Actual với tiến độ (chi vượt tiến độ), khi đã vượt thì tách phần target bị hạ "
 				+ "và phần chi vượt FC; kèm tiến độ, dự báo, rủi ro, kết luận chính, 3 ngày chi lớn nhất; "
-				+ "với T&SL / RM so cùng kỳ tháng trước theo Category và vật tư. Dùng cho câu hỏi \"vì sao vượt / thấp\".";
+				+ "với T&SL / RM so cùng kỳ tháng trước theo Category và vật tư. "
+				+ "Đầu kết quả: dự báo cuối tháng CHÍNH (theo PL) so với Fluct và FC, rồi dự báo PHỤ theo tốc độ chi "
+				+ "hiện tại (chỉ cho câu \"cứ chi như vậy\"). "
+				+ "Dùng cho câu hỏi \"vì sao vượt / thấp\" và câu hỏi dự báo \"cuối tháng / có vượt không / cứ chi như vậy\".";
 	}
 
 	@Override
@@ -130,28 +143,120 @@ public class ExplainVarianceTool implements AssistantTool {
 		);
 	}
 
-	// div=ALL: kết quả gồm 3 bộ phận -> cho phép dài hơn
+	// div=ALL: kết quả gồm 3 bộ phận -> cho phép dài hơn; tóm tắt (summary) -> ngắn
 	@Override
 	public int maxResultLength(Map<String, Object> args) {
 
 		Object div = args.get("div");
 
-		return div != null && CostMonitoringToolArgs.ALL.equalsIgnoreCase(div.toString().trim())
-				? MAX_RESULT_LENGTH_ALL
-				: DEFAULT_MAX_RESULT_LENGTH;
+		if (div == null || !CostMonitoringToolArgs.ALL.equalsIgnoreCase(div.toString().trim())) {
+			return DEFAULT_MAX_RESULT_LENGTH;
+		}
+
+		return isSummary(args) ? MAX_RESULT_LENGTH_SUMMARY : MAX_RESULT_LENGTH_ALL;
 	}
 
 	@Override
 	public String execute(Map<String, Object> args, Map<String, String> screenParams, String lang) {
 
-		String div = CostMonitoringToolArgs.divOrAll(args);
-		String cost = CostMonitoringToolArgs.cost(args, CostMonitoringSnapshot.COSTS);
+		String div = CostMonitoringToolArgs.divOrAll(args, screenParams);
+		String cost = CostMonitoringToolArgs.cost(args, CostMonitoringSnapshot.COSTS, screenParams);
 
 		CostMonitoringSnapshot snapshot = loader.load(screenParams);
 
-		return CostMonitoringToolArgs.ALL.equals(div)
-				? executeAll(snapshot, cost, lang)
-				: executeOne(snapshot, div, cost, lang);
+		if (!CostMonitoringToolArgs.ALL.equals(div)) {
+			return executeOne(snapshot, div, cost, lang);
+		}
+
+		return isSummary(args) ? executeAllSummary(snapshot, cost, lang) : executeAll(snapshot, cost, lang);
+	}
+
+	// Tham số ẩn "summary" (không khai báo trong schema gửi model; chỉ pre-fetch dùng): true / "true"
+	static boolean isSummary(Map<String, Object> args) {
+		Object v = args.get(ARG_SUMMARY);
+		return v != null && "true".equalsIgnoreCase(v.toString().trim());
+	}
+
+
+	// =========================================================
+	// ALL – TÓM TẮT (pre-fetch câu hỏi tổng quan / so sánh / xếp hạng; giữ prompt ngắn)
+	//   Dòng đầu: loại chi phí, tháng, trạng thái tháng
+	//   Tháng đang diễn ra: dòng xếp hạng gọn "MOLD 146.0% > PRESS 120.0% > GUIDE 90.0%" (theo dự báo CHÍNH bằng % Fluct)
+	//   Mỗi bộ phận 1 dòng: FC|Fluct|Actual|Dự báo cuối tháng (chính, theo PL)|Dự báo bằng % Fluct|Vượt Fluct %|
+	//     Dự báo so với Fluct|Dự báo so với FC|Theo tốc độ chi hiện tại (phụ)=…, so với Fluct …, so với FC …
+	//     (có dấu, code tính); Actual > Fluct -> thêm "Đã vượt Fluct thực tế"
+	//   Tháng đã kết thúc: FC|Fluct|Actual|Kết quả tháng
+	//   Không có phân tích chi tiết (ngày, vật tư, kịch bản, khoản lớn bất thường) -> không truy vấn chi tiết.
+	// =========================================================
+
+	private String executeAllSummary(CostMonitoringSnapshot snapshot, String cost, String lang) {
+
+		StringBuilder sb = new StringBuilder();
+
+		sb.append(t(lang, "Tóm tắt tất cả bộ phận ", "Summary of all divisions ")).append(cost)
+				.append(t(lang, "|Tháng=", "|Month=")).append(snapshot.month())
+				.append(t(lang, "|Trạng thái tháng=", "|Month status=")).append(CmText.monthStatus(snapshot.monthClosed(), lang))
+				.append(t(lang, "|Đơn vị=K$", "|Unit=K$"))
+				.append('\n');
+
+		if (!snapshot.monthClosed()) {
+			appendProjectedRanking(sb, snapshot, cost, lang, true);
+		}
+
+		for (String div : CostMonitoringSnapshot.DIVS) {
+
+			sb.append(div).append(' ').append(cost).append(": ");
+
+			CostChartDto chart = snapshot.find(div, cost);
+
+			if (chart == null) {
+				sb.append(t(lang, "Không có dữ liệu", "No data")).append('\n');
+				continue;
+			}
+
+			CostMonitoringAssessment a = CostMonitoringAssessment.of(snapshot, chart);
+
+			sb.append("FC=").append(CmText.k1(chart.fcTgt()))
+					.append("|Fluct=").append(CmText.k1(a.fluct()))
+					.append("|Actual=").append(CmText.k1(a.act()));
+
+			if (a.closed()) {
+				sb.append(t(lang, "|Kết quả tháng=", "|Month result=")).append(CmText.monthResult(a, lang));
+			} else if (a.estimateEom() != null) {
+				String base = CmText.forecastBase(a.estimateBase(), lang);
+				// CHÍNH: PL Estimate (không PL thì theo nhịp Fluct)
+				sb.append(t(lang, "|Dự báo cuối tháng (chính", "|Month-end forecast (main"))
+						.append(base.isEmpty() ? "" : ", " + base).append(")=")
+						.append(CmText.k1(a.estimateEom()))
+						.append(t(lang, "|Dự báo bằng % Fluct=", "|Forecast % of Fluct="))
+						.append(CmText.pct1(a.estimatePctOfFluct()))
+						.append(t(lang, "|Vượt Fluct %=", "|Over Fluct %=")).append(CmText.signedPct1(a.estimateOverPct()))
+						.append(t(lang, "|Dự báo so với Fluct=", "|Forecast vs Fluct=")).append(CmText.signedK(a.estimateOver()))
+						.append(t(lang, "|Dự báo so với FC=", "|Forecast vs FC=")).append(CmText.signedK(a.estimateOverFc()));
+				// PHỤ: tốc độ chi hiện tại (chỉ cho câu "cứ chi như vậy")
+				if (a.projectedEom() != null) {
+					sb.append(t(lang, "|Theo tốc độ chi hiện tại (phụ)=", "|At current rate (secondary)="))
+							.append(CmText.k1(a.projectedEom()))
+							.append(t(lang, ", so với Fluct ", ", vs Fluct ")).append(CmText.signedK(a.projectedOver()))
+							.append(" (").append(CmText.signedPct1(a.projectedOverPct())).append(')')
+							.append(t(lang, ", so với FC ", ", vs FC ")).append(CmText.signedK(a.projectedOverFc()));
+				}
+			} else {
+				sb.append(t(lang, "|Dự báo=chưa có", "|Forecast=n/a"));
+			}
+
+			if (CostMonitoringAssessment.MODE_OVER.equals(a.mode()) && !a.closed()) {
+				sb.append(t(lang, "|Đã vượt Fluct thực tế", "|Already above Fluct"));
+			}
+
+			sb.append('\n');
+		}
+
+		sb.append(t(lang,
+				"(Bản tóm tắt; cần phân tích chi tiết 1 khung thì gọi explain_variance với div cụ thể.)",
+				"(Summary; for detailed analysis of one frame call explain_variance with a specific div.)"));
+
+		return sb.toString().trim();
 	}
 
 	// =========================================================
@@ -193,6 +298,9 @@ public class ExplainVarianceTool implements AssistantTool {
 				.append("|Actual=").append(CmText.k1(act))
 				.append('\n');
 
+		// Đặt ngay đầu (trước phân tích) để không bị cắt khi kết quả dài; tháng đã kết thúc -> trống
+		appendProjected(sb, a, n, lang);
+
 		CoverageBase coverage = appendAnalysis(sb, a, chart, d, n, lang);
 
 		if (a.closed()) {
@@ -210,9 +318,12 @@ public class ExplainVarianceTool implements AssistantTool {
 			String forecast = CmText.k1(a.forecast());
 			String base = CmText.forecastBase(a.forecastBase(), lang);
 
-			sb.append(t(lang, "Dự báo cuối tháng=", "Month-end forecast="))
-					.append(forecast.isEmpty() || base.isEmpty() ? forecast : forecast + " (" + base + ")")
-					.append(t(lang, "|Kết luận dự báo=", "|Forecast outlook=")).append(CmText.forecastOutlook(a, lang))
+			// Dự báo theo PL (đường Estimate): giả định khác "cứ chi như hiện tại" -> nhãn ghi rõ cơ sở
+			String baseSuffix = base.isEmpty() ? "" : " (" + base + ")";
+
+			sb.append(t(lang, "Dự báo cuối tháng", "Month-end forecast")).append(baseSuffix).append('=').append(forecast)
+					.append(t(lang, "|Kết luận dự báo", "|Forecast outlook")).append(baseSuffix).append('=')
+					.append(CmText.forecastOutlook(a, lang))
 					.append(t(lang, "|Rủi ro=", "|Risk=")).append(CmText.risk(a.risk(), lang))
 					.append('\n');
 
@@ -233,7 +344,8 @@ public class ExplainVarianceTool implements AssistantTool {
 
 
 	// =========================================================
-	// ALL: 3 bộ phận cùng loại chi phí, mỗi bộ phận bản rút gọn
+	// ALL: dòng xếp hạng bộ phận theo dự báo bằng % Fluct (tháng đang diễn ra), rồi 3 bộ phận cùng loại chi phí,
+	//   mỗi bộ phận bản rút gọn
 	//   chế độ + kết luận chính + chi vượt tiến độ / phần vượt Fluct, dự báo, rủi ro,
 	//   top 3 ngày, top 3 vật tư ngày lớn nhất + tỷ trọng, top 3 vật tư tăng so với cùng kỳ
 	// =========================================================
@@ -252,6 +364,10 @@ public class ExplainVarianceTool implements AssistantTool {
 				.append(t(lang, "|Số ngày trong tháng (N)=", "|Days in month (N)=")).append(n)
 				.append(t(lang, "|Đơn vị=K$", "|Unit=K$"))
 				.append('\n');
+
+		if (!snapshot.monthClosed()) {
+			appendProjectedRanking(sb, snapshot, cost, lang, false);
+		}
 
 		for (String div : CostMonitoringSnapshot.DIVS) {
 
@@ -272,13 +388,19 @@ public class ExplainVarianceTool implements AssistantTool {
 					.append("|Actual=").append(CmText.k1(a.act()))
 					.append('\n');
 
+			appendProjected(sb, a, n, lang);
+
 			appendAnalysis(sb, a, chart, d, n, lang);
 
 			if (a.closed()) {
 				sb.append(t(lang, "Kết quả tháng=", "Month result=")).append(CmText.monthResult(a, lang))
 						.append('\n');
 			} else {
-				sb.append(t(lang, "Kết luận dự báo=", "Forecast outlook=")).append(CmText.forecastOutlook(a, lang))
+				String base = CmText.forecastBase(a.forecastBase(), lang);
+
+				sb.append(t(lang, "Kết luận dự báo", "Forecast outlook"))
+						.append(base.isEmpty() ? "" : " (" + base + ")").append('=')
+						.append(CmText.forecastOutlook(a, lang))
 						.append(t(lang, "|Rủi ro=", "|Risk=")).append(CmText.risk(a.risk(), lang))
 						.append('\n');
 
@@ -294,6 +416,57 @@ public class ExplainVarianceTool implements AssistantTool {
 		}
 
 		return sb.toString().trim();
+	}
+
+	// Xếp hạng bộ phận theo dự báo cuối tháng (tốc độ chi hiện tại) bằng % Fluct, giảm dần (code xếp, model không tự so):
+	//   "Xếp hạng theo dự báo cuối tháng (chính) bằng % Fluct (cao → thấp)=MOLD 146.0% (+86.0 K$ so với Fluct, +46.0%;
+	//    +98.8 K$ so với FC) > …"
+	// Theo dự báo CHÍNH (estimate: PL Estimate, không PL thì theo nhịp Fluct).
+	// Sắp theo % đã làm tròn 1 chữ số, bằng nhau thì K$ vượt Fluct lớn hơn trước (BY_ESTIMATE_PCT_DESC).
+	// Bộ phận không có dự báo bị bỏ; không bộ phận nào có -> không ghi dòng.
+	// compact (bản tóm tắt): chỉ "MOLD 146.0% > PRESS 120.0% > …" (số chênh đã có ở dòng từng bộ phận)
+	private static void appendProjectedRanking(
+			StringBuilder sb, CostMonitoringSnapshot snapshot, String cost, String lang, boolean compact) {
+
+		record Ranked(String div, CostMonitoringAssessment a) {
+		}
+
+		List<Ranked> ranked = new ArrayList<>();
+
+		for (String div : CostMonitoringSnapshot.DIVS) {
+			CostChartDto chart = snapshot.find(div, cost);
+			if (chart == null) {
+				continue;
+			}
+			CostMonitoringAssessment a = CostMonitoringAssessment.of(snapshot, chart);
+			if (a.estimatePctOfFluct() != null) {
+				ranked.add(new Ranked(div, a));
+			}
+		}
+
+		if (ranked.isEmpty()) {
+			return;
+		}
+
+		ranked.sort(Comparator.comparing(Ranked::a, CostMonitoringAssessment.BY_ESTIMATE_PCT_DESC));
+
+		List<String> parts = new ArrayList<>();
+
+		for (Ranked r : ranked) {
+			String part = r.div() + " " + CmText.pct1(r.a().estimatePctOfFluct());
+			if (!compact) {
+				part += " (" + CmText.signedK(r.a().estimateOver()) + t(lang, " so với Fluct, ", " vs Fluct, ")
+						+ CmText.signedPct1(r.a().estimateOverPct()) + "; "
+						+ CmText.signedK(r.a().estimateOverFc()) + t(lang, " so với FC)", " vs FC)");
+			}
+			parts.add(part);
+		}
+
+		sb.append(t(lang,
+						"Xếp hạng theo dự báo cuối tháng (chính) bằng % Fluct (cao → thấp)=",
+						"Ranking by month-end forecast (main) as % of Fluct (high → low)="))
+				.append(String.join(" > ", parts))
+				.append('\n');
 	}
 
 	// Top 3 vật tư tăng mạnh nhất so với cùng kỳ tháng trước (bản rút gọn cho ALL)
@@ -332,10 +505,28 @@ public class ExplainVarianceTool implements AssistantTool {
 	// KỊCH BẢN CUỐI THÁNG (dùng chung 1 bộ phận / ALL, cùng nội dung với context)
 	//
 	//   "Nếu từ nay chi đúng target" = Act + Fluct / N × (N − D)
-	//   "Nếu giữ tốc độ hiện tại"    = Act / D × N
+	//   "Nếu giữ tốc độ hiện tại"    = Act / Dk × N (Dk = ngày có actual mới nhất của khung)
 	//   Mỗi kịch bản so với Fluct và FC, có dấu (code tự so sánh)
 	//   "Ngân sách còn lại mỗi ngày" = (Fluct − Act) / (N − D) so với "Nhịp target mỗi ngày" = Fluct / N
 	// =========================================================
+
+	// Dự báo cuối tháng theo tốc độ chi hiện tại (projectedEom) + so với Fluct (projectedOver) / FC.
+	// Đặt trước kịch bản để model dùng cho câu hỏi "cứ chi như vậy / dự báo / cuối tháng".
+	// Dự báo CHÍNH (PL Estimate) trước, rồi dự báo PHỤ theo tốc độ chi hiện tại; tháng đã kết thúc -> không ghi
+	private static void appendProjected(StringBuilder sb, CostMonitoringAssessment a, int n, String lang) {
+
+		String estimate = CmText.estimateLine(a, lang);
+
+		if (!estimate.isEmpty()) {
+			sb.append(estimate).append('\n');
+		}
+
+		String line = CmText.projectedLine(a, n, lang);
+
+		if (!line.isEmpty()) {
+			sb.append(line).append('\n');
+		}
+	}
 
 	private static void appendScenarios(StringBuilder sb, CostMonitoringAssessment a, String lang) {
 
