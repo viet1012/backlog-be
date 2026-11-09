@@ -24,8 +24,11 @@ import com.example.backlogbe.dto.costmonitoring.CostChartDto;
 // Kịch bản cuối tháng (luôn theo Fluct, so sánh có dấu: dương = vượt, âm = còn dư):
 //   "Nếu từ nay chi đúng target": targetScenario = Act + Fluct / N × (N − D)
 //       targetScenarioVsFluct = targetScenario − Fluct, targetScenarioVsFc = targetScenario − FC
-//   "Nếu giữ tốc độ hiện tại"   : currentRate = Act / D; linearForecast = currentRate × N
+//   "Nếu giữ tốc độ hiện tại"   : currentRate = Act / Dk; linearForecast = currentRate × N
+//       Dk = ngày có actual mới nhất của CHÍNH khung (RM thường trễ hơn T&SL 1 ngày); chưa có -> D
 //       linearVsFluct = linearForecast − Fluct, linearVsFc = linearForecast − FC
+//       projectedEom() = linearForecast, projectedOver() = linearVsFluct, projectedOverFc() = linearVsFc
+//       (dự báo cuối tháng theo tốc độ chi hiện tại; dùng cho câu hỏi "cứ chi như vậy / cuối tháng")
 //   "Ngân sách còn lại mỗi ngày": remainingPerDay = (Fluct − Act) / (N − D)  (âm = đã hết ngân sách)
 //   "Nhịp target mỗi ngày"      : fluctDailyRate = Fluct / N
 // targetRate = Fluct / N khi Forecast theo Fluct; null khi theo PL.
@@ -96,15 +99,23 @@ public record CostMonitoringAssessment(
 	private static final double PACE_TOLERANCE = 3.0;
 
 	public static CostMonitoringAssessment of(CostChartDto chart, int d, int n) {
-		return of(chart, d, n, false);
+		return of(chart, d, n, false, d);
 	}
 
 	public static CostMonitoringAssessment of(CostMonitoringSnapshot snapshot, CostChartDto chart) {
-		return of(chart, snapshot.d(), snapshot.n(), snapshot.monthClosed());
+
+		int actDay = snapshot.lastActualDay(chart);
+
+		return of(chart, snapshot.d(), snapshot.n(), snapshot.monthClosed(), actDay > 0 ? actDay : snapshot.d());
+	}
+
+	public static CostMonitoringAssessment of(CostChartDto chart, int d, int n, boolean closed) {
+		return of(chart, d, n, closed, d);
 	}
 
 	// closed = tháng đã kết thúc: chỉ có Kết quả tháng (Act − Fluct), không tiến độ / dự báo / kịch bản / ngân sách
-	public static CostMonitoringAssessment of(CostChartDto chart, int d, int n, boolean closed) {
+	// actDay = ngày có actual mới nhất của khung (mẫu số tốc độ chi hiện tại)
+	public static CostMonitoringAssessment of(CostChartDto chart, int d, int n, boolean closed, int actDay) {
 
 		Double act = chart.actMtdLatest();
 		Double fluct = CostMonitoringSnapshot.fluct(chart);
@@ -121,10 +132,11 @@ public record CostMonitoringAssessment(
 		String paceStatus = paceStatus(pct, pace);
 
 		// Forecast theo PL = Est_MTD ngày cuối tháng của SP (PL phân bổ theo WD_All, không tự tính PL / N).
-		// Không có PL / Est -> theo Fluct: Act + Fluct / N × (N − D)
+		// PL trống (null hoặc ≤ 0 – Est khi đó = Actual, sẽ luôn "không vượt") hoặc không có Est
+		//   -> theo Fluct: Act + Fluct / N × (N − D)
 		int remaining = Math.max(0, n - d);
 		Double estMonthEnd = chart.estMonthEnd();
-		boolean byPl = pl != null && estMonthEnd != null;
+		boolean byPl = pl != null && pl > 0 && estMonthEnd != null;
 		String forecastBase = byPl ? "PL" : fluct != null ? "Fluct" : null;
 		Double forecast;
 		if (act == null) {
@@ -173,7 +185,7 @@ public record CostMonitoringAssessment(
 			excessVsPace = n > 0 ? CmText.subR1(act, fluct * d / n) : null;
 		}
 
-		Double currentRate = act != null && d > 0 ? act / d : null;
+		Double currentRate = act != null && actDay > 0 ? act / actDay : null;
 		// Nhịp theo ngày lịch chỉ có nghĩa khi dự báo theo Fluct (PL phân bổ theo ngày làm việc)
 		Double targetRate = !byPl && fluct != null && n > 0 ? fluct / n : null;
 
@@ -244,6 +256,164 @@ public record CostMonitoringAssessment(
 		}
 
 		return ON_PACE;
+	}
+
+	// =========================================================
+	// DỰ BÁO CUỐI THÁNG – 2 CÁCH (thống nhất trợ lý / /chart / /suggestions)
+	//
+	// CHÍNH  estimate*  = PL Estimate (estMonthEnd của SP); không có PL thì Act + Fluct / N × (N − D)
+	//                     (= forecast, cùng cách /suggestions đếm "N khung dự báo vượt"); status chính = forecastStatus
+	// PHỤ    projected* = tốc độ chi hiện tại (Act / ngày có actual × N); chỉ dùng cho câu "cứ chi như vậy…",
+	//                     luôn ghi "theo tốc độ chi hiện tại"
+	// Mọi phần chênh / % tính từ số đã làm tròn 1 chữ số. Tháng đã kết thúc: null.
+	// =========================================================
+
+	// Dự báo cuối tháng theo định nghĩa chính
+	public Double estimateEom() {
+		return forecast;
+	}
+
+	// "PL" | "Fluct" (không có PL) | null
+	public String estimateBase() {
+		return forecastBase;
+	}
+
+	// estimateEom − Fluct, có dấu (dương = dự báo vượt Fluct)
+	public Double estimateOver() {
+		return CmText.subR1(forecast, fluct);
+	}
+
+	// estimateEom − FC, có dấu
+	public Double estimateOverFc() {
+		return CmText.subR1(forecast, fc);
+	}
+
+	// estimateEom / Fluct × 100 (số đã làm tròn 1 chữ số); thiếu / Fluct ≤ 0 -> null
+	public Double estimatePctOfFluct() {
+		return pctOf(forecast, fluct);
+	}
+
+	// % Fluct (làm tròn 1 chữ số) − 100
+	public Double estimateOverPct() {
+		return overPct(estimatePctOfFluct());
+	}
+
+	// "Vượt FC %" của dự báo chính = (estimateEom / FC × 100, làm tròn 1 chữ số) − 100; thiếu / FC ≤ 0 -> null
+	public Double estimateOverFcPct() {
+		return overPct(pctOf(forecast, fc));
+	}
+
+	// "Vượt FC %" của Actual (tháng đã kết thúc) = (Actual / FC × 100, làm tròn 1 chữ số) − 100
+	public Double actOverFcPct() {
+		return overPct(pctOf(act, fc));
+	}
+
+	// Dự báo chính vượt Fluct (= forecastStatus WILL_EXCEED)
+	public boolean estimateWillExceed() {
+		return WILL_EXCEED.equals(forecastStatus);
+	}
+
+	// Trạng thái chính – HÀM DUY NHẤT cho /chart (forecast.status), /suggestions (over / forecast_over),
+	// dòng tổng hợp context và khối KẾT LUẬN của trợ lý:
+	//   NO_DATA     thiếu Actual / Fluct
+	//   OVER        Actual > Fluct (đã vượt thực tế)
+	//   WITHIN      tháng đã kết thúc và không vượt
+	//   WILL_EXCEED dự báo chính (PL Estimate; PL trống -> Act + Fluct / N × (N − D)) > Fluct (số làm tròn 1 chữ số)
+	//   WITHIN      còn lại
+	// PL trống KHÔNG làm dự báo null: forecast luôn có fallback theo Fluct khi có Actual và Fluct.
+	public String mainStatus() {
+
+		if (act == null || fluct == null) {
+			return NO_DATA;
+		}
+		if (MODE_OVER.equals(mode)) {
+			return STATUS_OVER;
+		}
+		if (closed) {
+			return WITHIN;
+		}
+
+		return WILL_EXCEED.equals(forecastStatus) ? WILL_EXCEED : WITHIN;
+	}
+
+	public static final String STATUS_OVER = "OVER";
+
+	// Actual đã vượt Fluct (chế độ OVER)
+	public boolean alreadyOver() {
+		return MODE_OVER.equals(mode);
+	}
+
+	// 2 cách dự báo trái chiều so với Fluct (1 cách vượt, cách kia không); thiếu số -> false
+	public boolean projectionsDisagree() {
+
+		Double e = estimateOver();
+		Double p = projectedOver();
+
+		if (e == null || p == null) {
+			return false;
+		}
+
+		return (Math.round(e * 10) > 0) != (Math.round(p * 10) > 0);
+	}
+
+	private static Double pctOf(Double value, Double base) {
+
+		Double v = CmText.r1(value);
+		Double b = CmText.r1(base);
+
+		if (v == null || b == null || b <= 0) {
+			return null;
+		}
+
+		return v / b * 100;
+	}
+
+	private static Double overPct(Double pctOfFluct) {
+
+		Double pct = CmText.r1(pctOfFluct);
+
+		return pct == null ? null : CmText.r1(pct - 100);
+	}
+
+	// Dự báo cuối tháng theo tốc độ chi hiện tại (= "Nếu giữ tốc độ hiện tại"); tháng đã kết thúc -> null
+	public Double projectedEom() {
+		return linearForecast;
+	}
+
+	// projectedEom − Fluct (từ số đã làm tròn 1 chữ số); dương = dự báo vượt Fluct
+	public Double projectedOver() {
+		return linearVsFluct;
+	}
+
+	// projectedEom − FC (từ số đã làm tròn 1 chữ số); dương = dự báo vượt FC
+	public Double projectedOverFc() {
+		return linearVsFc;
+	}
+
+	// projectedEom / Fluct × 100 (từ số đã làm tròn 1 chữ số, khớp số K$ hiển thị); dùng để xếp hạng
+	// "khung / bộ phận nào … nhất". Thiếu dự báo hoặc Fluct ≤ 0 -> null
+	public Double projectedPctOfFluct() {
+		return pctOf(linearForecast, fluct);
+	}
+
+	// Xếp hạng theo dự báo (tốc độ chi hiện tại) bằng % Fluct (làm tròn 1 chữ số như hiển thị) giảm dần;
+	// bằng nhau -> vượt Fluct (K$) lớn hơn trước; thiếu số ở cuối
+	public static final java.util.Comparator<CostMonitoringAssessment> BY_PROJECTED_PCT_DESC =
+			java.util.Comparator.comparing((CostMonitoringAssessment a) -> CmText.r1(a.projectedPctOfFluct()),
+							java.util.Comparator.nullsLast(java.util.Comparator.reverseOrder()))
+					.thenComparing(CostMonitoringAssessment::projectedOver,
+							java.util.Comparator.nullsLast(java.util.Comparator.reverseOrder()));
+
+	// Như trên theo định nghĩa chính (estimate)
+	public static final java.util.Comparator<CostMonitoringAssessment> BY_ESTIMATE_PCT_DESC =
+			java.util.Comparator.comparing((CostMonitoringAssessment a) -> CmText.r1(a.estimatePctOfFluct()),
+							java.util.Comparator.nullsLast(java.util.Comparator.reverseOrder()))
+					.thenComparing(CostMonitoringAssessment::estimateOver,
+							java.util.Comparator.nullsLast(java.util.Comparator.reverseOrder()));
+
+	// "Vượt Fluct %" = (% Fluct đã làm tròn 1 chữ số) − 100, để "bằng 125.3% Fluct" khớp "+25.3%". Thiếu -> null
+	public Double projectedOverPct() {
+		return overPct(projectedPctOfFluct());
 	}
 
 	// Nhãn hiển thị cho model: xem CmText (không gửi các mã ở đây ra ngoài)

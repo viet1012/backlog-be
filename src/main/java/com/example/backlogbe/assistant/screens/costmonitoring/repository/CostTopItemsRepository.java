@@ -5,6 +5,7 @@ import com.example.backlogbe.assistant.screens.costmonitoring.dto.CostLineDto;
 import com.example.backlogbe.assistant.screens.costmonitoring.dto.CostTopCostCenterDto;
 import com.example.backlogbe.assistant.screens.costmonitoring.dto.CostTopItemDto;
 import com.example.backlogbe.assistant.screens.costmonitoring.dto.CostTopMachineDto;
+import com.example.backlogbe.assistant.screens.costmonitoring.dto.CostTransactionLineDto;
 import lombok.RequiredArgsConstructor;
 import org.springframework.jdbc.core.RowCallbackHandler;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
@@ -19,6 +20,7 @@ import java.time.LocalDate;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Consumer;
 
 // =========================================================
 // COST MONITORING - TOP VẬT TƯ / COST CENTER / MÁY (dùng cho tool của trợ lý AI)
@@ -53,7 +55,7 @@ public class CostTopItemsRepository {
 
 	// Cột chung của CTE B (alias bảng: x). Ký tự % trong LIKE phải viết %% vì dùng formatted().
 	// Số: thử convert trực tiếp (cột số), không được thì bỏ dấu phẩy (cột chuỗi "1,234.5").
-	// UnitPrice hiện chưa dùng trong output, giữ sẵn trong CTE.
+	// UnitPrice dùng cho danh sách giao dịch của drawer (findLines).
 	private static final String COMMON_SELECT = """
 			    SELECT NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(100), x.%1$s))), '')  AS Code,
 			           NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(400), x.%2$s))), '')  AS Name,
@@ -179,6 +181,25 @@ public class CostTopItemsRepository {
 			WHERE CC IN (:costCenters)
 			""";
 
+	// Từng dòng xuất kho (drawer chi tiết 1 ô), thành tiền giảm dần, phân trang OFFSET / FETCH
+	private static final String LINES_PAGE = """
+			SELECT UsedDate,
+			       Code,
+			       Name,
+			       Category,
+			       Qty,
+			       QtyUnit,
+			       UnitPrice,
+			       Amt,
+			       CcCode,
+			       CcName,
+			       Machine
+			FROM B
+			WHERE CC IN (:costCenters)
+			ORDER BY Amt DESC, UsedDate, Code
+			OFFSET :offset ROWS FETCH NEXT :limit ROWS ONLY
+			""";
+
 	// Từ khóa nhận diện khoản đặc biệt (bản quyền / phần mềm), so khớp trên Text và Category (lowercase)
 	private static final List<String> UNUSUAL_KEYWORDS = List.of(
 			"license", "licence", "renewal", "software",
@@ -251,6 +272,67 @@ public class CostTopItemsRepository {
 							getDouble(rs, "AmtK")
 					);
 				}
+		);
+	}
+
+	/*
+	 * Dòng xuất kho của các cost center trực tiếp trong [from, to], thành tiền giảm dần, phân trang.
+	 * Cùng bộ lọc với countRows / findTotal (dùng để tính tổng số dòng / tổng thành tiền).
+	 */
+	public List<CostTransactionLineDto> findLines(
+			String cost,
+			LocalDate from,
+			LocalDate to,
+			List<String> costCenters,
+			int offset,
+			int limit
+	) {
+
+		return jdbcTemplate.query(
+				base(cost) + LINES_PAGE,
+				params(from, to, costCenters, limit)
+						.addValue("offset", offset, Types.INTEGER),
+				(rs, rowNum) -> toLine(rs)
+		);
+	}
+
+	/*
+	 * Giống findLines (cùng SQL, thứ tự thành tiền giảm dần) nhưng đọc từng dòng qua callback,
+	 * không gom list – dùng cho export Excel. Tối đa limit dòng.
+	 */
+	public void streamLines(
+			String cost,
+			LocalDate from,
+			LocalDate to,
+			List<String> costCenters,
+			int limit,
+			Consumer<CostTransactionLineDto> consumer
+	) {
+
+		jdbcTemplate.query(
+				base(cost) + LINES_PAGE,
+				params(from, to, costCenters, limit)
+						.addValue("offset", 0, Types.INTEGER),
+				(RowCallbackHandler) rs -> consumer.accept(toLine(rs))
+		);
+	}
+
+	private static CostTransactionLineDto toLine(ResultSet rs) throws SQLException {
+
+		Date usedDate = rs.getDate("UsedDate");
+
+		return new CostTransactionLineDto(
+				usedDate != null ? usedDate.toLocalDate() : null,
+				rs.getString("Code"),
+				rs.getString("Name"),
+				rs.getString("Category"),
+				getDouble(rs, "Qty"),
+				rs.getString("QtyUnit"),
+				getDouble(rs, "UnitPrice"),
+				getDouble(rs, "Amt"),
+				rs.getString("CcCode"),
+				rs.getString("CcName"),
+				rs.getString("Machine")
 		);
 	}
 

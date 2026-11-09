@@ -39,10 +39,11 @@ public class CostMonitoringService {
 	// CONFIG
 	// =========================================================
 
-	private static final List<String> DIVS =
+	// Mã Div / Chart chuẩn của API cost-monitoring (dùng chung /chart và /detail)
+	public static final List<String> DIVS =
 			List.of("PR", "MO", "Guide");
 
-	private static final List<String> CHARTS =
+	public static final List<String> CHARTS =
 			List.of("OT", "T&SL", "RM");
 
 	private static final Set<String> SIMU_WEEKS =
@@ -238,7 +239,9 @@ public class CostMonitoringService {
 				first != null ? first.bp() : null,
 				actMtdLatest,
 				estMonthEnd,
-				points
+				points,
+				// Dự báo do BE tính: controller /chart gắn vào (CostChartForecasts), không lưu trong cache
+				null
 		);
 	}
 }

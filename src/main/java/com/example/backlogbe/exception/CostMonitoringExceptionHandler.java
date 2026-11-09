@@ -9,6 +9,7 @@ import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -45,6 +46,17 @@ public class CostMonitoringExceptionHandler {
 				ex.getMessage() != null
 						? ex.getMessage()
 						: "Invalid request"
+		);
+	}
+
+	// Sai kiểu tham số (vd page=abc) -> 400 thay vì 500
+	@ExceptionHandler(MethodArgumentTypeMismatchException.class)
+	public ResponseEntity<Map<String, Object>> handleTypeMismatch(
+			MethodArgumentTypeMismatchException ex
+	) {
+		return body(
+				HttpStatus.BAD_REQUEST,
+				ex.getName() + " has an invalid value."
 		);
 	}
 

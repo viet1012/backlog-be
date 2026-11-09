@@ -25,13 +25,16 @@ BEGIN
         UNION ALL SELECT DATEADD(DAY, 1, D) FROM Cal WHERE D < @MonthEnd
     ),
     WDay AS (                                   -- ngày làm việc + tỷ lệ Sales+Inven theo ngày (F2_Working_Date)
+        -- GROUP BY ngày: bảng có >1 dòng / ngày thì Base bị nhân dòng, Act_MTD (cộng dồn) cộng 1 ngày nhiều lần
+        -- -> lệch với tổng chi theo ngày. Mỗi ngày chỉ giữ 1 dòng.
         SELECT CAST(w.[Date] AS DATE) AS D,
-               TRY_CONVERT(FLOAT, w.WD_All) AS WD_All,
-               TRY_CONVERT(FLOAT, w.Adj_Ratio_PR) AS Adj_Ratio_PR,
-               TRY_CONVERT(FLOAT, w.Adj_Ratio_MO) AS Adj_Ratio_MO,
-               TRY_CONVERT(FLOAT, w.Adj_Ratio_GU) AS Adj_Ratio_GU
+               MAX(TRY_CONVERT(FLOAT, w.WD_All)) AS WD_All,
+               MAX(TRY_CONVERT(FLOAT, w.Adj_Ratio_PR)) AS Adj_Ratio_PR,
+               MAX(TRY_CONVERT(FLOAT, w.Adj_Ratio_MO)) AS Adj_Ratio_MO,
+               MAX(TRY_CONVERT(FLOAT, w.Adj_Ratio_GU)) AS Adj_Ratio_GU
         FROM [F2Database].[dbo].[F2_Working_Date] w
         WHERE w.[Date] >= @MonthStart AND w.[Date] < DATEADD(DAY, 1, @MonthEnd)
+        GROUP BY CAST(w.[Date] AS DATE)
     ),
     CalWD AS (                                  -- không có dòng trong F2_Working_Date thì coi là ngày làm việc
         SELECT c.D, ISNULL(w.WD_All, 1) AS WD
