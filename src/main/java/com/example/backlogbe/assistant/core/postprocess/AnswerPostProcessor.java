@@ -28,6 +28,7 @@ import java.util.regex.Pattern;
 //    resources/assistant/screens/{screenKey}/codes.json:
 //      { "CODE": { "vi": "nhãn", "en": "label" }, ... }   (thứ tự trong file = thứ tự thay)
 //    Đọc khi khởi động cho các screenKey đã đăng ký; thiếu file thì bỏ qua.
+// 0. Chuẩn hoá gạch nối / khoảng trắng Unicode (normalizeTypography, mọi lang).
 // 2. lang = vi: dấu phẩy thập phân -> dấu chấm (normalizeDecimalComma).
 // =========================================================
 @Slf4j
@@ -69,9 +70,39 @@ public class AnswerPostProcessor {
 
 	public String process(String answer, String screenKey, String lang) {
 
-		String result = replaceInternalCodes(answer, labels(screenKey, lang), screenKey);
+		String result = normalizeTypography(answer);
+
+		result = replaceInternalCodes(result, labels(screenKey, lang), screenKey);
 
 		return PromptBuilder.LANG_VI.equals(lang) ? normalizeDecimalComma(result) : result;
+	}
+
+
+	// =========================================================
+	// CHUẨN HOÁ KÝ TỰ (mọi lang)
+	//
+	// Model (gpt-oss) hay in gạch nối / khoảng trắng Unicode làm hỏng mã vật tư khi copy:
+	//   "MDC‑25MX" (U+2011) -> "MDC-25MX", "2026‑11" -> "2026-11"
+	//   U+2010 / U+2011 (hyphen, non-breaking hyphen) -> "-"
+	//   U+00A0 / U+202F / U+2007 (khoảng trắng không ngắt) -> " "
+	//   "6.8 %" -> "6.8%"
+	// Giữ nguyên "–" (U+2013, khoảng ngày "1–8") và "−" (U+2212, dấu trừ trong công thức).
+	// =========================================================
+
+	private static final Pattern UNICODE_HYPHEN = Pattern.compile("[\\u2010\\u2011]");
+	private static final Pattern UNICODE_SPACE = Pattern.compile("[\\u00A0\\u202F\\u2007]");
+	private static final Pattern SPACE_BEFORE_PERCENT = Pattern.compile("(\\d) +%");
+
+	static String normalizeTypography(String answer) {
+
+		if (answer == null || answer.isEmpty()) {
+			return answer;
+		}
+
+		String result = UNICODE_HYPHEN.matcher(answer).replaceAll("-");
+		result = UNICODE_SPACE.matcher(result).replaceAll(" ");
+
+		return SPACE_BEFORE_PERCENT.matcher(result).replaceAll("$1%");
 	}
 
 	// Mã -> nhãn theo lang (en thiếu thì dùng vi); không có file -> rỗng

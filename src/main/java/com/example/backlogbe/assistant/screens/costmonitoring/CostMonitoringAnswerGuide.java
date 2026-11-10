@@ -59,14 +59,79 @@ public class CostMonitoringAnswerGuide {
 	private static final double COMPARE_EQUAL_POINTS = 1.0;
 
 	private final CostMonitoringSnapshotLoader loader;
+	private final CostMonitoringLookupAnswers lookupAnswers;
 
 	public AnswerGuide guide(String question, Map<String, String> params, String lang) {
+
+		// Câu tra cứu (top vật tư / ngày chi nhiều nhất / ngân sách mỗi ngày / bất thường hôm nay): template trước
+		AnswerGuide lookup = lookup(question, params, lang);
+
+		if (lookup == null) {
+			return byIntent(question, params, lang);
+		}
+
+		if (!CostMonitoringLookupAnswers.ANOMALY_TODAY.equals(lookup.intent())) {
+			return lookup;
+		}
+
+		// "Hôm nay có gì bất thường": chi ngày gần nhất + template tổng quan tháng (nếu câu hỏi đủ điều kiện)
+		AnswerGuide overview = byIntent(question, params, lang);
+
+		if (overview == null || !overview.hasDirectAnswer()) {
+			return lookup;
+		}
+
+		List<String> suggestions = new ArrayList<>(lookup.suggestions());
+		overview.suggestions().stream().filter(s -> !suggestions.contains(s)).forEach(suggestions::add);
+
+		return new AnswerGuide(overview.conclusion(), overview.toolsSufficient(), overview.intent() + "+" + lookup.intent(),
+				lookup.directAnswer() + "\n\n" + t(lang, "**Tình hình cả tháng:**", "**Month to date:**") + "\n"
+						+ compactOverview(overview.directAnswer(), lang),
+				suggestions.stream().limit(3).toList(),
+				overview.intentMatch() + "; " + lookup.intentMatch());
+	}
+
+	// Câu hỏi về 1 ngày: tổng quan tháng chỉ giữ câu tóm tắt + nhóm đầu (dự báo vượt nặng nhất) + footer;
+	// các nhóm sau đã được đếm trong câu tóm tắt. Ít đoạn (không có nhóm phụ) -> giữ nguyên.
+	static String compactOverview(String overview, String lang) {
+
+		String[] parts = overview.trim().split("\n\\s*\n");
+
+		if (parts.length <= 3) {
+			return overview;
+		}
+
+		String last = parts[parts.length - 1].trim();
+		boolean footer = last.startsWith("_");
+		int groups = parts.length - 1 - (footer ? 1 : 0);
+
+		if (groups <= 1) {
+			return overview;
+		}
+
+		StringBuilder sb = new StringBuilder(parts[0].trim()).append("\n\n").append(parts[1].trim());
+		sb.append("\n\n").append(t(lang, "_(Chi tiết các khung khác: hỏi \"Có gì bất thường trong tháng này?\")_",
+				"_(Other frames: ask \"Anything unusual this month?\")_"));
+		if (footer) {
+			sb.append("\n\n").append(last);
+		}
+
+		return sb.toString();
+	}
+
+	// Phân loại intent (luồng trước khi có câu tra cứu)
+	private AnswerGuide byIntent(String question, Map<String, String> params, String lang) {
 
 		Plan plan = ExplainVariancePrefetchRule.plan(question, params);
 
 		if (plan == null) {
 			// Không có kế hoạch: vẫn ghi cách phân loại cho audit (câu khái niệm / xu hướng Fluct -> null)
 			CostMonitoringIntentClassifier.Result r = ExplainVariancePrefetchRule.classify(question, params);
+			if (TopItemsPrefetchRule.isTopItemsQuestion(question, params)) {
+				// Pre-fetch get_top_items đủ trả lời -> 1 lần gọi LLM (tool_choice none khi pre-fetch thành công)
+				return new AnswerGuide(null, true, TopItemsPrefetchRule.INTENT, null, List.of(),
+						r == null ? "prefetch=get_top_items" : r.describe() + "; prefetch=get_top_items");
+			}
 			return r == null ? null : AnswerGuide.matchOnly(null, r.describe());
 		}
 
@@ -85,6 +150,17 @@ public class CostMonitoringAnswerGuide {
 			case WHY -> new AnswerGuide(whyConclusion(plan, params, lang), false, intent, null, List.of(), match);
 			case FRAME -> AnswerGuide.matchOnly(intent, match);
 		};
+	}
+
+	// Lỗi đọc dữ liệu tra cứu -> bỏ qua, đi luồng phân loại intent như cũ
+	private AnswerGuide lookup(String question, Map<String, String> params, String lang) {
+		try {
+			return lookupAnswers.guide(question, params, lang);
+		} catch (RuntimeException e) {
+			org.slf4j.LoggerFactory.getLogger(CostMonitoringAnswerGuide.class)
+					.warn("Assistant: lookup answer failed error={}", e.getClass().getSimpleName());
+			return null;
+		}
 	}
 
 	// Khối KẾT LUẬN (luồng LLM) + câu trả lời template (CostMonitoringAnswerTemplate, không gọi LLM) khi câu hỏi

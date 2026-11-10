@@ -121,6 +121,7 @@ src/main/java/com/example/backlogbe/assistant/
 └── screens/
     ├── costmonitoring/  CostMonitoringModule, ContextProvider, Assessment, Snapshot(+Loader), CmText,
     │                    5 tool, RatioTrendPrefetchRule, ExplainVariancePrefetchRule, DailySeriesPrefetchRule,
+    │                    TopItemsPrefetchRule, AnswerGuide, AnswerTemplate, LookupAnswers (câu tra cứu template),
     │                    CostMonitoringQuestion (nhận diện khung trong câu hỏi), SuggestionConditions, ToolArgs,
     │                    dto/, repository/
     └── _template/       TemplateModule, TemplateContextProvider, ExampleTool (mẫu, không @Component)
@@ -229,7 +230,7 @@ Thứ tự gửi cho LLM giữ như bảng. Mọi tool có tham số tùy chọn
 | Tool | Tham số | Trả về (tóm tắt) |
 |---|---|---|
 | `get_daily_series` | `div`, `cost` | Chuỗi theo ngày từ ngày 1 đến D: ngày nghỉ, chi trong ngày, Actual cộng dồn, Fluct trong ngày, Fluct theo tiến độ, % đã dùng, % thời gian. Dòng đối chiếu: Σ chi trong ngày = Actual cộng dồn mới nhất, kèm ngày âm. |
-| `get_top_items` | `div`, `cost` (T&SL, RM), `limit` | Top vật tư, top cost center, top máy (K$ 2 chữ số, % của Actual) + dòng "Tổng top N" mỗi danh sách (K$ cộng từ số đã làm tròn, % của Actual) + tổng; chỉ cost center trực tiếp, chưa gồm phân bổ. |
+| `get_top_items` | `div`, `cost` (T&SL, RM), `limit` | Top vật tư, top cost center, top máy (K$ 2 chữ số, % của Actual) + dòng "Tổng top N" mỗi danh sách (K$ cộng từ số đã làm tròn, % của Actual) + tổng; chỉ cost center trực tiếp, chưa gồm phân bổ. Chuỗi dữ liệu qua `CmText.clean` (gộp khoảng trắng: "PR   CT   CT2" → "PR CT CT2"). |
 | `compare_previous_month` | `div`, `cost` | Tháng trước: FC, Fluct, Act cuối tháng, Act cùng kỳ (ngày D), kèm số tháng này. |
 | `explain_variance` | `div` (thêm `ALL`), `cost` | Giải thích chênh lệch, tính sẵn: chế độ IN_PROGRESS / OVER / CLOSED_WITHIN, tiến độ, dự báo, rủi ro, dự báo theo tốc độ chi hiện tại (projectedEom / projectedOver so với Fluct, FC, "Dự báo bằng % Fluct" = projectedEom / Fluct từ số làm tròn 1 chữ số), `ALL`: dòng xếp hạng bộ phận theo % đó, kịch bản, top ngày / vật tư, so cùng kỳ (RM, T&SL). |
 | `get_ratio_trend` | `div` | Ratio theo ngày (bộ phận + KVH), Fluct theo ngày, tóm tắt đầu / cuối, ngày đổi chiều, ngày tăng / giảm mạnh nhất. |
@@ -322,6 +323,26 @@ ghi nhóm CÓ khung, mọi nhóm rỗng → 1 dòng khẳng định):
 - Không dùng template (vẫn qua LLM, có khối KẾT LUẬN) khi (`templateEligible`): phân loại không chắc chắn (xem bảng intent),
   nêu vật tư / máy / cost center / Category, hỏi theo ngày, so với tháng trước / cùng kỳ, dự báo 1 bộ phận kèm hỏi khung
   khác (`asksOtherFrames`), hoặc không tìm thấy khung nào.
+
+**Câu trả lời tra cứu** (`CostMonitoringLookupAnswers`, template, không gọi LLM): chạy TRƯỚC phân loại intent trong
+`CostMonitoringAnswerGuide.guide`; không khớp / lỗi đọc dữ liệu → luồng intent như trên. Bỏ qua câu hỏi nguyên nhân,
+so sánh, tháng trước / cùng kỳ. Khung: `CostMonitoringQuestion.frame` (câu hỏi + ô drawer); không ra đúng 1 khung → bộ
+phận nêu trong câu (hoặc cả 3) × loại chi phí nêu trong câu (hoặc T&SL, RM); OT bỏ. Truy vấn DB từng khung chạy song song.
+
+| Intent (audit `answerIntent`) | Khớp khi | Trả lời |
+|---|---|---|
+| `top_detail` | máy / cost center / Category ("loại vật tư", "nhóm vật tư") + "nhất / top / lớn / nhiều / tốn…"; không hỏi theo ngày. "máy" nhận theo câu có dấu (không nhầm "mấy") hoặc "máy nào / top máy / machine" | Mỗi khung xếp riêng (không cộng T&SL với RM): 1 khung → top 5; 2–3 khung → top 3 mỗi khung; nhiều hơn → top 1 mỗi khung. Máy chỉ T&SL (RM không ghi Machine; hỏi máy của RM → báo không có dữ liệu). Category = tổng thật theo Category (`sumByCategory`), không cộng từ top vật tư. Audit `intentMatch` có `dim=machine\|cost_center\|category` |
+| `top_item` | vật tư + "nhất / top / lớn / chính / mắc / đắt…"; không hỏi máy / cost center / Category / theo ngày | 1 khung → top 5 vật tư; nhiều khung → vật tư lớn nhất mỗi khung + vật tư lớn nhất chung. "mắc / đắt / expensive": thêm số lượng + đơn giá TB = tổng chi / số lượng, ghi rõ xếp theo tổng chi |
+| `top_day` | "ngày nào / hôm nào" + "nhiều / cao / lớn nhất"; không hỏi vật tư / máy… | Ngày chi lớn nhất (+ 2 ngày kế tiếp nếu 1 khung), % Actual đến nay |
+| `remaining_budget` | "còn lại / tối đa / được chi / ngân sách" + "mỗi ngày / 1 ngày / per day" | (Fluct − Actual) / ngày lịch còn lại (N − D) và / ngày nhà máy làm việc còn lại (Σ `WD_All` từ D + 1), so với tốc độ chi hiện tại → "cần giảm X%". Tháng đã kết thúc → không áp dụng |
+| `anomaly_today` | "bất thường / đột biến / spike" + "hôm nay / hôm qua / mới nhất / gần nhất / today / latest" | Ngày có dữ liệu mới nhất; mỗi khung: ngày có chi gần nhất so với TB các ngày có chi khác (đột biến: ≥ 2 lần và ≥ 1.0 K$) + khoản ≥ 10% Actual trong ngày đó. Ghép thêm template tổng quan tháng dạng gọn (`compactOverview`: câu tóm tắt + nhóm đầu + footer) → intent `overview+anomaly_today` |
+
+Khoảng ngày truy vấn vật tư / máy / cost center giống `get_top_items`: đầu tháng → T&SL hôm qua, RM hôm kia.
+Lookup trả `toolsSufficient = false`: tắt `template-answers` thì LLM vẫn tự gọi tool.
+
+`TopItemsPrefetchRule` (luồng LLM, khi tắt template hoặc lookup không trả lời được): câu hỏi vật tư / máy / cost center /
+Category, không hỏi nguyên nhân / so sánh / theo ngày, xác định được khung (1 khung, hoặc 1 bộ phận không nêu loại chi phí →
+T&SL + RM) → pre-fetch `get_top_items`, intent `top_items_prefetch`, `tool_choice: "none"` (1 lần gọi LLM thay vì 2).
 
 `DailySeriesPrefetchRule` chạy `get_daily_series` cho câu hỏi theo ngày ("ngày nào", "hôm nào", "theo ngày", "từng ngày",
 "đột biến", "ngày 25" / "25/10", "chi nhiều / ít nhất" không hỏi vật tư / cost center / máy) khi xác định được đúng 1 khung
@@ -481,8 +502,11 @@ Body: `{ "status", "code", "message" }`.
 
 ## 7. Hậu xử lý câu trả lời
 
-`AnswerPostProcessor`, chạy cho mọi màn hình:
+`AnswerPostProcessor`, chạy cho mọi màn hình (cả câu trả lời template):
 
+0. **Chuẩn hóa ký tự** (`normalizeTypography`): gạch nối Unicode U+2010 / U+2011 (gpt-oss hay sinh trong mã vật tư,
+   vd `MDC‑25MX`) → `-`; khoảng trắng không ngắt U+00A0 / U+202F / U+2007 → dấu cách; `6.8 %` → `6.8%`.
+   Giữ nguyên gạch ngang `–` (khoảng ngày) và dấu trừ `−` (công thức).
 1. **Thay mã nội bộ** còn sót theo `resources/assistant/screens/{screenKey}/codes.json`
    (`{ "MA": { "vi": "nhãn", "en": "label" } }`). Chỉ thay khi mã là từ đứng riêng; thứ tự trong file = thứ tự thay.
    Có thay thì log WARN kèm danh sách mã (dấu hiệu nên sửa `knowledge.md` / `rules.md`).
@@ -640,7 +664,12 @@ server hoặc ADMIN (qua API admin) đọc; không gửi ra ngoài.
 - **Chưa có doanh số / tồn kho chi tiết**: chỉ có Ratio; không giải thích được Ratio đổi do doanh số hay tồn kho.
 - **Endpoint public**: `/api/assistant/*` không yêu cầu token, `@CrossOrigin(*)`; chỉ có rate limit theo IP (trong bộ nhớ, mỗi instance tính riêng).
 - **Model 20B yếu suy luận nhiều bước**: vì vậy kết luận được tính sẵn bằng code; câu hỏi cần kết hợp nhiều tool / nhiều tháng dễ sai hơn.
-- `get_top_items` chỉ tính cost center trực tiếp, chưa gồm chi phí chung phân bổ.
+- `get_top_items` / câu trả lời tra cứu chỉ tính cost center trực tiếp, chưa gồm chi phí chung phân bổ.
+- `compare` vẫn qua LLM dù khối KẾT LUẬN đã tính sẵn đủ: audit 2026-11-10 model không chép "Khung tốt hơn = tương đương"
+  và tự tính sai tỷ lệ ("≈ 129% so với MOLD" thay vì gấp ~2.3 lần). Đề xuất: template cho `compare` (chưa làm).
+- Câu hỏi tiếng Anh nhưng `lang = vi` → trả lời tiếng Việt (chưa tự nhận diện ngôn ngữ câu hỏi).
+- `remaining_budget` chia cho N − D (D = ngày actual mới nhất chung), RM có actual trễ 1 ngày nên số ngày còn lại của RM
+  thực tế nhiều hơn 1 (cùng cách tính với `CostMonitoringAssessment.remainingPerDay` / `explain_variance`).
 - **"Dự báo vượt" đã thống nhất ở BE** (2026-11-09): định nghĩa chính = PL Estimate (không PL thì Act + Fluct / N × (N − D));
   trợ lý, `/chart` (`forecast.status`) và greeting `/suggestions` cùng dùng `CostChartForecasts.status`. Tốc độ chi hiện tại
   chỉ là dự báo phụ cho câu "cứ chi như vậy". Còn lại:
@@ -682,3 +711,4 @@ server hoặc ADMIN (qua API admin) đọc; không gửi ra ngoài.
 | 2026-11-09 | Sửa sau audit 15:14–15:15 ("Hôm nay có gì bất thường?" trả "không có khung nào vượt" dù prefetch có 4 khung dự báo chính vượt; prompt 15.4k / 16.4k token). `CostMonitoringAssessment.mainStatus()` là hàm trạng thái DUY NHẤT (`/chart`, `/suggestions`, context, KẾT LUẬN); PL ≤ 0 cũng coi là trống → dự báo theo nhịp Fluct. KẾT LUẬN: câu mở đầu cố định do code đếm ("Có N khung dự báo vượt Fluct …"), nhãn cơ sở theo `estimateBase` thực tế (trước ghi cứng "theo PL"); `forecast_one*`: cụm bắt buộc nêu cả vượt Fluct và vượt FC; intent mới `why` (khối nguyên nhân, Ratio dương không phải nguyên nhân). `PromptBuilder.reasoningLine` cố định `low`. Audit: `conclusion`, `promptChars`, `estimatedPromptTokens`; WARN khi prompt ước tính / thực tế > `assistant.llm.prompt-token-warn` (14000). `rules.md`: nguồn nguyên nhân "vì sao vượt", Ratio dương; câu "cứ chi như vậy" nêu cả Fluct và FC. `eval.json`: cập nhật 2 câu bất thường + 2 case mới. |
 | 2026-11-09 | Câu trả lời template không gọi LLM (LM Studio log: gpt-oss-20b low vẫn trả "không có bất thường" dù KẾT LUẬN / prefetch có 4 khung dự báo vượt, reasoning "We have no anomalies flagged"). Hợp đồng chung: `AnswerGuide` thêm `directAnswer` + `suggestions`; `ChatOrchestrator` tính `answerGuide` ngay sau validate, có `directAnswer` và `assistant.template-answers.enabled` (mặc định `true`) → trả luôn (qua `AnswerPostProcessor`), không context / pre-fetch / LLM / suất LLM. `AssistantChatResponse` thêm `suggestions` (NON_EMPTY). Audit thêm `answerSource` (`llm` / `template`), template: `llmCallCount = 0`, `toolChoice = null`. Cost Monitoring: `CostMonitoringAnswerTemplate` render `overview`, `ranking`, `forecast_all`, `forecast_one` (+ `_current_rate`) từ cùng danh sách khung với KẾT LUẬN (`CostMonitoringAnswerGuide.frames`; tiêu đề nhóm markdown qua tham số `md`), loại trừ câu hỏi nguyên nhân / vật tư / theo ngày / tháng trước / hỏi kèm khung khác (`templateEligible`). `ExplainVariancePrefetchRule.plan`: "vì sao …" về 1 khung → `why` trước nhánh dự báo. `openingSentence`: câu khẳng định thêm "cuối tháng"; câu "cứ chi như vậy" đếm cả khung đã vượt thực tế (trước đây có thể ra "Có :"). Eval: `EvalCase.llmCallCount` (tùy chọn), `EvalResult` thêm `llmCallCount` / `answerSource` / `llmCallCountMismatch`; `ChatOrchestrator.chatWithTrace(request, trace)` (tên riêng, tránh mơ hồ overload với `chat(request, String userId)`); 14 case `eval.json` kỳ vọng `llmCallCount: 0`. |
 | 2026-11-09 | Cost Monitoring – phân loại intent lại (`CostMonitoringIntentClassifier`): chuẩn hóa câu hỏi (chữ thường, bỏ dấu, gộp khoảng trắng), từ khóa không dấu khớp nguyên từ; intent mới `compare` (≥ 2 khung, "so sánh", "vs", "với", "chart nào", "bên nào", "tốt hơn", "tệ hơn"); `ranking` = "nhất" / "xếp hạng" (bỏ khi hỏi vật tư / theo ngày); ưu tiên why > compare > ranking > forecast > overview; không còn mặc định overview ("so sánh" không còn là overview). Template chỉ khi khớp chắc chắn đúng 1 intent template (không "đánh giá", "so sánh", "tốt", "nên", "tại sao / vì sao", không khớp nhiều intent). `compare` đi LLM với khối "[KẾT LUẬN – so sánh …]" cho đúng các khung được hỏi (% đã dùng, tiến độ, dự báo chính so với Fluct / FC K$ và %, rủi ro, "Khung tốt hơn theo dự báo chính", chênh < 1 điểm % → tương đương); pre-fetch ≤ 2 khung từng khung bản đầy đủ. `CostMonitoringAssessment.estimateOverFcPct` / `actOverFcPct`. `AnswerGuide.intentMatch` + `AnswerGuide.matchOnly`; audit field `intentMatch`. Template: tiêu đề nhóm ngắn, không in hoa; dòng cuối theo cơ sở dự báo thực tế ("chưa có PL nên dự báo theo nhịp Fluct"…). `assistant.llm.prompt-token-warn` mặc định 13000, log WARN kèm `intent`. Eval: `EvalCase.answerSource` / `answerIntent`, `EvalResult.mismatches`; thêm 3 case (so sánh PRESS vs MOLD T&SL → llm; "bô phận nào … bất thường nhất" → ranking; "đánh giá chart PRESS RM" → llm). |
+| 2026-11-10 | Cost Monitoring – nâng cấp từ audit log 2026-11-09 / 2026-11-10 (câu tra cứu qua LLM 8–39 s, 3 câu sai số: "máy nào" trả tên khung, cộng cost center T&SL + RM, Category tự cộng từ top vật tư). (1) `AnswerPostProcessor.normalizeTypography`: gạch nối U+2010 / U+2011 → `-`, khoảng trắng không ngắt → dấu cách, `6.8 %` → `6.8%`. (2) `CostMonitoringLookupAnswers` (template, chạy trước phân loại intent): `top_detail` (máy / cost center / Category, mỗi khung xếp riêng, máy chỉ T&SL), `top_item` (+ đơn giá TB khi hỏi "mắc / đắt"), `top_day`, `remaining_budget` (ngày lịch + ngày làm việc `WD_All`), `anomaly_today` (ghép tổng quan tháng dạng gọn `compactOverview`); truy vấn từng khung song song. (3) `TopItemsPrefetchRule`: pre-fetch `get_top_items` cho câu vật tư / máy / cost center / Category còn qua LLM (`tool_choice: "none"`, 1 lần gọi LLM). (4) `CmText.clean` gộp khoảng trắng (Category "PR   CT   CT2"). Test: `AnswerPostProcessorTypographyTest`, `CostMonitoringLookupRoutingTest`; `eval.json` thêm 11 case. |

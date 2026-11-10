@@ -161,5 +161,85 @@
     "mustContain": ["PRESS", "RM"],
     "mustNotContain": ["KẾT LUẬN", "MAIN_CAUSE"],
     "answerSource": "llm"
+  },
+  {
+    "question": "vật tư lớn trong press t&sl là gì",
+    "month": "2026-11",
+    "mustContain": ["PRESS T&SL", "K$", "Actual"],
+    "mustNotContain": ["MOLD", "GUIDE", "‑"],
+    "llmCallCount": 0,
+    "answerIntent": "top_item"
+  },
+  {
+    "question": "mã vật tư nào là mắc nhất ?",
+    "month": "2026-11",
+    "mustContain": ["K$", "đơn giá TB", "tổng chi"],
+    "mustNotContain": ["‑"],
+    "llmCallCount": 0,
+    "answerIntent": "top_item"
+  },
+  {
+    "question": "Ngày nào MOLD T&SL chi nhiều nhất?",
+    "month": "2026-11",
+    "mustContain": ["MOLD T&SL", "K$"],
+    "mustNotContain": ["PRESS", "GUIDE"],
+    "llmCallCount": 0,
+    "answerIntent": "top_day"
+  },
+  {
+    "question": "Mỗi ngày còn lại được chi tối đa bao nhiêu để không vượt target?",
+    "month": "2026-11",
+    "mustContain": ["K$/ngày", "Fluct"],
+    "mustNotContain": ["KẾT LUẬN"],
+    "llmCallCount": 0,
+    "answerIntent": "remaining_budget"
+  },
+  {
+    "question": "hôm nay có data nào bất thường ko ?",
+    "month": "2026-11",
+    "mustContain": ["Dữ liệu mới nhất", "khung dự báo vượt Fluct"],
+    "mustNotContain": ["không có bất thường", "WILL_EXCEED"],
+    "llmCallCount": 0,
+    "answerIntent": "overview+anomaly_today"
+  },
+  {
+    "question": "Máy nào chi nhiều nhất ở PRESS T&SL?",
+    "month": "2026-11",
+    "mustContain": ["PRESS T&SL", "K$", "Actual"],
+    "mustNotContain": ["MAIN_CAUSE", "MOLD", "GUIDE"],
+    "llmCallCount": 0,
+    "answerIntent": "top_detail"
+  },
+  {
+    "question": "Máy nào chi nhiều nhất?",
+    "month": "2026-11",
+    "mustContain": ["PRESS T&SL", "MOLD T&SL", "GUIDE T&SL", "K$"],
+    "mustNotContain": ["PRESS RM", "MOLD RM", "GUIDE RM"],
+    "llmCallCount": 0,
+    "answerIntent": "top_detail"
+  },
+  {
+    "question": "cost center nào tốn nhất của guide",
+    "month": "2026-11",
+    "mustContain": ["GUIDE T&SL", "GUIDE RM", "không cộng T&SL với RM"],
+    "mustNotContain": ["PRESS", "MOLD", "≈"],
+    "llmCallCount": 0,
+    "answerIntent": "top_detail"
+  },
+  {
+    "question": "Category nào lớn nhất ở MOLD RM?",
+    "month": "2026-11",
+    "mustContain": ["MOLD RM", "K$"],
+    "mustNotContain": ["PRESS", "GUIDE", "   "],
+    "llmCallCount": 0,
+    "answerIntent": "top_detail"
+  },
+  {
+    "question": "HÔM QUA CÓ GÌ BẤT THƯỜNG KO ?",
+    "month": "2026-11",
+    "mustContain": ["Dữ liệu mới nhất", "khung dự báo vượt Fluct"],
+    "mustNotContain": ["không có bất thường", "WILL_EXCEED"],
+    "llmCallCount": 0,
+    "answerIntent": "overview+anomaly_today"
   }
 ]

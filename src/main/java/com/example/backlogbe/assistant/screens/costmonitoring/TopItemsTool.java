@@ -237,6 +237,6 @@ public class TopItemsTool implements AssistantTool {
 
 	// "|" / xuống dòng trong dữ liệu sẽ làm lệch cột
 	private static String clean(String value) {
-		return value == null ? "" : value.replace('|', '/').replaceAll("[\\r\\n]+", " ").trim();
+		return CmText.clean(value);
 	}
 }

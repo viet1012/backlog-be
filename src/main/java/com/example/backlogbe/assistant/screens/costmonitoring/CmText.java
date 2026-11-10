@@ -393,9 +393,9 @@ public final class CmText {
 		return c.isEmpty() ? n : n + " (" + c + ")";
 	}
 
-	// "|" / xuống dòng trong dữ liệu sẽ làm lệch cột
+	// "|" / xuống dòng trong dữ liệu sẽ làm lệch cột; nhiều khoảng trắng liền nhau ("PR   CT   CT2") -> 1
 	public static String clean(String value) {
-		return value == null ? "" : value.replace('|', '/').replaceAll("[\\r\\n]+", " ").trim();
+		return value == null ? "" : value.replace('|', '/').replaceAll("\\s+", " ").trim();
 	}
 
 

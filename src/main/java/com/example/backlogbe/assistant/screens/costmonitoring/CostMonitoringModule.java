@@ -23,7 +23,9 @@ import java.util.Map;
 //          (thứ tự giữ nguyên khi gửi cho LLM).
 // Prefetch: RatioTrendPrefetchRule (get_ratio_trend), ExplainVariancePrefetchRule (explain_variance cho câu hỏi
 //          dự báo, câu hỏi phân tích 1 khung, câu hỏi từ drawer), DailySeriesPrefetchRule (get_daily_series cho câu
-//          hỏi theo ngày về 1 khung).
+//          hỏi theo ngày về 1 khung), TopItemsPrefetchRule (get_top_items cho câu hỏi vật tư / máy / cost center).
+// Tra cứu template: CostMonitoringLookupAnswers (top vật tư, ngày chi nhiều nhất, ngân sách mỗi ngày, bất thường
+//          hôm nay) – chạy trước phân loại intent của CostMonitoringAnswerGuide.
 // Context: câu hỏi xác định được đúng 1 khung -> chỉ gửi khung đó (CostMonitoringContextProvider).
 // AnswerGuide: CostMonitoringAnswerGuide (khối KẾT LUẬN cho câu hỏi tổng quan / xếp hạng / dự báo chung;
 //          pre-fetch đủ -> tool_choice none) + câu trả lời template không gọi LLM (CostMonitoringAnswerTemplate)
@@ -68,6 +70,7 @@ public class CostMonitoringModule implements ScreenModule {
 			RatioTrendPrefetchRule ratioTrendPrefetchRule,
 			ExplainVariancePrefetchRule explainVariancePrefetchRule,
 			DailySeriesPrefetchRule dailySeriesPrefetchRule,
+			TopItemsPrefetchRule topItemsPrefetchRule,
 			CostMonitoringAnswerGuide answerGuide
 	) {
 		this.answerGuide = answerGuide;
@@ -75,7 +78,8 @@ public class CostMonitoringModule implements ScreenModule {
 		this.suggestionConditions = suggestionConditions;
 		this.tools = List.of(dailySeriesTool, topItemsTool, comparePreviousMonthTool, explainVarianceTool,
 				ratioTrendTool);
-		this.prefetchRules = List.of(ratioTrendPrefetchRule, explainVariancePrefetchRule, dailySeriesPrefetchRule);
+		this.prefetchRules = List.of(ratioTrendPrefetchRule, explainVariancePrefetchRule, dailySeriesPrefetchRule,
+				topItemsPrefetchRule);
 	}
 
 	@Override
