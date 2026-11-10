@@ -50,7 +50,11 @@ public class CostMonitoringModule implements ScreenModule {
 			ParamSpec.of(CostMonitoringFocus.PARAM_FACTORY, "(?i)^(PRESS|MOLD|GUIDE|PR|MO|GU)$",
 					"Bộ phận của ô đang mở (drawer); trống = không có"),
 			ParamSpec.of(CostMonitoringFocus.PARAM_CATEGORY, "(?i)^(OT|T&SL|TSL|RM)$",
-					"Loại chi phí của ô đang mở (drawer); trống = không có")
+					"Loại chi phí của ô đang mở (drawer); trống = không có"),
+			ParamSpec.of(CostMonitoringFocus.PARAM_DIV, "(?i)^(PRESS|MOLD|GUIDE|PR|MO|GU)$",
+					"Tên khác của factory"),
+			ParamSpec.of(CostMonitoringFocus.PARAM_COST, "(?i)^(OT|T&SL|TSL|RM)$",
+					"Tên khác của category")
 	);
 
 	private final CostMonitoringContextProvider contextProvider;

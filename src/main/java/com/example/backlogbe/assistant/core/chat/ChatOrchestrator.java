@@ -1,6 +1,7 @@
 package com.example.backlogbe.assistant.core.chat;
 
 import com.example.backlogbe.assistant.core.api.AssistantExceptionHandler;
+import com.example.backlogbe.assistant.core.api.AssistantRateLimiter;
 import com.example.backlogbe.assistant.core.api.dto.AssistantChatRequest;
 import com.example.backlogbe.assistant.core.audit.AssistantAuditLogger;
 import com.example.backlogbe.assistant.core.audit.AssistantAuditTrace;
@@ -84,6 +85,11 @@ public class ChatOrchestrator {
 	// Số vòng chạy tool tối đa cho 1 câu hỏi
 	static final int MAX_TOOL_ROUNDS = 3;
 
+	// answerIntent trong audit khi PromptGuard từ chối câu đòi in hướng dẫn hệ thống
+	static final String INTENT_PROMPT_GUARD = "prompt_guard";
+	// answerIntent khi PromptGuard từ chối yêu cầu soạn email / văn bản / dịch / code
+	static final String INTENT_OFF_TOPIC = "off_topic";
+
 	// Tổng thời gian tối đa cho 1 câu hỏi (FE timeout 190s)
 	static final Duration MAX_TOTAL_DURATION = Duration.ofSeconds(170);
 
@@ -99,6 +105,7 @@ public class ChatOrchestrator {
 	private final Environment environment;
 	private final AssistantProperties assistantProperties;
 	private final AssistantAuditLogger auditLogger;
+	private final AssistantRateLimiter rateLimiter;
 
 	// Profile được log toàn bộ kết quả tool (DEBUG)
 	private static final String DEV_PROFILE = "dev";
@@ -115,9 +122,18 @@ public class ChatOrchestrator {
 	}
 
 	/**
+	 * @param clientKey khóa rate limit (AssistantRateLimiter.clientKey); chỉ request gọi LLM mới tính vào
+	 *                  hạn mức llm-per-minute (câu trả lời template không tính)
+	 */
+	public AssistantChatResponse chat(AssistantChatRequest request, String userId, String clientKey) {
+		AssistantAuditTrace trace = new AssistantAuditTrace(AssistantAuditTrace.SOURCE_CHAT, userId);
+		return chatWithTrace(request, trace, clientKey);
+	}
+
+	/**
 	 * @param source nguồn request cho audit log: AssistantAuditTrace.SOURCE_CHAT | SOURCE_EVAL
 	 */
-	public AssistantChatResponse chat(AssistantChatRequest request, String userId, String source) {
+	public AssistantChatResponse chatForEval(AssistantChatRequest request, String userId, String source) {
 		return chatWithTrace(request, new AssistantAuditTrace(source, userId));
 	}
 
@@ -127,10 +143,14 @@ public class ChatOrchestrator {
 	 * @param trace audit trace do người gọi tạo (eval đọc lại llmCallCount / answerSource sau khi chạy)
 	 */
 	public AssistantChatResponse chatWithTrace(AssistantChatRequest request, AssistantAuditTrace trace) {
+		return chatWithTrace(request, trace, null);
+	}
+
+	public AssistantChatResponse chatWithTrace(AssistantChatRequest request, AssistantAuditTrace trace, String clientKey) {
 
 		// Audit: đúng 1 dòng / request (thành công hoặc lỗi), ghi ở finally
 		try {
-			AssistantChatResponse response = doChat(request, trace);
+			AssistantChatResponse response = doChat(request, trace, clientKey);
 			trace.success(response.answer());
 			return response;
 
@@ -143,7 +163,7 @@ public class ChatOrchestrator {
 		}
 	}
 
-	private AssistantChatResponse doChat(AssistantChatRequest request, AssistantAuditTrace trace) {
+	private AssistantChatResponse doChat(AssistantChatRequest request, AssistantAuditTrace trace, String clientKey) {
 
 		if (request == null) {
 			throw new IllegalArgumentException("Request body is required.");
@@ -156,7 +176,8 @@ public class ChatOrchestrator {
 		String question = validateQuestion(request.question());
 		Map<String, String> params = validateParams(request.params());
 		List<ChatMessage> history = sanitizeHistory(request.history());
-		String lang = validateLang(request.lang());
+		// Câu hỏi tiếng Anh rõ ràng -> trả lời tiếng Anh dù FE gửi lang=vi
+		String lang = PromptGuard.effectiveLang(question, validateLang(request.lang()));
 
 		trace.request(screenKey, lang, params, question);
 		trace.model(assistantProperties.getLlm().getModel(), reasoningEffort(question));
@@ -174,6 +195,22 @@ public class ChatOrchestrator {
 		String answerSource = AssistantAuditTrace.ANSWER_LLM;
 
 		try {
+			// Đòi in / bỏ qua hướng dẫn hệ thống: từ chối ngay, không gọi LLM
+			if (PromptGuard.isPromptExtraction(question)) {
+				trace.templateAnswer(INTENT_PROMPT_GUARD);
+				answerSource = AssistantAuditTrace.ANSWER_TEMPLATE;
+				ok = true;
+				return new AssistantChatResponse(PromptGuard.refusal(lang), List.of(), null);
+			}
+
+			// Yêu cầu soạn email / văn bản / dịch / code: ngoài phạm vi, từ chối ngay, không gọi LLM
+			if (PromptGuard.isOffTopicTask(question)) {
+				trace.templateAnswer(INTENT_OFF_TOPIC);
+				answerSource = AssistantAuditTrace.ANSWER_TEMPLATE;
+				ok = true;
+				return new AssistantChatResponse(PromptGuard.offTopicRefusal(lang), List.of(), null);
+			}
+
 			ScreenModule module = screenRegistry.find(screenKey);
 			screenRegistry.checkParams(screenKey, params);
 
@@ -199,7 +236,12 @@ public class ChatOrchestrator {
 				return new AssistantChatResponse(answer, List.of(), null, suggestions(guide));
 			}
 
-			// Giữ 1 suất đồng thời cho cả câu hỏi (context + mọi lần gọi LLM)
+			// Chỉ request gọi LLM mới tính vào hạn mức llm-per-minute
+			if (clientKey != null) {
+				rateLimiter.checkLlm(clientKey);
+			}
+
+			// Giữ 1 suất đồng thời cho cả câu hỏi (context + mọi lần gọi LLM); đầy thì xếp hàng chờ (LlmConcurrencyLimiter)
 			String answer = concurrencyLimiter.run(() -> {
 
 				// Hạn chót cho cả câu hỏi (context + tool + mọi lần gọi LLM)
@@ -280,6 +322,12 @@ public class ChatOrchestrator {
 						trace
 				);
 
+				// Câu trả lời chép nguyên văn system prompt -> thay bằng câu từ chối
+				if (PromptGuard.leaksSystemPrompt(raw, systemPrompt(messages))) {
+					log.warn("Assistant: system prompt leak blocked rid={} screenKey={}", RequestTiming.rid(), screenKey);
+					return PromptGuard.refusal(lang);
+				}
+
 				// Chốt chặn cuối: thay mã nội bộ còn sót; vi: dấu phẩy thập phân -> dấu chấm
 				return answerPostProcessor.process(raw, screenKey, lang);
 			});
@@ -339,6 +387,8 @@ public class ChatOrchestrator {
 		List<AssistantTool> callTools = tools;
 
 		int toolRounds = 0;
+		// Content là token điều khiển (vd "commentary to=functions?"): gọi lại 1 lần không gửi tools
+		boolean forceNoTools = false;
 
 		while (true) {
 
@@ -358,8 +408,14 @@ public class ChatOrchestrator {
 			long callStart = System.nanoTime();
 			LlmResponse response;
 
+			// Đã chạy đủ MAX_TOOL_ROUNDS vòng: lần gọi này không gửi tools -> model phải trả lời bằng dữ liệu đã có
+			// (audit 2026-11-10: lần gọi thứ 4 vẫn trả tool_calls, content rỗng -> LLM_EMPTY)
+			boolean lastCall = forceNoTools || (!toolsDisabled && toolRounds >= MAX_TOOL_ROUNDS);
+
 			try {
-				response = llmClient.chat(messages, callTools, remaining, toolChoice);
+				response = lastCall
+						? llmClient.chat(messages, List.of(), remaining, LlmClient.TOOL_CHOICE_NONE)
+						: llmClient.chat(messages, callTools, remaining, toolChoice);
 			} catch (RuntimeException e) {
 				trace.llmCall(elapsedMs(callStart), null, null, "error");
 				throw e;
@@ -380,6 +436,17 @@ public class ChatOrchestrator {
 				log.warn("Assistant: prompt too large rid={} screenKey={} intent={} call={} promptTokens={} warnAt={}",
 						RequestTiming.rid(), screenKey, trace.answerIntent(), llmCalls[0], actualPrompt,
 						assistantProperties.getLlm().getPromptTokenWarn());
+			}
+
+			if (!response.hasToolCalls() && PromptGuard.isControlText(response.content())) {
+				log.warn("Assistant: control text in answer rid={} screenKey={} retried={}",
+						RequestTiming.rid(), screenKey, forceNoTools);
+				if (!forceNoTools) {
+					forceNoTools = true;
+					trace.retriedWithoutTools();
+					continue;
+				}
+				throw new LlmEmptyException(response.finishReason());
 			}
 
 			// Đã cấm gọi tool (pre-fetch đủ): không chạy tool_calls dù server trả về
@@ -779,6 +846,14 @@ public class ChatOrchestrator {
 		return result.length() > limit
 				? result.substring(0, limit) + "\n(đã rút gọn)"
 				: result;
+	}
+
+	private static String systemPrompt(List<ChatMessage> messages) {
+		return messages.stream()
+				.filter(m -> "system".equals(m.role()))
+				.map(ChatMessage::content)
+				.findFirst()
+				.orElse(null);
 	}
 
 	private static String answerOrThrow(LlmResponse response) {

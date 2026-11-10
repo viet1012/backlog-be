@@ -53,7 +53,10 @@ public class ComparePreviousMonthTool implements AssistantTool {
 		CostChartDto cur = current.find(div, cost);
 		CostChartDto prev = previous.find(div, cost);
 
-		int d = current.d();
+		// Ngày có actual mới nhất của CHÍNH khung này (RM chậm hơn T&SL 1 ngày) – audit 2026-11-10: MOLD RM lấy ngày D
+		// của T&SL nên "Actual đến ngày D" trống
+		int last = cur != null ? current.lastActualDay(cur) : 0;
+		int d = last > 0 ? Math.min(last, current.d()) : current.d();
 		int prevDay = Math.min(d, previous.n());
 
 		StringBuilder sb = new StringBuilder();
@@ -87,6 +90,26 @@ public class ComparePreviousMonthTool implements AssistantTool {
 					.append(t(lang, "|Actual cùng kỳ (đến ngày ", "|Actual same period (up to day "))
 					.append(prevDay).append(")=")
 					.append(fmt(previous.actAt(prev, prevDay)));
+		}
+
+		// Chênh tính sẵn (từ số đã làm tròn 1 chữ số) – audit 2026-11-10: model tự trừ FC, không nêu chênh cùng kỳ
+		if (cur != null && prev != null) {
+			Double curAct = current.actAt(cur, d);
+			Double prevAct = previous.actAt(prev, prevDay);
+			Double actDiff = CmText.subR1(curAct, prevAct);
+			Double prevActR = CmText.r1(prevAct);
+			Double actPct = actDiff == null || prevActR == null || prevActR == 0 ? null : actDiff / prevActR * 100;
+
+			sb.append('\n').append(t(lang, "[Chênh tháng này − tháng trước]", "[This month − previous month]"))
+					.append("|FC=").append(CmText.signedK(CmText.subR1(cur.fcTgt(), prev.fcTgt())))
+					.append("|Fluct=").append(CmText.signedK(CmText.subR1(fluct(cur), fluct(prev))))
+					.append(t(lang, "|Actual cùng kỳ=", "|Actual same period=")).append(CmText.signedK(actDiff))
+					.append(actPct == null ? "" : " (" + CmText.signedPct1(actPct) + ")")
+					.append(t(lang, "|Kết luận cùng kỳ=", "|Same-period conclusion="))
+					.append(actDiff == null ? ""
+							: actDiff > 0 ? t(lang, "tháng này chi nhiều hơn", "spending higher this month")
+							: actDiff < 0 ? t(lang, "tháng này chi ít hơn", "spending lower this month")
+							: t(lang, "bằng nhau", "equal"));
 		}
 
 		return sb.toString().trim();

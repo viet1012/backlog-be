@@ -53,11 +53,13 @@ public class AssistantController {
 			HttpServletRequest httpRequest
 	) {
 
-		// Dùng remoteAddr, không tin X-Forwarded-For (client tự đặt được)
-		rateLimiter.check(httpRequest.getRemoteAddr());
+		// Khóa = mã nhân viên nếu có, không thì remoteAddr (không tin X-Forwarded-For – client tự đặt được)
+		String employeeId = employeeId(httpRequest);
+		String clientKey = AssistantRateLimiter.clientKey(employeeId, httpRequest.getRemoteAddr());
+		rateLimiter.check(clientKey);
 
 		return ResponseEntity.ok(
-				chatOrchestrator.chat(request, employeeId(httpRequest))
+				chatOrchestrator.chat(request, employeeId, clientKey)
 		);
 	}
 

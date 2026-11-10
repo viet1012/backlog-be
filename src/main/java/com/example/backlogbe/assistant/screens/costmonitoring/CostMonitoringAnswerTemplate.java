@@ -188,7 +188,11 @@ final class CostMonitoringAnswerTemplate {
 			return t(lang, "Actual đã vượt Fluct", "Actual is already above Fluct");
 		}
 		if (a.estimateEom() == null) {
-			return t(lang, "chưa có dự báo", "has no forecast");
+			// Audit 2026-11-10 ("OT của MOLD có vượt không?"): nói rõ lý do thay vì chỉ "chưa có dự báo"
+			return a.act() == null
+					? t(lang, "chưa có Actual tháng này nên chưa dự báo được (chưa thể nói vượt hay không)",
+					"has no Actual this month yet, so no forecast (cannot tell whether it will exceed)")
+					: t(lang, "chưa có dự báo", "has no forecast");
 		}
 		if (a.estimateWillExceed()) {
 			return t(lang, "dự báo cuối tháng vượt Fluct", "is forecast above Fluct at month-end")

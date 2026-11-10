@@ -63,6 +63,14 @@ public class CostMonitoringLookupAnswers {
 	static final String REMAINING_BUDGET = "remaining_budget";
 	static final String ANOMALY_TODAY = "anomaly_today";
 	static final String TOP_DETAIL = "top_detail";
+	static final String DAY_SPEND = "day_spend";
+	static final String REMAINING_DAYS = "remaining_days";
+	static final String GREETING = "greeting";
+	static final String COMMON_ITEM = "common_item";
+	static final String PREV_MONTH = "prev_month";
+	static final String TREND = "trend";
+	static final String FRAME_VALUE = "frame_value";
+	static final String WHY_FRAME = "why_frame";
 
 	// top_detail: xếp hạng theo máy / cost center / Category (mỗi khung xếp riêng, không cộng T&SL với RM)
 	enum Dimension {
@@ -72,6 +80,10 @@ public class CostMonitoringLookupAnswers {
 	private static final List<String> COSTS = List.of("T&SL", "RM");
 
 	private static final int TOP_ITEMS_ONE = 5;
+	// "top 10 vật tư", "10 máy …": số dòng người dùng yêu cầu (1 khung), tối đa MAX_TOP
+	private static final int MAX_TOP = 20;
+	private static final Pattern TOP_N = CostMonitoringQuestion.word(
+			"top (\\d{1,2})|(\\d{1,2}) (?:vat tu|ma vat tu|may|cost center|category|loai vat tu|items?|machines?)");
 	private static final int TOP_DAYS_NEXT = 2;
 
 	// Đột biến: chi ngày gần nhất ≥ 2 lần trung bình các ngày có chi khác, và ≥ 1.0 K$
@@ -102,7 +114,7 @@ public class CostMonitoringLookupAnswers {
 	// "máy" có dấu (câu gốc); "may" không dấu trùng "mấy" -> chỉ nhận vài cụm rõ nghĩa
 	private static final Pattern MACHINE_VI = Pattern.compile("(?<!\\p{L})máy(?!\\p{L})");
 	private static final Pattern MACHINE_FOLDED = CostMonitoringQuestion.word(
-			"may nao|top may|cac may|may chi|may ton|may lon");
+			"may nao|top may|top \\d{1,2} may|cac may|may chi|may ton|may lon");
 
 	private static final int TOP_DETAIL_ONE = 5;
 	private static final int TOP_DETAIL_FEW = 3;
@@ -122,6 +134,65 @@ public class CostMonitoringLookupAnswers {
 	private static final Pattern TODAY = CostMonitoringQuestion.word(
 			"hom nay|hom qua|moi nhat|gan nhat|today|yesterday|latest");
 
+	// 1 ngày cụ thể (audit 2026-11-10: "Chủ nhật vừa rồi…" chỉ tra PRESS T&SL và trả sai; "máy nào … hôm qua" lấy
+	// số cả tháng; "Ngày 5 … chi bao nhiêu" thiếu thứ)
+	private static final Pattern DAY_REF = CostMonitoringQuestion.word(
+			"hom qua|hom kia|yesterday|chu nhat|sunday|saturday|thu [2-7]"
+					+ "|ngay \\d{1,2}(?:/\\d{1,2})?|\\d{1,2}/\\d{1,2}");
+	// Thứ trong tuần: khớp trên câu CÒN DẤU ("thứ tư" ≠ "thứ tự")
+	private static final Pattern WEEKDAY_RAW = Pattern.compile(
+			"(?<!\\p{L})thứ (hai|ba|tư|năm|sáu|bảy)(?!\\p{L})");
+	// Nhiều ngày / xu hướng -> không phải 1 ngày
+	private static final Pattern ACROSS_DAYS = CostMonitoringQuestion.word(
+			"theo ngay|tung ngay|cac ngay|moi ngay|hang ngay|dot bien|xu huong|daily|by day|trend");
+	private static final Pattern SPEND = CostMonitoringQuestion.word(
+			"chi|phat sinh|ton|het|bao nhieu|spend|spent|spending|cost|costs");
+	private static final Pattern DAY_NUMBER = Pattern.compile(
+			"(?<![\\p{L}\\p{N}])(?:ngay\\s+(\\d{1,2})(?:/(\\d{1,2}))?|(\\d{1,2})/(\\d{1,2}))(?![\\p{N}])");
+	private static final Pattern WEEKDAY = Pattern.compile(
+			"(?<![\\p{L}])(chu nhat|sunday|saturday|thu [2-7])(?![\\p{L}\\p{N}])");
+
+	// So với tháng trước (chỉ tổng FC / Fluct / Actual; không hỏi vật tư / Category / nguyên nhân / bất thường)
+	private static final Pattern PREV_MONTH_REF = CostMonitoringQuestion.word(
+			"thang truoc|cung ky|last month|previous month");
+	private static final Pattern PREV_MONTH_SCOPE = CostMonitoringQuestion.word(
+			"so voi|so sanh|hon|thi sao|the nao|nhu the nao|khac gi|compare|compared|vs|versus|than|how");
+	private static final Pattern PREV_MONTH_EXCLUDE = CostMonitoringQuestion.word(
+			"vat tu|ma vat tu|category|loai vat tu|item|items|material|may|machine|cost center"
+					+ "|bat thuong|dot bien|unusual|abnormal|ngay|day|days|ratio|fluct bi|target bi");
+
+	// Xu hướng chi theo ngày trong tháng của 1 khung
+	private static final Pattern TREND_WORD = CostMonitoringQuestion.word(
+			"xu huong|dien bien|trend|tiến độ chi|tien do chi|pace");
+
+	// Hỏi giá trị (Actual / FC / Fluct / PL) của 1 khung: "X tháng này bao nhiêu", "Fluct của X là bao nhiêu"
+	private static final Pattern VALUE_ASK = CostMonitoringQuestion.word(
+			"bao nhieu|la bao nhieu|bn|bnhieu|how much|what is the|hien tai|hien nay|dang la");
+	private static final Pattern METRIC = CostMonitoringQuestion.word(
+			"actual|act|fc|fc tgt|fluct|fluc|pl|pl tgt|target|tgt|forecast|chi phi|chi|spent|spending|cost");
+	private static final Pattern VALUE_EXCLUDE = CostMonitoringQuestion.word(
+			"vuot|du bao|cuoi thang|cu chi|exceed|forecast to|month-end|month end|ngan sach|con lai|toi da"
+					+ "|vat tu|may|cost center|category|item|machine|ratio|ngay|hom|day|yesterday"
+					+ "|tuan|week|thang truoc|cung ky|last month|doanh thu|revenue");
+
+	// Ngân sách còn lại (không cần "mỗi ngày")
+	private static final Pattern BUDGET_LEFT = CostMonitoringQuestion.word(
+			"con bao nhieu tien|con lai bao nhieu|bao nhieu tien|con bao nhieu de chi|con du bao nhieu"
+					+ "|budget left|remaining budget|how much is left|how much left");
+
+	private static final Pattern DAYS_LEFT = CostMonitoringQuestion.word(
+			"con may ngay|con bao nhieu ngay|con lai may ngay|con lai bao nhieu ngay|may ngay nua|bao nhieu ngay nua"
+					+ "|days left|days remaining|how many days");
+
+	private static final Pattern GREETING_ONLY = Pattern.compile(
+			"^(?:hello|hi|hey|xin chao|chao|chao ban|alo|good (?:morning|afternoon|evening))(?:\\s+(?:ban|em|bot|there))?[\\s!.?]*$");
+
+	// Mã vật tư chung giữa các khung
+	private static final Pattern COMMON = CostMonitoringQuestion.word(
+			"o ca|ca hai|ca 2|chung|trung nhau|both|in common|common|shared");
+	private static final int COMMON_TOP_N = 50;
+	private static final int COMMON_MAX_LINES = 10;
+
 	private final CostMonitoringSnapshotLoader loader;
 	private final CostTopItemsRepository repository;
 	private final CostWorkingDateRepository workingDateRepository;
@@ -137,11 +208,27 @@ public class CostMonitoringLookupAnswers {
 
 		String f = CostMonitoringIntentClassifier.fold(question);
 
-		if (WHY.matcher(f).find() || EXCLUDED.matcher(f).find()) {
+		// Chào hỏi: không cần dữ liệu
+		if (GREETING_ONLY.matcher(f).matches()) {
+			Answer greeting = greeting(lang);
+			return new AnswerGuide(null, false, GREETING, greeting.text(), greeting.suggestions(),
+					"lookup=" + GREETING + "; template=yes");
+		}
+
+		if (WHY.matcher(f).find()) {
 			return null;
 		}
 
-		String kind = kind(question, f);
+		// So với tháng trước (tổng FC / Fluct / Actual) của 1 khung: template; các câu "tháng trước" khác -> LLM
+		String kind = prevMonthKind(question, f);
+
+		if (kind == null && EXCLUDED.matcher(f).find()) {
+			return null;
+		}
+
+		if (kind == null) {
+			kind = kind(question, f);
+		}
 
 		if (kind == null) {
 			return null;
@@ -155,14 +242,40 @@ public class CostMonitoringLookupAnswers {
 			return null;
 		}
 
+		// 1 ngày cụ thể (hôm qua, Chủ nhật, ngày 5…): không xác định được / ngoài tháng đang xem -> LLM;
+		// ngày trong tháng nhưng sau hôm nay -> trả lời "chưa tới"
+		LocalDate day = null;
+		if (singleDay(question, f)) {
+			LocalDate future = futureDay(f, snapshot.month(), loader.today());
+			if (future != null && (DAY_SPEND.equals(kind) || TOP_DETAIL.equals(kind) || TOP_ITEM.equals(kind))) {
+				return new AnswerGuide(null, false, DAY_SPEND, futureDayAnswer(future, lang).text(),
+						futureDayAnswer(future, lang).suggestions(),
+						"lookup=" + kind + "; day=" + future + " (future); template=yes");
+			}
+			day = resolveDay(question, f, snapshot.month(), loader.today());
+		}
+
+		if (DAY_SPEND.equals(kind) && day == null) {
+			return null;
+		}
+		if ((TOP_DETAIL.equals(kind) || TOP_ITEM.equals(kind)) && singleDay(question, f) && day == null) {
+			return null;
+		}
+
 		boolean closed = snapshot.monthClosed();
 		Dimension dimension = dimension(question, f);
 		Answer answer = switch (kind) {
-			case TOP_DETAIL -> topDetail(snapshot, frames, dimension, lang);
-			case TOP_ITEM -> topItem(snapshot, frames, EXPENSIVE.matcher(f).find(), lang);
+			case TOP_DETAIL -> topDetail(snapshot, frames, dimension, day, requestedTop(f), lang);
+			case TOP_ITEM -> topItem(snapshot, frames, EXPENSIVE.matcher(f).find(), day, requestedTop(f), lang);
 			case TOP_DAY -> topDay(snapshot, frames, lang);
+			case DAY_SPEND -> daySpend(snapshot, frames, day, lang);
+			case COMMON_ITEM -> frames.size() < 2 ? null : commonItems(snapshot, frames, lang);
+			case REMAINING_DAYS -> closed ? null : remainingDays(snapshot, lang);
 			case REMAINING_BUDGET -> closed ? null : remainingBudget(snapshot, frames, lang);
 			case ANOMALY_TODAY -> closed ? null : anomalyToday(snapshot, frames, lang);
+			case PREV_MONTH -> frames.size() == 1 ? previousMonth(snapshot, frames.get(0), lang) : null;
+			case TREND -> closed || frames.size() != 1 ? null : trend(snapshot, frames.get(0), lang);
+			case FRAME_VALUE -> frameValue(snapshot, frames, lang);
 			default -> null;
 		};
 
@@ -172,6 +285,7 @@ public class CostMonitoringLookupAnswers {
 
 		String match = "lookup=" + kind
 				+ (TOP_DETAIL.equals(kind) ? "; dim=" + dimension.name().toLowerCase(Locale.ROOT) : "")
+				+ (day != null ? "; day=" + day : "")
 				+ "; frames="
 				+ String.join(",", frames.stream().map(fr -> fr.div() + " " + fr.cost()).toList())
 				+ "; template=yes";
@@ -183,14 +297,25 @@ public class CostMonitoringLookupAnswers {
 	// Loại câu hỏi tra cứu; null = không khớp
 	static String kind(String question, String f) {
 
-		if (dimension(question, f) != null && ITEM_RANK.matcher(f).find() && !WHICH_DAY.matcher(f).find()
-				&& !DailySeriesPrefetchRule.isDailyQuestion(question)) {
+		// Câu hỏi theo ngày chỉ được tra cứu khi hỏi đúng 1 ngày (hôm qua, Chủ nhật, ngày 5…)
+		boolean dailyOk = !DailySeriesPrefetchRule.isDailyQuestion(question) || singleDay(question, f);
+		Dimension dim = dimension(question, f);
+		boolean item = ITEM.matcher(f).find() && !NOT_ITEM.matcher(f).find();
+
+		if (dim != null && ITEM_RANK.matcher(f).find() && !WHICH_DAY.matcher(f).find() && dailyOk) {
 			return TOP_DETAIL;
 		}
 
-		if (ITEM.matcher(f).find() && ITEM_RANK.matcher(f).find() && !NOT_ITEM.matcher(f).find()
-				&& !DailySeriesPrefetchRule.isDailyQuestion(question)) {
+		if (item && COMMON.matcher(f).find()) {
+			return COMMON_ITEM;
+		}
+
+		if (item && ITEM_RANK.matcher(f).find() && dailyOk) {
 			return TOP_ITEM;
+		}
+
+		if (DAYS_LEFT.matcher(f).find() && !PER_DAY.matcher(f).find()) {
+			return REMAINING_DAYS;
 		}
 
 		if (WHICH_DAY.matcher(f).find() && MOST.matcher(f).find() && !ITEM.matcher(f).find()
@@ -198,7 +323,7 @@ public class CostMonitoringLookupAnswers {
 			return TOP_DAY;
 		}
 
-		if (BUDGET.matcher(f).find() && PER_DAY.matcher(f).find()) {
+		if ((BUDGET.matcher(f).find() && PER_DAY.matcher(f).find()) || BUDGET_LEFT.matcher(f).find()) {
 			return REMAINING_BUDGET;
 		}
 
@@ -206,7 +331,144 @@ public class CostMonitoringLookupAnswers {
 			return ANOMALY_TODAY;
 		}
 
+		if (singleDay(question, f) && SPEND.matcher(f).find() && !ANOMALY.matcher(f).find() && dim == null
+				&& !ITEM.matcher(f).find() && !MOST.matcher(f).find()) {
+			return DAY_SPEND;
+		}
+
+		if (TREND_WORD.matcher(f).find() && dim == null && !ITEM.matcher(f).find() && !ANOMALY.matcher(f).find()
+				&& !CostMonitoringQuestion.word("ratio|fluct").matcher(f).find()) {
+			return TREND;
+		}
+
+		if (VALUE_ASK.matcher(f).find() && METRIC.matcher(f).find() && !VALUE_EXCLUDE.matcher(f).find()
+				&& dim == null && !ITEM.matcher(f).find() && !MOST.matcher(f).find()
+				&& !CostMonitoringQuestion.isConcept(CostMonitoringQuestion.normalize(question))) {
+			return FRAME_VALUE;
+		}
+
 		return null;
+	}
+
+	// "So với tháng trước X thế nào", "X tháng này chi nhiều hơn cùng kỳ không" (1 khung, chỉ tổng) -> PREV_MONTH; khác -> null
+	static String prevMonthKind(String question, String f) {
+
+		if (!PREV_MONTH_REF.matcher(f).find() || !PREV_MONTH_SCOPE.matcher(f).find()
+				|| PREV_MONTH_EXCLUDE.matcher(f).find() || WHY.matcher(f).find()) {
+			return null;
+		}
+
+		return PREV_MONTH;
+	}
+
+	// Ngày được hỏi nằm trong tháng đang xem nhưng SAU hôm nay (chưa tới); khác -> null
+	static LocalDate futureDay(String f, YearMonth month, LocalDate today) {
+
+		java.util.regex.Matcher n = DAY_NUMBER.matcher(f);
+
+		if (!n.find()) {
+			return null;
+		}
+
+		String dd = n.group(1) != null ? n.group(1) : n.group(3);
+		String mm = n.group(1) != null ? n.group(2) : n.group(4);
+		int d = Integer.parseInt(dd);
+
+		if (mm != null && Integer.parseInt(mm) != month.getMonthValue()) {
+			return null;
+		}
+		if (d < 1 || d > month.lengthOfMonth()) {
+			return null;
+		}
+
+		LocalDate day = month.atDay(d);
+
+		return day.isAfter(today) ? day : null;
+	}
+
+	private static Answer futureDayAnswer(LocalDate day, String lang) {
+		return new Answer(t(lang,
+				"Ngày **" + dayLabel(day, lang) + "** chưa tới nên chưa có dữ liệu chi.",
+				"**" + dayLabel(day, lang) + "** has not come yet, so there is no spending data."),
+				List.of(t(lang, "Hôm qua có gì bất thường không?", "Anything unusual yesterday?"),
+						t(lang, "Tháng này có khung nào dự báo vượt Fluct?", "Which frames are forecast to exceed Fluct?")));
+	}
+
+	// Số dòng người dùng yêu cầu ("top 10", "3 máy"); không nêu -> 0 (mặc định)
+	static int requestedTop(String f) {
+		java.util.regex.Matcher m = TOP_N.matcher(f);
+		if (!m.find()) {
+			return 0;
+		}
+		int n = Integer.parseInt(m.group(1) != null ? m.group(1) : m.group(2));
+		return n < 1 ? 0 : Math.min(n, MAX_TOP);
+	}
+
+	// Hỏi đúng 1 ngày: có mốc ngày, không hỏi "ngày nào", không hỏi nhiều ngày / xu hướng
+	static boolean singleDay(String question, String f) {
+		boolean ref = DAY_REF.matcher(f).find()
+				|| WEEKDAY_RAW.matcher(CostMonitoringQuestion.normalize(question)).find();
+		return ref && !WHICH_DAY.matcher(f).find() && !ACROSS_DAYS.matcher(f).find();
+	}
+
+	/*
+	 * Ngày được hỏi (trong tháng đang xem, không sau hôm nay); không xác định được -> null
+	 *   hôm qua / yesterday = today − 1; hôm kia = today − 2
+	 *   Chủ nhật / thứ X (vừa rồi) = ngày gần nhất TRƯỚC hôm nay có thứ đó
+	 *   ngày N / N/M = ngày N của tháng đang xem (M phải trùng tháng)
+	 */
+	static LocalDate resolveDay(String question, String f, YearMonth month, LocalDate today) {
+
+		LocalDate day = null;
+		java.util.regex.Matcher raw = WEEKDAY_RAW.matcher(CostMonitoringQuestion.normalize(question));
+
+		if (CostMonitoringQuestion.word("hom kia").matcher(f).find()) {
+			day = today.minusDays(2);
+		} else if (CostMonitoringQuestion.word("hom qua|yesterday").matcher(f).find()) {
+			day = today.minusDays(1);
+		} else {
+			java.util.regex.Matcher w = WEEKDAY.matcher(f);
+			java.util.regex.Matcher n = DAY_NUMBER.matcher(f);
+			if (n.find()) {
+				String dd = n.group(1) != null ? n.group(1) : n.group(3);
+				String mm = n.group(1) != null ? n.group(2) : n.group(4);
+				int d = Integer.parseInt(dd);
+				if (mm != null && Integer.parseInt(mm) != month.getMonthValue()) {
+					return null;
+				}
+				if (d < 1 || d > month.lengthOfMonth()) {
+					return null;
+				}
+				day = month.atDay(d);
+			} else {
+				// "chu nhat" / "thu 3" (đã bỏ dấu) hoặc "thứ ba" (còn dấu, bỏ dấu để tra bảng)
+				String text = w.find() ? w.group(1)
+						: raw.find() ? CostMonitoringIntentClassifier.fold("thứ " + raw.group(1)) : null;
+				java.time.DayOfWeek dow = text == null ? null : weekdayOf(text);
+				if (dow != null) {
+					day = today.minusDays(1).with(java.time.temporal.TemporalAdjusters.previousOrSame(dow));
+				}
+			}
+		}
+
+		if (day == null || !YearMonth.from(day).equals(month) || day.isAfter(today)) {
+			return null;
+		}
+
+		return day;
+	}
+
+	private static java.time.DayOfWeek weekdayOf(String text) {
+		return switch (text) {
+			case "chu nhat", "sunday" -> java.time.DayOfWeek.SUNDAY;
+			case "saturday", "thu bay", "thu 7" -> java.time.DayOfWeek.SATURDAY;
+			case "thu hai", "thu 2" -> java.time.DayOfWeek.MONDAY;
+			case "thu ba", "thu 3" -> java.time.DayOfWeek.TUESDAY;
+			case "thu tu", "thu 4" -> java.time.DayOfWeek.WEDNESDAY;
+			case "thu nam", "thu 5" -> java.time.DayOfWeek.THURSDAY;
+			case "thu sau", "thu 6" -> java.time.DayOfWeek.FRIDAY;
+			default -> null;
+		};
 	}
 
 	// Máy / cost center / Category được hỏi; null = không hỏi (Category ưu tiên vì "loại vật tư" chứa "vật tư")
@@ -285,11 +547,44 @@ public class CostMonitoringLookupAnswers {
 	record Entry(String label, Double amountK) {
 	}
 
-	record Block(CostMonitoringFocus frame, List<Entry> entries, Double act, LocalDate to) {
+	// basis: nhãn của act trong % ("Actual" cả tháng, hoặc "chi trong ngày")
+	record Block(CostMonitoringFocus frame, List<Entry> entries, Double act, LocalDate to, String basis) {
+	}
+
+	// Khoảng ngày tra vật tư / máy: cả tháng (đến mốc actual) hoặc đúng 1 ngày; chưa có dữ liệu -> null
+	private LocalDate[] range(CostMonitoringSnapshot snapshot, String cost, LocalDate day) {
+
+		LocalDate from = day != null ? day : snapshot.month().atDay(1);
+		LocalDate to = itemsTo(snapshot, cost);
+
+		if (day != null) {
+			if (day.isAfter(to)) {
+				return null;
+			}
+			to = day;
+		}
+
+		return to.isBefore(from) ? null : new LocalDate[]{from, to};
+	}
+
+	// Chi trong ngày của 1 khung (get_daily_series); không có số -> null
+	private static Double dayAmount(CostMonitoringSnapshot snapshot, CostChartDto chart, LocalDate day) {
+		return chart == null ? null : dailies(snapshot, chart).stream()
+				.filter(d -> d.date().equals(day)).map(Daily::amount).findFirst().orElse(null);
+	}
+
+	// Không có dòng nào cho ngày được hỏi: trả lời rõ (không để LLM lấy số cả tháng)
+	private static Answer noDataForDay(LocalDate day, String what, String lang) {
+		return new Answer(t(lang,
+				"Ngày **" + dayLabel(day, lang) + "** không có dòng chi nào ghi " + what
+						+ " ở khung được hỏi (ngày nghỉ, không phát sinh hoặc chưa có dữ liệu – RM ghi nhận chậm 1 ngày).",
+				"No " + what + " lines on **" + dayLabel(day, lang)
+						+ "** in the asked frame(s) (holiday, no spending, or data not yet loaded – RM lags 1 day)."),
+				List.of(t(lang, "Có gì bất thường trong tháng này?", "Anything unusual this month?")));
 	}
 
 	private Answer topDetail(CostMonitoringSnapshot snapshot, List<CostMonitoringFocus> frames, Dimension dim,
-							 String lang) {
+							 LocalDate day, int topN, String lang) {
 
 		List<CostMonitoringFocus> usable = dim == Dimension.MACHINE
 				? frames.stream().filter(fr -> "T&SL".equals(fr.cost())).toList()
@@ -302,31 +597,38 @@ public class CostMonitoringLookupAnswers {
 					List.of(t(lang, "Máy nào chi nhiều nhất ở PRESS T&SL?", "Which machine spends the most in PRESS T&SL?")));
 		}
 
-		int limit = usable.size() == 1 ? TOP_DETAIL_ONE : usable.size() <= TOP_DETAIL_FEW_FRAMES ? TOP_DETAIL_FEW : 1;
-		LocalDate from = snapshot.month().atDay(1);
+		int limit = usable.size() == 1 ? (topN > 0 ? topN : TOP_DETAIL_ONE)
+				: usable.size() <= TOP_DETAIL_FEW_FRAMES ? TOP_DETAIL_FEW : 1;
+		LocalDate from = day != null ? day : snapshot.month().atDay(1);
 
+		// 1 ngày: % so với chi trong ngày đó của khung (không so với Actual cả tháng)
 		List<Block> blocks = perFrame(usable, fr -> {
-			LocalDate to = itemsTo(snapshot, fr.cost());
-			if (to.isBefore(from)) {
+			LocalDate[] r = range(snapshot, fr.cost(), day);
+			if (r == null) {
 				return null;
 			}
 			CostChartDto chart = snapshot.find(fr.div(), fr.cost());
-			Double act = chart != null ? chart.actMtdLatest() : null;
-			List<Entry> entries = detailEntries(fr, dim, from, to, limit);
-			return entries.isEmpty() ? null : new Block(fr, entries, act, to);
+			Double act = day != null ? dayAmount(snapshot, chart, day)
+					: chart != null ? chart.actMtdLatest() : null;
+			List<Entry> entries = detailEntries(fr, dim, r[0], r[1], limit);
+			return entries.isEmpty() ? null : new Block(fr, entries, act, r[1],
+					day != null ? t(lang, "chi trong ngày", "of the day's spending") : "Actual");
 		}).stream().filter(java.util.Objects::nonNull).toList();
 
-		if (blocks.isEmpty()) {
-			return null;
-		}
-
-		LocalDate latestTo = blocks.stream().map(Block::to).max(Comparator.naturalOrder()).orElse(from);
-		String period = ddmm(from) + "–" + ddmm(latestTo);
 		String what = switch (dim) {
 			case MACHINE -> t(lang, "Máy", "Machines");
 			case COST_CENTER -> "Cost center";
 			case CATEGORY -> "Category";
 		};
+
+		if (blocks.isEmpty()) {
+			return day != null ? noDataForDay(day, what, lang) : null;
+		}
+
+		LocalDate latestTo = blocks.stream().map(Block::to).max(Comparator.naturalOrder()).orElse(from);
+		String period = day != null
+				? t(lang, "ngày ", "day ") + dayLabel(day, lang)
+				: ddmm(from) + "–" + ddmm(latestTo);
 
 		StringBuilder sb = new StringBuilder();
 
@@ -341,7 +643,8 @@ public class CostMonitoringLookupAnswers {
 			for (Block b : blocks) {
 				sb.append("\n**").append(b.frame().div()).append(' ').append(b.frame().cost()).append("**");
 				if (b.act() != null) {
-					sb.append(" (Actual ").append(CmText.k1(b.act())).append(')');
+					sb.append(" (").append(day != null ? t(lang, "chi trong ngày ", "day spending ") : "Actual ")
+							.append(CmText.k1(b.act())).append(')');
 				}
 				sb.append(":\n");
 				appendEntries(sb, b);
@@ -353,7 +656,7 @@ public class CostMonitoringLookupAnswers {
 				Entry e = b.entries().get(0);
 				sb.append("- ").append(b.frame().div()).append(' ').append(b.frame().cost()).append(": **")
 						.append(e.label()).append("** – ").append(k2(e.amountK()));
-				appendPct(sb, e.amountK(), b.act());
+				appendPct(sb, e.amountK(), b.act(), b.basis());
 				sb.append('\n');
 			}
 		}
@@ -404,15 +707,15 @@ public class CostMonitoringLookupAnswers {
 		int i = 0;
 		for (Entry e : b.entries()) {
 			sb.append(++i).append(". **").append(e.label()).append("**: ").append(k2(e.amountK()));
-			appendPct(sb, e.amountK(), b.act());
+			appendPct(sb, e.amountK(), b.act(), b.basis());
 			sb.append('\n');
 		}
 	}
 
-	private static void appendPct(StringBuilder sb, Double amountK, Double act) {
+	private static void appendPct(StringBuilder sb, Double amountK, Double act, String basis) {
 		String share = ExplainVarianceTool.pctOfAct(amountK, act);
 		if (!share.isEmpty()) {
-			sb.append(" (").append(share).append(" Actual)");
+			sb.append(" (").append(share).append(' ').append(basis).append(')');
 		}
 	}
 
@@ -422,9 +725,9 @@ public class CostMonitoringLookupAnswers {
 	// =========================================================
 
 	private Answer topItem(CostMonitoringSnapshot snapshot, List<CostMonitoringFocus> frames, boolean expensive,
-						   String lang) {
+						   LocalDate day, int topN, String lang) {
 
-		LocalDate from = snapshot.month().atDay(1);
+		LocalDate from = day != null ? day : snapshot.month().atDay(1);
 		boolean single = frames.size() == 1;
 
 		record Row(CostMonitoringFocus frame, CostTopItemDto item, Double act, LocalDate to) {
@@ -432,17 +735,19 @@ public class CostMonitoringLookupAnswers {
 
 		List<List<Row>> perFrameRows = perFrame(frames, fr -> {
 
-			LocalDate to = itemsTo(snapshot, fr.cost());
+			LocalDate[] r = range(snapshot, fr.cost(), day);
 
-			if (to.isBefore(from)) {
+			if (r == null) {
 				return List.<Row>of();
 			}
 
+			LocalDate to = r[1];
 			CostChartDto chart = snapshot.find(fr.div(), fr.cost());
-			Double act = chart != null ? chart.actMtdLatest() : null;
+			// 1 ngày: không ghi % Actual cả tháng (dễ hiểu nhầm)
+			Double act = day != null ? null : chart != null ? chart.actMtdLatest() : null;
 
 			return repository.findTopItems(fr.cost(), from, to,
-							CostMonitoringSnapshot.DIV_COST_CENTERS.get(fr.div()), single ? TOP_ITEMS_ONE : 1)
+							CostMonitoringSnapshot.DIV_COST_CENTERS.get(fr.div()), single ? (topN > 0 ? topN : TOP_ITEMS_ONE) : 1)
 					.stream()
 					.filter(item -> item.amountK() != null && item.amountK() > 0)
 					.map(item -> new Row(fr, item, act, to))
@@ -454,11 +759,13 @@ public class CostMonitoringLookupAnswers {
 		LocalDate latestTo = rows.stream().map(Row::to).max(Comparator.naturalOrder()).orElse(null);
 
 		if (rows.isEmpty()) {
-			return null;
+			return day != null ? noDataForDay(day, t(lang, "vật tư", "item"), lang) : null;
 		}
 
 		StringBuilder sb = new StringBuilder();
-		String period = ddmm(from) + "–" + ddmm(latestTo);
+		String period = day != null
+				? t(lang, "ngày ", "day ") + dayLabel(day, lang)
+				: ddmm(from) + "–" + ddmm(latestTo);
 
 		if (single) {
 			CostMonitoringFocus fr = frames.get(0);
@@ -468,7 +775,7 @@ public class CostMonitoringLookupAnswers {
 
 			int i = 0;
 			for (Row r : rows) {
-				sb.append(++i).append(". ").append(itemLine(r.item(), r.act(), expensive, lang)).append('\n');
+				sb.append(++i).append(". ").append(itemLine(r.item(), r.act(), expensive, true, lang)).append('\n');
 			}
 		} else {
 			rows.sort(Comparator.comparing((Row r) -> r.item().amountK()).reversed());
@@ -483,7 +790,7 @@ public class CostMonitoringLookupAnswers {
 
 			for (Row r : rows) {
 				sb.append("- ").append(r.frame().div()).append(' ').append(r.frame().cost()).append(": ")
-						.append(itemLine(r.item(), r.act(), expensive, lang)).append('\n');
+						.append(itemLine(r.item(), r.act(), expensive, false, lang)).append('\n');
 			}
 		}
 
@@ -506,7 +813,8 @@ public class CostMonitoringLookupAnswers {
 	}
 
 	// "**Tên (Code)** – Category: 4.18 K$ (6.8% Actual); SL 3 PC, đơn giá TB ≈ 1393 $"
-	private static String itemLine(CostTopItemDto item, Double act, boolean expensive, String lang) {
+	// showQty: danh sách 1 khung luôn ghi số lượng (audit 2026-11-10: "Top 10 vật tư" thiếu số lượng)
+	private static String itemLine(CostTopItemDto item, Double act, boolean expensive, boolean showQty, String lang) {
 
 		StringBuilder sb = new StringBuilder("**")
 				.append(CmText.itemLabel(item.code(), item.name(), lang)).append("**");
@@ -529,6 +837,9 @@ public class CostMonitoringLookupAnswers {
 			sb.append(t(lang, "; SL ", "; qty ")).append(qty(item.qty())).append(unitLabel)
 					.append(t(lang, ", đơn giá TB ≈ ", ", avg unit price ≈ "))
 					.append(String.format(Locale.ROOT, unit >= 100 ? "%.0f" : "%.2f", unit)).append(" $");
+		} else if (showQty && item.qty() != null && item.qty() != 0) {
+			String unitLabel = item.qtyUnit() == null || item.qtyUnit().isBlank() ? "" : " " + CmText.clean(item.qtyUnit());
+			sb.append(t(lang, "; SL ", "; qty ")).append(qty(item.qty())).append(unitLabel);
 		}
 
 		return sb.toString();
@@ -731,8 +1042,15 @@ public class CostMonitoringLookupAnswers {
 	// Σ WD_All từ ngày D + 1 đến cuối tháng; không có lịch / lỗi đọc -> null
 	private Double remainingWorkDays(CostMonitoringSnapshot snapshot) {
 
-		LocalDate from = snapshot.month().atDay(snapshot.d() + 1);
-		LocalDate to = snapshot.month().atEndOfMonth();
+		return workDays(snapshot.month().atDay(snapshot.d() + 1), snapshot.month().atEndOfMonth());
+	}
+
+	// Σ WD_All từ from đến to (gồm 2 đầu); không có lịch / lỗi đọc -> null
+	private Double workDays(LocalDate from, LocalDate to) {
+
+		if (from.isAfter(to)) {
+			return 0.0;
+		}
 
 		try {
 			Map<LocalDate, WorkingDay> days = workingDateRepository.findWorkingDays(from, to);
@@ -880,19 +1198,590 @@ public class CostMonitoringLookupAnswers {
 
 	// 1 dòng ≥ 10% Actual của khung trong đúng ngày đó; lỗi đọc -> rỗng
 	private List<CostLineDto> unusualLines(CostMonitoringFocus fr, LocalDate day, Double act) {
+		// findUnusualLines còn khớp theo từ khóa (license …): unusualLines(from, to) chỉ giữ dòng thực sự ≥ 10% Actual
+		return unusualLines(fr, day, day, act);
+	}
 
-		if (act == null || act <= 0) {
+
+	// =========================================================
+	// CHI PHÍ 1 NGÀY CỤ THỂ (hôm qua, Chủ nhật, ngày 5…)
+	// Mỗi khung: chi trong ngày; ngày sau mốc actual của khung -> "chưa có số"; 0 -> "không phát sinh".
+	// =========================================================
+
+	private Answer daySpend(CostMonitoringSnapshot snapshot, List<CostMonitoringFocus> frames, LocalDate day,
+							String lang) {
+
+		boolean single = frames.size() == 1;
+		List<String> lines = new ArrayList<>();
+		int withSpend = 0;
+		int withData = 0;
+		String singleText = null;
+
+		for (CostMonitoringFocus fr : frames) {
+
+			CostChartDto chart = snapshot.find(fr.div(), fr.cost());
+
+			if (chart == null) {
+				continue;
+			}
+
+			String name = fr.div() + " " + fr.cost();
+			int last = snapshot.lastActualDay(chart);
+			Double amount = dayAmount(snapshot, chart, day);
+			String value;
+
+			if (last < day.getDayOfMonth() || amount == null) {
+				value = t(lang, "chưa có số", "no data yet")
+						+ ("RM".equals(fr.cost()) ? t(lang, " (RM ghi nhận chậm 1 ngày)", " (RM lags 1 day)") : "");
+			} else {
+				withData++;
+				if (Math.round(amount * 10) == 0) {
+					value = t(lang, "0.0 K$ (không phát sinh)", "0.0 K$ (no spending)");
+				} else {
+					withSpend++;
+					value = "**" + k1(amount) + "**";
+					Double avg = averageSpendingDay(snapshot, chart, day);
+					if (avg != null) {
+						value += t(lang, " (TB ngày có chi ", " (avg spending day ") + k1(avg) + ")";
+					}
+				}
+			}
+
+			lines.add("- " + name + ": " + value);
+
+			if (single) {
+				singleText = t(lang, "Ngày **", "On **") + dayLabel(day, lang) + t(lang, "** **", "** **")
+						+ name + t(lang, "** chi: ", "** spent: ") + value + ".";
+			}
+		}
+
+		if (lines.isEmpty()) {
+			return null;
+		}
+
+		StringBuilder sb = new StringBuilder();
+
+		if (single) {
+			sb.append(singleText).append('\n');
+		} else {
+			sb.append(t(lang, "Chi phí ngày **", "Spending on **")).append(dayLabel(day, lang)).append("**: ");
+			if (withData == 0) {
+				sb.append(t(lang, "chưa có số ở các khung.", "no data yet in any frame."));
+			} else if (withSpend == 0) {
+				sb.append(t(lang, "**không phát sinh** ở các khung đã có số.", "**no spending** in frames with data."));
+			} else {
+				sb.append(t(lang, "có phát sinh ở " + withSpend + "/" + lines.size() + " khung.",
+						"spending in " + withSpend + "/" + lines.size() + " frames."));
+			}
+			sb.append('\n');
+			lines.forEach(l -> sb.append(l).append('\n'));
+		}
+
+		sb.append('\n').append(footer(snapshot, lang));
+
+		CostMonitoringFocus first = frames.get(0);
+		String name = first.div() + " " + first.cost();
+		List<String> suggestions = List.of(
+				t(lang, "Vật tư nào chi nhiều nhất ở " + name + "?", "Which items cost the most in " + name + "?"),
+				t(lang, "Có gì bất thường trong tháng này?", "Anything unusual this month?"));
+
+		return new Answer(sb.toString().trim(), suggestions);
+	}
+
+	// Trung bình các ngày có chi trong tháng (không gồm ngày đang xét); không có -> null
+	private static Double averageSpendingDay(CostMonitoringSnapshot snapshot, CostChartDto chart, LocalDate exclude) {
+		double sum = 0;
+		int count = 0;
+		for (Daily d : dailies(snapshot, chart)) {
+			if (!d.date().equals(exclude) && d.amount() != null && Math.round(d.amount() * 10) > 0) {
+				sum += d.amount();
+				count++;
+			}
+		}
+		return count > 0 ? CmText.r1(sum / count) : null;
+	}
+
+
+	// =========================================================
+	// THÁNG CÒN MẤY NGÀY (audit 2026-11-10: qua LLM 28 s)
+	// =========================================================
+
+	private Answer remainingDays(CostMonitoringSnapshot snapshot, String lang) {
+
+		LocalDate today = loader.today();
+
+		if (!YearMonth.from(today).equals(snapshot.month())) {
+			return null;
+		}
+
+		LocalDate end = snapshot.month().atEndOfMonth();
+		int after = end.getDayOfMonth() - today.getDayOfMonth();
+		Double work = workDays(today, end);
+
+		StringBuilder sb = new StringBuilder();
+		sb.append(t(lang, "Tháng ", "Month ")).append(snapshot.month())
+				.append(t(lang, " có ", " has ")).append(snapshot.n())
+				.append(t(lang, " ngày. Hôm nay **", " days. Today is **")).append(dayLabel(today, lang))
+				.append(t(lang, "**, còn **", "**, **")).append(after)
+				.append(t(lang, " ngày** sau hôm nay (", " days** left after today ("))
+				.append(after + 1).append(t(lang, " ngày nếu tính cả hôm nay)", " including today)"));
+		if (work != null) {
+			sb.append(t(lang, "; trong đó ", "; ")).append(qty(work))
+					.append(t(lang, " ngày nhà máy làm việc (từ hôm nay, theo lịch WD_All)",
+							" factory working days (from today, WD_All calendar)"));
+		}
+		sb.append(".\n\n").append(footer(snapshot, lang));
+
+		return new Answer(sb.toString(), List.of(
+				t(lang, "Mỗi ngày còn lại được chi tối đa bao nhiêu để không vượt target?",
+						"How much can we spend per remaining day to stay within target?"),
+				t(lang, "Tháng này có khung nào dự báo vượt Fluct?", "Which frames are forecast to exceed Fluct?")));
+	}
+
+
+	// =========================================================
+	// CHÀO HỎI
+	// =========================================================
+
+	private static Answer greeting(String lang) {
+
+		List<String> samples = List.of(
+				t(lang, "Tháng này có khung nào dự báo vượt Fluct?", "Which frames are forecast to exceed Fluct this month?"),
+				t(lang, "Top vật tư PRESS T&SL", "Top items in PRESS T&SL"),
+				t(lang, "Hôm qua có gì bất thường không?", "Anything unusual yesterday?"));
+
+		StringBuilder sb = new StringBuilder(t(lang,
+				"Xin chào! Mình hỗ trợ xem chi phí OT / T&SL / RM (Actual, FC, Fluct, PL) trên màn hình này. Bạn có thể hỏi:",
+				"Hello! I can help with OT / T&SL / RM costs (Actual, FC, Fluct, PL) on this screen. You can ask:"))
+				.append('\n');
+		samples.forEach(s -> sb.append("- ").append(s).append('\n'));
+
+		return new Answer(sb.toString().trim(), samples);
+	}
+
+
+	// =========================================================
+	// MÃ VẬT TƯ CHUNG GIỮA CÁC KHUNG (audit 2026-11-10: LLM tự so 2 danh sách top 5, dễ bịa)
+	// Chỉ xét top COMMON_TOP_N vật tư (theo tổng chi) của mỗi khung.
+	// =========================================================
+
+	private Answer commonItems(CostMonitoringSnapshot snapshot, List<CostMonitoringFocus> frames, String lang) {
+
+		List<Map<String, CostTopItemDto>> perFrameItems = perFrame(frames, fr -> {
+			LocalDate[] r = range(snapshot, fr.cost(), null);
+			Map<String, CostTopItemDto> byCode = new java.util.LinkedHashMap<>();
+			if (r != null) {
+				repository.findTopItems(fr.cost(), r[0], r[1],
+								CostMonitoringSnapshot.DIV_COST_CENTERS.get(fr.div()), COMMON_TOP_N)
+						.stream()
+						.filter(i -> i.code() != null && !i.code().isBlank() && i.amountK() != null && i.amountK() > 0)
+						.forEach(i -> byCode.putIfAbsent(i.code().trim(), i));
+			}
+			return byCode;
+		});
+
+		if (perFrameItems.stream().anyMatch(Map::isEmpty)) {
+			return null;
+		}
+
+		Set<String> common = new LinkedHashSet<>(perFrameItems.get(0).keySet());
+		perFrameItems.forEach(m -> common.retainAll(m.keySet()));
+
+		String names = String.join(t(lang, " và ", " and "),
+				frames.stream().map(fr -> fr.div() + " " + fr.cost()).toList());
+		StringBuilder sb = new StringBuilder();
+
+		if (common.isEmpty()) {
+			sb.append(t(lang, "Không có mã vật tư nào xuất hiện ở cả ", "No item code appears in both "))
+					.append(names).append(t(lang, " (trong top " + COMMON_TOP_N + " vật tư mỗi khung).",
+							" (within the top " + COMMON_TOP_N + " items of each frame)."));
+		} else {
+			List<String> sorted = common.stream()
+					.sorted(Comparator.comparing((String c) -> perFrameItems.stream()
+							.mapToDouble(m -> m.get(c).amountK()).sum()).reversed())
+					.toList();
+
+			sb.append(t(lang, "Có **" + common.size() + "** mã vật tư xuất hiện ở cả ",
+							"**" + common.size() + "** item code(s) appear in both "))
+					.append(names).append(t(lang, " (trong top " + COMMON_TOP_N + " mỗi khung):",
+							" (within the top " + COMMON_TOP_N + " of each frame):")).append('\n');
+
+			for (String code : sorted.subList(0, Math.min(sorted.size(), COMMON_MAX_LINES))) {
+				CostTopItemDto first = perFrameItems.get(0).get(code);
+				sb.append("- **").append(CmText.itemLabel(first.code(), first.name(), lang)).append("**: ");
+				List<String> parts = new ArrayList<>();
+				for (int i = 0; i < frames.size(); i++) {
+					parts.add(frames.get(i).div() + " " + frames.get(i).cost() + " "
+							+ k2(perFrameItems.get(i).get(code).amountK()));
+				}
+				sb.append(String.join("; ", parts)).append('\n');
+			}
+			if (sorted.size() > COMMON_MAX_LINES) {
+				sb.append(t(lang, "- … và " + (sorted.size() - COMMON_MAX_LINES) + " mã khác",
+						"- … and " + (sorted.size() - COMMON_MAX_LINES) + " more")).append('\n');
+			}
+		}
+
+		sb.append('\n').append('_').append(t(lang,
+				"Chỉ xét top " + COMMON_TOP_N + " vật tư theo tổng chi của mỗi khung; chỉ chi phí trực tiếp.",
+				"Only the top " + COMMON_TOP_N + " items by spending per frame; direct cost only.")).append('_');
+
+		return new Answer(sb.toString().trim(), List.of(
+				t(lang, "Top vật tư " + frames.get(0).div() + " " + frames.get(0).cost(),
+						"Top items in " + frames.get(0).div() + " " + frames.get(0).cost())));
+	}
+
+
+	// =========================================================
+	// SO VỚI THÁNG TRƯỚC (1 khung) – cùng cách tính ComparePreviousMonthTool, render cho người đọc
+	// (test 2026-11-10 seed-17: LLM trả "không có dữ liệu" và nhắc tên tool)
+	// =========================================================
+
+	private Answer previousMonth(CostMonitoringSnapshot current, CostMonitoringFocus fr, String lang) {
+
+		CostChartDto cur = current.find(fr.div(), fr.cost());
+
+		if (cur == null) {
+			return null;
+		}
+
+		CostMonitoringSnapshot previous = loader.load(current.month().minusMonths(1).toString(), null);
+		CostChartDto prev = previous.find(fr.div(), fr.cost());
+		String name = fr.div() + " " + fr.cost();
+
+		if (prev == null) {
+			return new Answer(t(lang,
+					"Không có dữ liệu tháng " + previous.month() + " của " + name + " để so sánh.",
+					"No data for " + previous.month() + " in " + name + " to compare."), List.of());
+		}
+
+		int last = current.lastActualDay(cur);
+		int d = last > 0 ? Math.min(last, current.d()) : current.d();
+		int prevDay = Math.min(d, previous.n());
+
+		Double curAct = current.actAt(cur, d);
+		Double prevAct = previous.actAt(prev, prevDay);
+		Double curFluct = CostMonitoringSnapshot.fluct(cur);
+		Double prevFluct = CostMonitoringSnapshot.fluct(prev);
+		Double actDiff = CmText.subR1(curAct, prevAct);
+		Double prevActR = CmText.r1(prevAct);
+		Double actPct = actDiff == null || prevActR == null || prevActR == 0 ? null : actDiff / prevActR * 100;
+
+		StringBuilder sb = new StringBuilder();
+		sb.append("**").append(name).append("** ").append(current.month())
+				.append(t(lang, " so với tháng trước ", " vs previous month ")).append(previous.month()).append(":\n");
+
+		sb.append(t(lang, "- Actual cùng kỳ (đến ngày ", "- Actual same period (up to day ")).append(d).append("): **")
+				.append(k1(curAct)).append("**").append(t(lang, " so với ", " vs ")).append(k1(prevAct));
+		if (actDiff != null) {
+			sb.append(" → ").append(CmText.signedK(actDiff))
+					.append(actPct == null ? "" : " (" + CmText.signedPct1(actPct) + ")")
+					.append(actDiff > 0 ? t(lang, ", tháng này chi nhiều hơn", ", higher this month")
+							: actDiff < 0 ? t(lang, ", tháng này chi ít hơn", ", lower this month") : t(lang, ", bằng nhau", ", equal"));
+		}
+		sb.append('\n');
+
+		sb.append("- FC: **").append(k1(cur.fcTgt())).append("**").append(t(lang, " so với ", " vs ")).append(k1(prev.fcTgt()))
+				.append(" → ").append(CmText.signedK(CmText.subR1(cur.fcTgt(), prev.fcTgt()))).append('\n');
+		sb.append("- Fluct: **").append(k1(curFluct)).append("**").append(t(lang, " so với ", " vs ")).append(k1(prevFluct))
+				.append(" → ").append(CmText.signedK(CmText.subR1(curFluct, prevFluct)));
+		Double fluctDiff = CmText.subR1(curFluct, prevFluct);
+		if (fluctDiff != null && fluctDiff != 0) {
+			sb.append(fluctDiff > 0 ? t(lang, " (target được nâng)", " (target raised)") : t(lang, " (target bị hạ)", " (target cut)"));
+		}
+		sb.append('\n');
+
+		sb.append(t(lang, "- Actual cả tháng trước: ", "- Previous month full Actual: ")).append(k1(prev.actMtdLatest()));
+		Double prevResult = CmText.subR1(prev.actMtdLatest(), prevFluct);
+		if (prevResult != null) {
+			sb.append(" (").append(CmText.versus("Fluct", prevResult, null, lang)).append(')');
+		}
+		sb.append('\n');
+
+		sb.append('\n').append(footer(current, lang));
+
+		return new Answer(sb.toString().trim(), List.of(
+				t(lang, "Vật tư nào làm " + name + " tăng so với tháng trước?", "Which items drove " + name + " up vs last month?"),
+				t(lang, "Cuối tháng " + name + " có vượt không?", "Will " + name + " exceed by month-end?")));
+	}
+
+
+	// =========================================================
+	// XU HƯỚNG CHI THEO NGÀY (1 khung) – % đã dùng so với % thời gian, tốc độ chi, ngày cao / thấp nhất
+	// (test 2026-11-10 seed-33: LLM mô tả sai "Fluct theo tiến độ tăng liên tục", trộn số dự báo)
+	// =========================================================
+
+	private Answer trend(CostMonitoringSnapshot snapshot, CostMonitoringFocus fr, String lang) {
+
+		CostChartDto chart = snapshot.find(fr.div(), fr.cost());
+
+		if (chart == null) {
+			return null;
+		}
+
+		CostMonitoringAssessment a = CostMonitoringAssessment.of(snapshot, chart);
+		String name = fr.div() + " " + fr.cost();
+
+		if (a.act() == null || a.fluct() == null || a.fluct() == 0) {
+			return new Answer(t(lang, name + " chưa có Actual tháng này.", name + " has no Actual this month yet."), List.of());
+		}
+
+		int actDay = Math.max(1, snapshot.lastActualDay(chart));
+		double usedPct = a.act() / a.fluct() * 100;
+		double timePct = (double) actDay / snapshot.n() * 100;
+		List<Daily> days = new ArrayList<>(dailies(snapshot, chart));
+		days.removeIf(x -> x.amount() == null);
+		List<Daily> spending = days.stream().filter(x -> Math.round(x.amount() * 10) > 0).toList();
+
+		StringBuilder sb = new StringBuilder();
+		sb.append(t(lang, "Xu hướng chi **", "Spending trend of **")).append(name).append("** ")
+				.append(t(lang, "đến ngày ", "up to day ")).append(actDay).append(":\n");
+
+		sb.append(t(lang, "- Đã dùng **", "- Used **")).append(CmText.pct1(usedPct)).append(" Fluct** (")
+				.append(k1(a.act())).append(" / ").append(k1(a.fluct())).append(t(lang, ") sau ", ") after "))
+				.append(CmText.pct1(timePct)).append(t(lang, " thời gian → ", " of the month → "));
+		if (a.excessVsPace() != null) {
+			sb.append(CmText.signedK(a.excessVsPace(), t(lang, "chi nhanh hơn tiến độ", "ahead of pace"),
+					t(lang, "chi chậm hơn tiến độ", "behind pace")));
+		}
+		sb.append('\n');
+
+		if (a.currentRate() != null) {
+			sb.append(t(lang, "- Tốc độ chi hiện tại **", "- Current rate **")).append(CmText.rate(a.currentRate(), lang)).append("**");
+			if (a.targetRate() != null) {
+				sb.append(t(lang, " so với nhịp Fluct ", " vs Fluct pace ")).append(CmText.rate(a.targetRate(), lang));
+			}
+			sb.append('\n');
+		}
+
+		if (!spending.isEmpty()) {
+			Daily max = spending.stream().max(Comparator.comparing(Daily::amount)).get();
+			Daily min = spending.stream().min(Comparator.comparing(Daily::amount)).get();
+			sb.append(t(lang, "- Ngày chi cao nhất ", "- Highest day ")).append(dayLabel(max.date(), lang)).append(" **")
+					.append(k1(max.amount())).append("**");
+			if (spending.size() > 1) {
+				sb.append(t(lang, "; thấp nhất (có chi) ", "; lowest (with spending) ")).append(dayLabel(min.date(), lang))
+						.append(' ').append(k1(min.amount()));
+			}
+			sb.append(t(lang, "; TB ngày có chi ", "; avg spending day "))
+					.append(k1(spending.stream().mapToDouble(Daily::amount).sum() / spending.size()));
+			long zero = days.size() - spending.size();
+			if (zero > 0) {
+				sb.append(t(lang, "; ", "; ")).append(zero).append(t(lang, " ngày không phát sinh", " day(s) with no spending"));
+			}
+			sb.append('\n');
+
+			// Nửa đầu / nửa sau các ngày có chi: tăng / giảm / ổn định (chênh TB ≥ 20%)
+			if (spending.size() >= 4) {
+				int half = spending.size() / 2;
+				double first = spending.subList(0, half).stream().mapToDouble(Daily::amount).average().orElse(0);
+				double second = spending.subList(half, spending.size()).stream().mapToDouble(Daily::amount).average().orElse(0);
+				String direction = first <= 0 ? "" : second >= first * 1.2 ? t(lang, "tăng dần", "rising")
+						: second <= first * 0.8 ? t(lang, "giảm dần", "falling") : t(lang, "tương đối ổn định", "fairly stable");
+				if (!direction.isEmpty()) {
+					sb.append(t(lang, "- Nhịp chi theo ngày: **", "- Daily pattern: **")).append(direction).append("** (TB ")
+							.append(t(lang, "nửa đầu ", "first half ")).append(k1(first))
+							.append(t(lang, ", nửa sau ", ", second half ")).append(k1(second)).append(")\n");
+				}
+			}
+		}
+
+		sb.append("- ").append(CmText.estimateBrief(a, lang)).append('\n');
+
+		sb.append('\n').append(footer(snapshot, lang));
+
+		return new Answer(sb.toString().trim(), List.of(
+				t(lang, "Ngày nào " + name + " chi nhiều nhất?", "Which day did " + name + " spend the most?"),
+				t(lang, "Vì sao " + name + " dự báo vượt?", "Why is " + name + " forecast to exceed?")));
+	}
+
+
+	// =========================================================
+	// GIÁ TRỊ HIỆN TẠI CỦA KHUNG (Actual, FC, Fluct, PL, % đã dùng) – "X tháng này bao nhiêu", "Fluct của X là bao nhiêu"
+	// =========================================================
+
+	private Answer frameValue(CostMonitoringSnapshot snapshot, List<CostMonitoringFocus> frames, String lang) {
+
+		StringBuilder sb = new StringBuilder();
+		int lines = 0;
+
+		for (CostMonitoringFocus fr : frames) {
+
+			CostChartDto chart = snapshot.find(fr.div(), fr.cost());
+
+			if (chart == null) {
+				continue;
+			}
+
+			String name = fr.div() + " " + fr.cost();
+			Double fluct = CostMonitoringSnapshot.fluct(chart);
+			lines++;
+
+			sb.append("- **").append(name).append("**: ");
+			if (chart.actMtdLatest() == null) {
+				sb.append(t(lang, "Actual chưa có", "Actual not available"));
+			} else {
+				sb.append("Actual **").append(k1(chart.actMtdLatest())).append("**");
+				int last = snapshot.lastActualDay(chart);
+				if (last > 0) {
+					sb.append(t(lang, " (đến ngày ", " (up to day ")).append(last).append(')');
+				}
+				if (fluct != null && fluct != 0) {
+					sb.append(t(lang, ", đã dùng ", ", used ")).append(CmText.pct1(chart.actMtdLatest() / fluct * 100)).append(" Fluct");
+				}
+			}
+			sb.append("; FC ").append(k1(chart.fcTgt())).append("; Fluct ").append(k1(fluct));
+			if (chart.plTgt() != null) {
+				sb.append("; PL ").append(k1(chart.plTgt()));
+			}
+			sb.append('\n');
+		}
+
+		if (lines == 0) {
+			return null;
+		}
+
+		sb.append('\n').append(t(lang, "_Fluct = FC × (1 + Ratio), thay đổi theo ngày; ", "_Fluct = FC × (1 + Ratio), changes daily; "))
+				.append(t(lang, "số liệu tháng ", "data for month ")).append(snapshot.month())
+				.append(t(lang, ", actual đến ngày ", ", actual up to day ")).append(snapshot.d()).append("._");
+
+		CostMonitoringFocus first = frames.get(0);
+		String name = first.div() + " " + first.cost();
+
+		return new Answer(sb.toString().trim(), List.of(
+				t(lang, "Cuối tháng " + name + " có vượt không?", "Will " + name + " exceed by month-end?"),
+				t(lang, "Vì sao Fluct của " + first.div() + " thay đổi?", "Why did " + first.div() + "'s Fluct change?")));
+	}
+
+
+	// =========================================================
+	// VÌ SAO (1 khung) – nguyên nhân tính bằng code (CostMonitoringAnswerGuide gọi khi câu hỏi không hỏi thêm vật tư /
+	// Category / tháng trước). Test 2026-11-10 seed-11: LLM bịa phép tính "54.5 K$/ngày × 9 = 490.5".
+	//   Chưa vượt Fluct : chi vượt tiến độ (Actual − Fluct × D/N), 3 ngày chi lớn nhất, khoản lớn ≥ 10% Actual
+	//   Đã vượt Fluct   : phần vượt = target bị hạ (FC − Fluct) + chi vượt FC (Actual − FC)
+	//   Fluct so với FC : Ratio dương (target được nâng) KHÔNG phải nguyên nhân; Ratio âm góp phần
+	// =========================================================
+
+	public AnswerGuide why(CostMonitoringFocus fr, Map<String, String> params, String lang, String match) {
+
+		Map<String, String> safeParams = params != null ? params : Map.of();
+		CostMonitoringSnapshot snapshot = loader.load(safeParams);
+		CostChartDto chart = snapshot.find(fr.div(), fr.cost());
+
+		if (chart == null || snapshot.monthClosed()) {
+			return null;
+		}
+
+		CostMonitoringAssessment a = CostMonitoringAssessment.of(snapshot, chart);
+		String name = fr.div() + " " + fr.cost();
+
+		if (a.act() == null || a.fluct() == null) {
+			return new AnswerGuide(null, false, WHY_FRAME,
+					t(lang, "**" + name + "** chưa có Actual tháng này nên chưa phân tích được nguyên nhân (chưa vượt hay dự báo gì).",
+							"**" + name + "** has no Actual this month yet, so there is nothing to explain."),
+					List.of(t(lang, "Tình hình chi phí tháng này thế nào?", "How are costs this month?")),
+					match + "; lookup=" + WHY_FRAME + "; noActual; template=yes");
+		}
+
+		boolean over = a.alreadyOver();
+		boolean forecastOver = a.estimateWillExceed();
+		boolean ahead = a.excessVsPace() != null && a.excessVsPace() > 0;
+		Double fluctVsFc = CmText.subR1(a.fluct(), a.fc());
+
+		StringBuilder sb = new StringBuilder();
+
+		// Câu đầu: kết luận
+		if (over) {
+			sb.append("**").append(name).append(t(lang, "** đã vượt Fluct ", "** is already above Fluct "))
+					.append(CmText.signedK(CmText.subR1(a.act(), a.fluct()))).append(" (Actual ").append(k1(a.act()))
+					.append(", Fluct ").append(k1(a.fluct())).append(").\n");
+		} else if (forecastOver || ahead) {
+			sb.append("**").append(name).append(t(lang, "** chưa vượt Fluct (Actual ", "** is not above Fluct yet (Actual "))
+					.append(k1(a.act())).append(" / ").append(k1(a.fluct())).append(")")
+					.append(forecastOver ? t(lang, " nhưng dự báo cuối tháng vượt", " but is forecast to exceed by month-end")
+							: t(lang, " nhưng đang chi nhanh hơn tiến độ", " but is spending ahead of pace"))
+					.append(".\n");
+		} else {
+			sb.append("**").append(name).append(t(lang, "** hiện không vượt và không dự báo vượt Fluct", "** is neither above nor forecast above Fluct"))
+					.append(" (Actual ").append(k1(a.act())).append(" / ").append(k1(a.fluct())).append(").\n");
+		}
+
+		sb.append('\n').append(t(lang, "**Nguyên nhân (hệ thống tính):**", "**Causes (computed):**")).append('\n');
+
+		if (over) {
+			sb.append(t(lang, "- Phần vượt Fluct ", "- Excess over Fluct ")).append(CmText.signedK(CmText.subR1(a.act(), a.fluct())))
+					.append(t(lang, " = target bị hạ (FC − Fluct) ", " = target cut (FC − Fluct) "))
+					.append(CmText.signedK(CmText.subR1(a.fc(), a.fluct())))
+					.append(t(lang, " + chi vượt FC (Actual − FC) ", " + spending above FC (Actual − FC) "))
+					.append(CmText.signedK(CmText.subR1(a.act(), a.fc()))).append('\n');
+		} else if (a.excessVsPace() != null) {
+			sb.append(t(lang, "- Chi so với tiến độ (Actual − Fluct × D/N): ", "- Spending vs pace (Actual − Fluct × D/N): "))
+					.append(CmText.signedK(a.excessVsPace(),
+							t(lang, "chi nhanh hơn tiến độ – nguyên nhân chính", "ahead of pace – main cause"),
+							t(lang, "chi trong tiến độ", "within pace")));
+			if (a.currentRate() != null && a.targetRate() != null) {
+				sb.append(t(lang, "; tốc độ ", "; rate ")).append(CmText.rate(a.currentRate(), lang))
+						.append(t(lang, " so với nhịp Fluct ", " vs Fluct pace ")).append(CmText.rate(a.targetRate(), lang));
+			}
+			sb.append('\n');
+		}
+
+		if (fluctVsFc != null && Math.round(fluctVsFc * 10) < 0) {
+			sb.append(t(lang, "- Fluct thấp hơn FC ", "- Fluct below FC ")).append(CmText.signedK(fluctVsFc))
+					.append(t(lang, " (Ratio âm, target bị hạ) → góp phần làm dễ vượt Fluct", " (negative Ratio, target cut) → makes exceeding Fluct easier"))
+					.append('\n');
+		} else if (fluctVsFc != null && Math.round(fluctVsFc * 10) > 0) {
+			sb.append(t(lang, "- Fluct cao hơn FC ", "- Fluct above FC ")).append(CmText.signedK(fluctVsFc))
+					.append(t(lang, " (Ratio dương, target được nâng) → không phải nguyên nhân vượt", " (positive Ratio, target raised) → not a cause"))
+					.append('\n');
+		}
+
+		// 3 ngày chi lớn nhất
+		List<Daily> spending = new ArrayList<>(dailies(snapshot, chart));
+		spending.removeIf(x -> x.amount() == null || Math.round(x.amount() * 10) <= 0);
+		spending.sort(Comparator.comparing(Daily::amount).reversed());
+		if (!spending.isEmpty()) {
+			List<String> parts = new ArrayList<>();
+			for (Daily d : spending.subList(0, Math.min(3, spending.size()))) {
+				parts.add(dayLabel(d.date(), lang) + " " + k1(d.amount()) + " (" + CmText.pct1(CmText.r1(d.amount()) / a.act() * 100) + ")");
+			}
+			sb.append(t(lang, "- 3 ngày chi lớn nhất (% của Actual): ", "- Top 3 spending days (% of Actual): "))
+					.append(String.join("; ", parts)).append('\n');
+		}
+
+		// Khoản lớn bất thường trong tháng (1 dòng ≥ 10% Actual)
+		List<CostLineDto> unusual = unusualLines(fr, snapshot.month().atDay(1), itemsTo(snapshot, fr.cost()), a.act());
+		for (CostLineDto line : unusual) {
+			sb.append(t(lang, "- Khoản lớn: ", "- Large line: ")).append(CmText.itemLabel(line.code(), line.name(), lang))
+					.append(line.date() != null ? " " + ddmm(line.date()) : "").append(' ').append(k2(line.amountK()))
+					.append(" (").append(ExplainVarianceTool.pctOfAct(line.amountK(), a.act())).append(" Actual)")
+					.append(t(lang, " – vẫn tính vào ngân sách tháng", " – still counts toward the monthly budget")).append('\n');
+		}
+
+		sb.append('\n').append("- ").append(CmText.estimateBrief(a, lang)).append('\n');
+		sb.append('\n').append(footer(snapshot, lang));
+
+		List<String> suggestions = List.of(
+				t(lang, "Vật tư nào chi nhiều nhất ở " + name + "?", "Which items cost the most in " + name + "?"),
+				t(lang, "Vật tư nào làm " + name + " tăng so với tháng trước?", "Which items drove " + name + " up vs last month?"),
+				t(lang, "Cứ chi như vậy thì " + name + " cuối tháng bao nhiêu?", "At this rate, where will " + name + " end the month?"));
+
+		return new AnswerGuide(null, false, WHY_FRAME, sb.toString().trim(), suggestions,
+				match + "; lookup=" + WHY_FRAME + "; template=yes");
+	}
+
+	// Khoản lớn ≥ 10% Actual trong khoảng ngày (tối đa MAX_UNUSUAL)
+	private List<CostLineDto> unusualLines(CostMonitoringFocus fr, LocalDate from, LocalDate to, Double act) {
+
+		if (act == null || act <= 0 || to.isBefore(from)) {
 			return List.of();
 		}
 
 		try {
-			List<CostLineDto> lines = repository.findUnusualLines(fr.cost(), day, day,
+			List<CostLineDto> lines = repository.findUnusualLines(fr.cost(), from, to,
 					CostMonitoringSnapshot.DIV_COST_CENTERS.get(fr.div()), act * UNUSUAL_SHARE, MAX_UNUSUAL);
-			if (lines == null) {
-				return List.of();
-			}
-			// findUnusualLines còn khớp theo từ khóa (license …): chỉ giữ dòng thực sự ≥ 10% Actual
-			return lines.stream().filter(l -> l.amountK() != null && l.amountK() >= act * UNUSUAL_SHARE).toList();
+			return lines == null ? List.of()
+					: lines.stream().filter(l -> l.amountK() != null && l.amountK() >= act * UNUSUAL_SHARE).toList();
 		} catch (RuntimeException e) {
 			log.warn("Assistant lookup: cannot load unusual lines error={}", e.getClass().getSimpleName());
 			return List.of();

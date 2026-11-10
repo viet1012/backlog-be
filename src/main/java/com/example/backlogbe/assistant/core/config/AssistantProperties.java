@@ -29,6 +29,22 @@ public class AssistantProperties {
 
 	private TemplateAnswers templateAnswers = new TemplateAnswers();
 
+	private RateLimit rateLimit = new RateLimit();
+
+	// assistant.rate-limit.*: giới hạn số request /api/assistant/chat mỗi phút.
+	//   Khóa = mã nhân viên (header X-Employee-Id) nếu có, không thì IP client – nhiều người sau cùng 1 NAT / proxy
+	//   không còn chia chung 1 hạn mức (audit 2026-11-10).
+	//   per-minute          : mọi request (kể cả câu trả lời template, rất rẻ) – chặn lạm dụng / vòng lặp FE.
+	//   llm-per-minute      : chỉ request thật sự gọi LLM (đắt) – 0 = không giới hạn riêng.
+	@Getter
+	@Setter
+	public static class RateLimit {
+
+		private int perMinute = 60;
+
+		private int llmPerMinute = 15;
+	}
+
 	// Trống -> DEFAULT_NAME
 	public String resolvedName() {
 		return name == null || name.isBlank() ? DEFAULT_NAME : name.trim();
@@ -51,8 +67,14 @@ public class AssistantProperties {
 
 		private double temperature = 0.2;
 
-		// Số request đồng thời tối đa tới LLM. Vượt -> 503.
+		// Số câu hỏi xử lý đồng thời tối đa (1 suất = cả vòng tool calling của 1 câu hỏi).
 		private int maxConcurrent = 4;
+
+		// Hết suất: chờ tối đa bấy nhiêu giây để lấy suất, hết giờ -> 503 LLM_BUSY (0 = không chờ, trả 503 ngay).
+		private int queueTimeoutSeconds = 30;
+
+		// Số câu hỏi được xếp hàng chờ suất cùng lúc; quá -> 503 LLM_BUSY ngay (bảo vệ khi quá tải).
+		private int maxQueue = 16;
 
 		// Gửi "reasoning_effort" nếu có giá trị. Mặc định để trống (không gửi):
 		// mức suy luận đặt bằng dòng "Reasoning: low" trong system prompt.

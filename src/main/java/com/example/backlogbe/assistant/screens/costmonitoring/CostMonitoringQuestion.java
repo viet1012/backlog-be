@@ -12,7 +12,7 @@ import java.util.regex.Pattern;
 // Phân tích câu hỏi Cost Monitoring (dùng chung cho prefetch rule và context provider).
 //
 // normalize : chữ thường + NFC (tiếng Việt gõ tổ hợp dấu vẫn khớp từ khóa)
-// divs      : PRESS ("press") | MOLD ("mold") | GUIDE ("guide", "pguide", "mguide") – từ đứng riêng
+// divs      : PRESS ("press", "pr") | MOLD ("mold") | GUIDE ("guide", "pguide", "mguide") – từ đứng riêng
 // costs     : OT ("ot") | T&SL ("t&sl", "tsl") | RM ("rm") – từ đứng riêng
 // frame     : đúng 1 khung (div × cost) mà câu hỏi nhắm tới:
 //             đúng 1 bộ phận + 1 loại chi phí trong câu hỏi; phần thiếu lấy từ ô đang xem (drawer);
@@ -31,7 +31,8 @@ final class CostMonitoringQuestion {
 	private CostMonitoringQuestion() {
 	}
 
-	private static final Pattern PRESS = word("press");
+	// "pr" = PRESS (viết tắt hay dùng, vd "PR TSL vuot ko"); KHÔNG nhận "mo" cho MOLD ("mở" bỏ dấu cũng là "mo")
+	private static final Pattern PRESS = word("press|pr");
 	private static final Pattern MOLD = word("mold");
 	private static final Pattern GUIDE = word("p?guide|mguide");
 

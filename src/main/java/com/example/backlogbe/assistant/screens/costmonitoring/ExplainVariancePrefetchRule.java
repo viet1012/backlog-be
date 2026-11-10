@@ -213,7 +213,7 @@ public class ExplainVariancePrefetchRule implements PrefetchRule {
 		}
 
 		String folded = CostMonitoringIntentClassifier.fold(question);
-		boolean analysis = isAnalysis(folded);
+		boolean analysis = isAnalysis(folded) || itemChangeVsPreviousMonth(folded);
 		boolean drawer = focus != null && !DailySeriesPrefetchRule.isDailyQuestion(question);
 
 		if (!analysis && !drawer) {
@@ -221,6 +221,20 @@ public class ExplainVariancePrefetchRule implements PrefetchRule {
 		}
 
 		return new Plan(Intent.FRAME, frame.div(), List.of(frame.cost()), false, false, r);
+	}
+
+	// "Vật tư / Category nào làm tăng / giảm so với tháng trước": explain_variance có so cùng kỳ theo Category và vật tư
+	// (audit 2026-11-10: model gọi compare_previous_month + get_top_items rồi kết luận "không có vật tư nào tăng")
+	private static final java.util.regex.Pattern ITEM_WORD = CostMonitoringQuestion.word(
+			"vat tu|ma vat tu|category|loai vat tu|item|items|material");
+	private static final java.util.regex.Pattern CHANGE_WORD = CostMonitoringQuestion.word(
+			"tang|giam|lam tang|lam giam|increase|decrease|rise|drop|higher|lower");
+	private static final java.util.regex.Pattern PREV_WORD = CostMonitoringQuestion.word(
+			"thang truoc|cung ky|last month|previous month");
+
+	static boolean itemChangeVsPreviousMonth(String folded) {
+		return ITEM_WORD.matcher(folded).find() && CHANGE_WORD.matcher(folded).find()
+				&& PREV_WORD.matcher(folded).find();
 	}
 
 	// Khung được so: bộ phận (câu hỏi -> ô đang xem -> cả 3) × loại chi phí (câu hỏi -> ô đang xem -> T&SL, RM)

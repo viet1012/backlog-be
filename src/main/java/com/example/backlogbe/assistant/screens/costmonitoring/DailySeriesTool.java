@@ -25,7 +25,7 @@ import static com.example.backlogbe.assistant.screens.costmonitoring.CostMonitor
 // Chuỗi theo ngày của 1 khung, từ ngày 1 đến ngày D (nhãn theo lang):
 //   ngày|thứ|ngày nghỉ|WD_Office|chi trong ngày|Actual cộng dồn|Fluct (giá trị trong ngày)|Fluct theo tiến độ
 //   |% đã dùng|% thời gian
-//   thứ          = T2..T7, CN (en: Mon..Sun), chỉ để hiển thị
+//   thứ          = Thứ Hai..Thứ Bảy, Chủ nhật (en: Mon..Sun), chỉ để hiển thị
 //   ngày nghỉ    = "nghỉ" khi F2_Working_Date.WD_All = 0 (nhà máy nghỉ); KHÔNG suy từ thứ trong tuần.
 //                  Ngày không có dòng / lỗi đọc -> trống
 //   WD_Office    = giá trị WD_Office (0 = văn phòng nghỉ, 1 = làm việc); không có -> trống
@@ -203,7 +203,16 @@ public class DailySeriesTool implements AssistantTool {
 			};
 		}
 
-		return dow == DayOfWeek.SUNDAY ? "CN" : "T" + (dow.getValue() + 1);
+		// Viết đầy đủ: "T3" làm model viết "thứ T3" (audit 2026-11-10)
+		return switch (dow) {
+			case MONDAY -> "Thứ Hai";
+			case TUESDAY -> "Thứ Ba";
+			case WEDNESDAY -> "Thứ Tư";
+			case THURSDAY -> "Thứ Năm";
+			case FRIDAY -> "Thứ Sáu";
+			case SATURDAY -> "Thứ Bảy";
+			case SUNDAY -> "Chủ nhật";
+		};
 	}
 
 	// WD_All = 0 -> "nghỉ"; còn lại / không có dòng -> trống

@@ -21,10 +21,11 @@ import java.util.regex.Pattern;
 //   COMPARE  : ≥ 2 bộ phận, hoặc 1 bộ phận + ≥ 2 loại chi phí (≥ 2 khung); hoặc so sanh, vs, versus, voi, chart nao,
 //              ben nao, tot hon, te hon, compare, better, worse. Bỏ qua khi nhắc tháng trước / cùng kỳ
 //              (compare_previous_month lo).
-//   RANKING  : "nhat" (trừ "cap nhat"), xep hang, rank, most, highest, worst. Bỏ qua khi hỏi vật tư / máy /
+//   RANKING  : "nhat" (trừ "cap nhat", "chu nhat"), xep hang, rank, most, highest, worst. Bỏ qua khi hỏi vật tư / máy /
 //              cost center / Category hoặc theo ngày (không phải xếp hạng khung).
 //   FORECAST : cuoi thang, du bao, cu chi, giu toc do, se vuot, "vuot … khong / ko / chua", forecast…
-//   OVERVIEW : bat thuong, can theo doi, can chu y, dang lo, abnormal… khi không nêu đúng 1 bộ phận, không hỏi về ô
+//   OVERVIEW : bat thuong, can theo doi, can chu y, dang lo, nguy co, rui ro, risk, abnormal…; tinh hinh, tong quan,
+//              overview (chỉ khi không hỏi vật tư / máy / Ratio / Fluct / theo ngày) – khi không nêu đúng 1 bộ phận, không hỏi về ô
 //              đang xem (drawer, không nêu bộ phận), không nhắc tháng trước.
 // Intent chính theo thứ tự ưu tiên: WHY > COMPARE > RANKING > FORECAST > OVERVIEW. Không khớp gì -> null
 // (KHÔNG mặc định overview).
@@ -72,8 +73,8 @@ final class CostMonitoringIntentClassifier {
 	);
 
 	private static final List<String> OVERVIEW = List.of(
-			"bat thuong", "can theo doi", "can chu y", "dang lo",
-			"abnormal", "unusual", "anomal", "watch out", "need attention", "needs attention", "worry"
+			"bat thuong", "can theo doi", "can chu y", "dang lo", "nguy co", "rui ro",
+			"at risk", "risk", "abnormal", "unusual", "anomal", "watch out", "need attention", "needs attention", "worry"
 	);
 
 	// Có các từ này -> không dùng template (đi LLM)
@@ -95,8 +96,18 @@ final class CostMonitoringIntentClassifier {
 			"vat tu", "cost center", "category", "may", "item", "items", "machine", "material"
 	);
 
-	// Không khớp "cap nhat" (cập nhật)
-	private static final Pattern NHAT = Pattern.compile("(?<![\\p{L}\\p{N}_])(?<!cap )nhat(?![\\p{L}\\p{N}_])");
+	// Không khớp "cap nhat" (cập nhật), "chu nhat" (Chủ nhật – audit 2026-11-10 bị xếp hạng nhầm)
+	private static final Pattern NHAT = Pattern.compile(
+			"(?<![\\p{L}\\p{N}_])(?<!cap )(?<!chu )nhat(?![\\p{L}\\p{N}_])");
+
+	// Hỏi tình hình chung (không nêu khung): chỉ tính khi không hỏi chi tiết vật tư / máy / Ratio / Fluct / theo ngày
+	private static final List<String> OVERVIEW_GENERAL = List.of(
+			"tinh hinh", "tong quan", "overview", "situation", "how is spending", "how are costs"
+	);
+
+	private static final List<String> OVERVIEW_GENERAL_EXCLUDE = List.of(
+			"vat tu", "cost center", "category", "may nao", "item", "items", "machine", "material", "ratio", "fluct"
+	);
 
 	/*
 	 * primary   : intent chính theo thứ tự ưu tiên; null = không khớp intent nào
@@ -216,7 +227,10 @@ final class CostMonitoringIntentClassifier {
 		put(matched, Signal.FORECAST, forecast);
 
 		// OVERVIEW: không nêu đúng 1 bộ phận, không hỏi về ô đang xem, không so với tháng trước
-		List<String> overview = found(f, OVERVIEW);
+		List<String> overview = new ArrayList<>(found(f, OVERVIEW));
+		if (found(f, OVERVIEW_GENERAL_EXCLUDE).isEmpty() && !DailySeriesPrefetchRule.isDailyQuestion(question)) {
+			overview.addAll(found(f, OVERVIEW_GENERAL));
+		}
 		if (!overview.isEmpty()) {
 			if (previousMonth || divs.size() == 1 || (divs.isEmpty() && focus != null)) {
 				ignored.add("overview: " + String.join("|", overview) + " (1 bộ phận / ô đang xem / tháng trước)");

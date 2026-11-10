@@ -46,8 +46,8 @@ class CostMonitoringLookupRoutingTest {
 	void notLookup() {
 		assertNull(kind("Cứ chi như vậy thì PRESS T&SL có vượt FC không?"));
 		assertNull(kind("Có gì bất thường trong tháng này?"));
-		// "mấy" (bao nhiêu) không phải "máy"
-		assertNull(kind("tháng này còn mấy ngày?"));
+		// "mấy" (bao nhiêu) không phải "máy" -> câu hỏi số ngày còn lại, không phải top máy
+		assertEquals(CostMonitoringLookupAnswers.REMAINING_DAYS, kind("tháng này còn mấy ngày?"));
 	}
 
 	// Audit log 2026-11-10: các câu này qua LLM trả lời sai (tên khung thay cho máy, cộng cost center T&SL + RM)

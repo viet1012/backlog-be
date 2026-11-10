@@ -13,6 +13,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.regex.Pattern;
 
 import static com.example.backlogbe.assistant.screens.costmonitoring.CmText.t;
 
@@ -55,6 +56,12 @@ public class CostMonitoringAnswerGuide {
 			"vat tu", "cost center", "category", "may", "item", "machine", "material"
 	);
 
+	// "Vì sao" cần giải thích sâu hơn kết luận tính sẵn (Ratio, so cùng kỳ, nhiều khung) -> vẫn qua LLM
+	private static final List<String> WHY_LLM_KEYWORDS = List.of(
+			"ratio", "fluct bi", "fluct duoc", "target bi", "target duoc", "cung ky", "thang truoc", "khung nao", "bo phan nao",
+			"last month", "previous month"
+	);
+
 	// So sánh: chênh % Fluct dự báo dưới mức này (điểm %) -> "tương đương"
 	private static final double COMPARE_EQUAL_POINTS = 1.0;
 
@@ -62,6 +69,12 @@ public class CostMonitoringAnswerGuide {
 	private final CostMonitoringLookupAnswers lookupAnswers;
 
 	public AnswerGuide guide(String question, Map<String, String> params, String lang) {
+
+		// "Tháng trước có gì bất thường / tình hình tháng trước": template tổng quan của tháng trước
+		AnswerGuide previous = previousMonthOverview(question, params, lang);
+		if (previous != null) {
+			return previous;
+		}
 
 		// Câu tra cứu (top vật tư / ngày chi nhiều nhất / ngân sách mỗi ngày / bất thường hôm nay): template trước
 		AnswerGuide lookup = lookup(question, params, lang);
@@ -89,6 +102,40 @@ public class CostMonitoringAnswerGuide {
 						+ compactOverview(overview.directAnswer(), lang),
 				suggestions.stream().limit(3).toList(),
 				overview.intentMatch() + "; " + lookup.intentMatch());
+	}
+
+	// Audit 2026-11-10: "Tháng trước có gì bất thường?" qua LLM gọi tool lung tung, trả "commentary to=functions?".
+	// Chỉ khi hỏi tình hình chung của tháng trước (không so sánh với tháng này / cùng kỳ).
+	private static final Pattern PREVIOUS_MONTH = CostMonitoringQuestion.word("thang truoc|last month|previous month");
+	private static final Pattern PREVIOUS_MONTH_COMPARE = CostMonitoringQuestion.word(
+			"so voi|so sanh|cung ky|hon|compare|compared|vs|versus|than|thang nay|this month");
+
+	private AnswerGuide previousMonthOverview(String question, Map<String, String> params, String lang) {
+
+		String folded = CostMonitoringIntentClassifier.fold(question);
+
+		if (!PREVIOUS_MONTH.matcher(folded).find() || PREVIOUS_MONTH_COMPARE.matcher(folded).find()) {
+			return null;
+		}
+
+		String stripped = PREVIOUS_MONTH.matcher(folded).replaceAll(" ").replaceAll("\\s+", " ").trim();
+		Map<String, String> safeParams = params != null ? params : Map.of();
+		String month = loader.load(safeParams).month().minusMonths(1).toString();
+
+		Map<String, String> previousParams = new java.util.HashMap<>(safeParams);
+		previousParams.put("month", month);
+		previousParams.remove("simuWeek");
+		previousParams.remove("plTgtMode");
+
+		AnswerGuide g = byIntent(stripped, previousParams, lang);
+
+		if (g == null || !g.hasDirectAnswer()) {
+			return null;
+		}
+
+		return new AnswerGuide(null, false, g.intent() + "_previous_month",
+				t(lang, "**Tháng trước (" + month + "):**\n\n", "**Previous month (" + month + "):**\n\n") + g.directAnswer(),
+				g.suggestions(), g.intentMatch() + "; previousMonth=" + month);
 	}
 
 	// Câu hỏi về 1 ngày: tổng quan tháng chỉ giữ câu tóm tắt + nhóm đầu (dự báo vượt nặng nhất) + footer;
@@ -147,7 +194,23 @@ public class CostMonitoringAnswerGuide {
 			case COMPARE -> new AnswerGuide(compareConclusion(plan, params, lang), !detail, intent,
 					null, List.of(), match);
 			// Nguyên nhân: khối sự kiện + chỉ thị; vẫn cho gọi tool (có thể cần get_top_items / get_daily_series)
-			case WHY -> new AnswerGuide(whyConclusion(plan, params, lang), false, intent, null, List.of(), match);
+			case WHY -> {
+				// Tiền đề sai ("vì sao thấp hơn target" khi thực tế chi nhanh / dự báo vượt): trả lời bằng code
+				AnswerGuide premise = wrongPremise(plan, folded, params, lang, intent, match);
+				if (premise != null) {
+					yield premise;
+				}
+				// "Vì sao X vượt / dự báo vượt / chi nhiều": nguyên nhân tính bằng code (template); câu hỏi thêm về vật tư /
+				// Category / tháng trước / Ratio -> LLM với khối KẾT LUẬN như cũ
+				if (!detail && (plan.match() == null || !plan.match().previousMonth()) && plan.costs().size() == 1
+						&& !containsWord(folded, WHY_LLM_KEYWORDS)) {
+					AnswerGuide why = lookupAnswers.why(new CostMonitoringFocus(plan.div(), plan.costs().get(0)), params, lang, match);
+					if (why != null) {
+						yield why;
+					}
+				}
+				yield new AnswerGuide(whyConclusion(plan, params, lang), false, intent, null, List.of(), match);
+			}
 			case FRAME -> AnswerGuide.matchOnly(intent, match);
 		};
 	}
@@ -192,9 +255,15 @@ public class CostMonitoringAnswerGuide {
 			return false;
 		}
 
+		// Tổng quan + "hôm qua / chủ nhật…": vẫn cho template (guide() ghép phần ngày gần nhất của lookup ANOMALY_TODAY)
+		boolean mergedWithLatestDay = plan.intent() == ExplainVariancePrefetchRule.Intent.OVERVIEW
+				&& CostMonitoringLookupAnswers.ANOMALY_TODAY.equals(
+				CostMonitoringLookupAnswers.kind(question, CostMonitoringIntentClassifier.fold(question)));
+		boolean dailyBlocks = DailySeriesPrefetchRule.isDailyQuestion(question) && !mergedWithLatestDay;
+
 		if (containsWord(folded, DETAIL_KEYWORDS)
 				|| plan.match().previousMonth()
-				|| DailySeriesPrefetchRule.isDailyQuestion(question)) {
+				|| dailyBlocks) {
 			return false;
 		}
 
@@ -342,6 +411,88 @@ public class CostMonitoringAnswerGuide {
 	//   Fluct so với FC : Fluct > FC (Ratio dương, target được nâng) -> GIẢM khả năng vượt, KHÔNG phải nguyên nhân;
 	//                     Fluct < FC (Ratio âm, target bị hạ) -> góp phần vào phần vượt Fluct
 	// =========================================================
+
+	// "Vì sao … thấp hơn target / chi ít" mà thực tế chi nhanh hơn tiến độ / dự báo vượt / đã vượt, hoặc
+	// "vì sao … vượt / cao" mà thực tế trong tiến độ, dự báo trong Fluct và FC -> nói rõ tiền đề không đúng (template).
+	// Audit 2026-11-10: "Vì sao GUIDE RM thấp hơn target?" -> LLM giải thích theo Fluct < FC dù GUIDE RM dự báo vượt.
+	private static final Pattern PREMISE_LOW = CostMonitoringQuestion.word(
+			"thap hon|chi it|it hon|duoi target|duoi fluct|duoi fc|tiet kiem|lower|below|under target|under budget");
+	private static final Pattern PREMISE_HIGH = CostMonitoringQuestion.word(
+			"vuot|cao hon|nhieu hon|qua tay|over|exceed|exceeds|exceeded|above|higher");
+
+	private AnswerGuide wrongPremise(Plan plan, String folded, Map<String, String> params, String lang,
+									 String intent, String match) {
+
+		boolean low = PREMISE_LOW.matcher(folded).find();
+		boolean high = PREMISE_HIGH.matcher(folded).find();
+
+		if (low == high || plan.costs().size() != 1) {
+			return null;
+		}
+
+		CostMonitoringSnapshot snapshot = loader.load(params);
+		String cost = plan.costs().get(0);
+		CostChartDto chart = snapshot.find(plan.div(), cost);
+
+		if (chart == null || snapshot.monthClosed()) {
+			return null;
+		}
+
+		CostMonitoringAssessment a = CostMonitoringAssessment.of(snapshot, chart);
+
+		if (a.act() == null || a.fluct() == null) {
+			return null;
+		}
+
+		boolean aheadOfPace = positive(a.excessVsPace());
+		boolean overSignal = a.alreadyOver() || a.estimateWillExceed() || aheadOfPace;
+		boolean fcOver = positive(a.estimateOverFc());
+
+		if (low ? !overSignal : (overSignal || fcOver)) {
+			return null;
+		}
+
+		String name = plan.div() + " " + cost;
+		StringBuilder sb = new StringBuilder("**").append(name).append("** ")
+				.append(low
+						? t(lang, "thực tế **không thấp hơn** target", "is actually **not below** target")
+						: t(lang, "thực tế **không vượt** target", "is actually **not above** target"))
+				.append(":\n");
+
+		sb.append("- Actual ").append(CmText.k1(a.act()));
+		if (a.excessVsPace() != null) {
+			sb.append(t(lang, ", so với tiến độ (Fluct × D / N) ", ", vs pace (Fluct × D / N) "))
+					.append(CmText.signedK(a.excessVsPace(),
+							t(lang, "chi nhanh hơn tiến độ", "ahead of pace"),
+							t(lang, "chi chậm hơn tiến độ", "behind pace")));
+		}
+		if (a.alreadyOver()) {
+			sb.append(t(lang, "; đã vượt Fluct ", "; already above Fluct "))
+					.append(CmText.signedK(CmText.subR1(a.act(), a.fluct())));
+		}
+		sb.append('\n');
+
+		appendOne(sb, List.of(new Frame(name, a)), false, lang);
+
+		if (positive(CmText.subR1(a.fc(), a.fluct()))) {
+			sb.append('\n').append(t(lang, "Fluct thấp hơn FC ", "Fluct is below FC "))
+					.append(CmText.signedK(CmText.subR1(a.fluct(), a.fc())))
+					.append(t(lang, " (Ratio âm, target bị hạ) – đây là mức target, không có nghĩa là chi thấp hơn target.",
+							" (negative Ratio, target cut) – this is the target level, not lower spending."));
+		}
+
+		sb.append("\n\n_").append(t(lang, "Số liệu tháng ", "Data for month ")).append(snapshot.month())
+				.append(t(lang, ", actual đến ngày ", ", actual up to day ")).append(snapshot.d()).append("._");
+
+		List<String> suggestions = low
+				? List.of(t(lang, "Vì sao " + name + " dự báo vượt?", "Why is " + name + " forecast to exceed?"),
+				t(lang, "Ngày nào " + name + " chi nhiều nhất?", "Which day did " + name + " spend the most?"))
+				: List.of(t(lang, "Cứ chi như vậy thì " + name + " có vượt FC không?",
+				"If spending continues like this, will " + name + " exceed FC?"));
+
+		return new AnswerGuide(null, false, intent + "_premise", sb.toString().trim(), suggestions,
+				match + "; premise=" + (low ? "low" : "high") + "_mismatch");
+	}
 
 	private String whyConclusion(Plan plan, Map<String, String> params, String lang) {
 

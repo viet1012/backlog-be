@@ -13,6 +13,7 @@ import java.util.regex.Pattern;
 //
 // Điều kiện: screenKey = cost-monitoring, không phải câu hỏi khái niệm, câu hỏi theo ngày (isDailyQuestion):
 //   "ngày nào", "hôm nào", "theo ngày", "từng ngày", "đột biến", "ngày <số>" / "<số>/<số>" (1 ngày cụ thể),
+//   "hôm qua", "hôm kia", "chủ nhật", "thứ hai … thứ bảy" (có dấu),
 //   "chi nhiều / ít nhất" (không hỏi về vật tư / cost center / máy / category – đó là get_top_items);
 //   en: which day, daily, by day, day by day, spike.
 // Khung: đúng 1 (CostMonitoringQuestion.frame: câu hỏi, phần thiếu lấy từ ô drawer). OT bỏ qua (chưa có actual).
@@ -25,8 +26,11 @@ public class DailySeriesPrefetchRule implements PrefetchRule {
 
 	private static final List<String> DAILY_KEYWORDS = List.of(
 			"ngày nào", "ngay nao", "hôm nào", "hom nao", "theo ngày", "theo ngay", "từng ngày", "tung ngay",
-			"đột biến", "dot bien",
-			"which day", "what day", "daily", "by day", "day by day", "spike"
+			"đột biến", "dot bien", "xu hướng chi", "xu huong chi", "diễn biến", "dien bien",
+			// 1 ngày gọi theo tên (audit 2026-11-10: "Chủ nhật vừa rồi…" bị hiểu là xếp hạng)
+			"hôm qua", "hom qua", "hôm kia", "hom kia", "chủ nhật", "chu nhat",
+			"thứ hai", "thứ ba", "thứ tư", "thứ năm", "thứ sáu", "thứ bảy",
+			"which day", "what day", "daily", "by day", "day by day", "spike", "yesterday", "sunday", "saturday"
 	);
 
 	// "chi nhiều nhất / ít nhất / cao nhất / thấp nhất" (có dấu / không dấu)
@@ -41,7 +45,9 @@ public class DailySeriesPrefetchRule implements PrefetchRule {
 
 	// Hỏi theo vật tư / cost center / máy -> get_top_items, không phải theo ngày
 	private static final List<String> ITEM_KEYWORDS = List.of(
-			"vật tư", "vat tu", "cost center", "máy", "category", "item", "material", "machine"
+			"vật tư", "vat tu", "cost center", "máy", "category", "item", "material", "machine",
+			// "may" không dấu (audit 2026-11-10: "may nao chi nhieu nhat" bị coi là câu hỏi theo ngày)
+			"may nao", "top may", "cac may", "may chi", "may ton", "may lon"
 	);
 
 	private static final String HINT_VI = "(Lưu ý hệ thống: gọi get_daily_series cho khung được hỏi trước khi trả lời.)";
