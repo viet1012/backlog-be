@@ -127,6 +127,12 @@ public record CostMonitoringAssessment(
 		if (closed) {
 			return closedMonth(act, fluct, fc, pct);
 		}
+
+		// Ngày actual của CHÍNH khung (RM trễ T&SL 1 ngày): tiến độ, ngày còn lại, dự báo theo Fluct, ngân sách/ngày
+		// tính theo ngày này. Trước đây dùng D chung -> RM bị coi như ngày D chi 0 (audit 2026-11-10: PRESS RM "đã dùng
+		// 29.3% Fluct sau 26.7% thời gian → chi chậm hơn tiến độ -3.7 K$"; dự báo thiếu 1 ngày Fluct ≈ 17.6 K$).
+		d = actDay > 0 && actDay < d ? actDay : d;
+
 		Double pace = n > 0 ? (double) d / n * 100 : null;
 
 		String paceStatus = paceStatus(pct, pace);

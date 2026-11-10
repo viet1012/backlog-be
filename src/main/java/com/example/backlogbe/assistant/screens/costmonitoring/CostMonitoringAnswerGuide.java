@@ -110,17 +110,49 @@ public class CostMonitoringAnswerGuide {
 	private static final Pattern PREVIOUS_MONTH_COMPARE = CostMonitoringQuestion.word(
 			"so voi|so sanh|cung ky|hon|compare|compared|vs|versus|than|thang nay|this month");
 
+	// "tháng 9", "tháng 09/2026" (test 2026-11-10 ext-17: "Tháng 9 có gì bất thường?" qua LLM 34 s)
+	private static final Pattern NAMED_MONTH = Pattern.compile("(?<![\\p{L}\\d])thang (1[0-2]|0?[1-9])(?:\\s*[/-]\\s*(20\\d{2}))?(?!\\d)");
+
+	// ChatOrchestrator gọi khi câu hỏi nhắc 1 tháng khác (không đi qua guide()): chỉ template tổng quan tháng đó
+	public AnswerGuide otherMonth(String question, Map<String, String> params, String lang) {
+		return previousMonthOverview(question, params, lang);
+	}
+
 	private AnswerGuide previousMonthOverview(String question, Map<String, String> params, String lang) {
 
 		String folded = CostMonitoringIntentClassifier.fold(question);
 
-		if (!PREVIOUS_MONTH.matcher(folded).find() || PREVIOUS_MONTH_COMPARE.matcher(folded).find()) {
+		if (PREVIOUS_MONTH_COMPARE.matcher(folded).find()) {
 			return null;
 		}
 
-		String stripped = PREVIOUS_MONTH.matcher(folded).replaceAll(" ").replaceAll("\\s+", " ").trim();
 		Map<String, String> safeParams = params != null ? params : Map.of();
-		String month = loader.load(safeParams).month().minusMonths(1).toString();
+		java.time.YearMonth viewed = loader.load(safeParams).month();
+		java.time.YearMonth target;
+		String stripped;
+		boolean previous = PREVIOUS_MONTH.matcher(folded).find();
+
+		if (previous) {
+			target = viewed.minusMonths(1);
+			stripped = PREVIOUS_MONTH.matcher(folded).replaceAll(" ");
+		} else {
+			java.util.regex.Matcher m = NAMED_MONTH.matcher(folded);
+			if (!m.find()) {
+				return null;
+			}
+			int mm = Integer.parseInt(m.group(1));
+			int yyyy = m.group(2) != null ? Integer.parseInt(m.group(2))
+					: mm > viewed.getMonthValue() ? viewed.getYear() - 1 : viewed.getYear();
+			target = java.time.YearMonth.of(yyyy, mm);
+			// Chỉ tháng đã qua so với tháng đang xem; tháng đang xem / tương lai -> luồng thường
+			if (!target.isBefore(viewed)) {
+				return null;
+			}
+			stripped = m.replaceAll(" ");
+		}
+
+		stripped = stripped.replaceAll("\\s+", " ").trim();
+		String month = target.toString();
 
 		Map<String, String> previousParams = new java.util.HashMap<>(safeParams);
 		previousParams.put("month", month);
@@ -133,8 +165,11 @@ public class CostMonitoringAnswerGuide {
 			return null;
 		}
 
+		String title = previous
+				? t(lang, "**Tháng trước (" + month + "):**\n\n", "**Previous month (" + month + "):**\n\n")
+				: t(lang, "**Tháng " + month + ":**\n\n", "**Month " + month + ":**\n\n");
 		return new AnswerGuide(null, false, g.intent() + "_previous_month",
-				t(lang, "**Tháng trước (" + month + "):**\n\n", "**Previous month (" + month + "):**\n\n") + g.directAnswer(),
+				title + g.directAnswer(),
 				g.suggestions(), g.intentMatch() + "; previousMonth=" + month);
 	}
 
@@ -211,9 +246,28 @@ public class CostMonitoringAnswerGuide {
 				}
 				yield new AnswerGuide(whyConclusion(plan, params, lang), false, intent, null, List.of(), match);
 			}
-			case FRAME -> AnswerGuide.matchOnly(intent, match);
+			case FRAME -> {
+				// "X thì sao / thế nào / tình hình X" (không "đánh giá / phân tích", không hỏi vật tư…): tóm tắt tính sẵn
+				if (!detail && STATUS_ASK.matcher(folded).find() && !STATUS_LLM.matcher(folded).find()
+						&& plan.costs().size() == 1 && !CostMonitoringToolArgs.ALL.equals(plan.div())) {
+					AnswerGuide status = lookupAnswers.frameStatus(
+							new CostMonitoringFocus(plan.div(), plan.costs().get(0)), params, lang, match);
+					if (status != null) {
+						yield status;
+					}
+				}
+				yield AnswerGuide.matchOnly(intent, match);
+			}
 		};
 	}
+
+	private static final java.util.regex.Pattern STATUS_ASK = CostMonitoringQuestion.word(
+			"thi sao|the nao|ra sao|tinh hinh|on khong|sao roi|how about|what about|how is"
+					// test 2026-11-10 ext-51: "đánh giá chart PRESS RM" qua LLM 36 s, kết luận sai tiến độ / ngân sách
+					+ "|danh gia|nhan xet|evaluate|assess");
+	// Phân tích tự do / so tháng trước / Ratio -> vẫn LLM
+	private static final java.util.regex.Pattern STATUS_LLM = CostMonitoringQuestion.word(
+			"phan tich|tot khong|thang truoc|cung ky|ratio|analyze|analyse");
 
 	// Lỗi đọc dữ liệu tra cứu -> bỏ qua, đi luồng phân loại intent như cũ
 	private AnswerGuide lookup(String question, Map<String, String> params, String lang) {

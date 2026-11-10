@@ -615,8 +615,23 @@ public class ChatOrchestrator {
 			return null;
 		}
 
-		if (plan != null && (!plan.extra().isEmpty() || plan.mismatch())) {
+		if (plan != null && plan.mismatch()) {
 			return null;
+		}
+
+		if (plan != null && !plan.extra().isEmpty()) {
+			// Đúng 1 tháng khác: màn hình có thể trả template cho tháng đó; còn lại -> LLM với context tháng được hỏi
+			if (plan.extra().size() != 1) {
+				return null;
+			}
+			try {
+				AnswerGuide other = module.answerGuideForOtherMonth(question, params, lang);
+				return other != null && other.hasDirectAnswer() ? other : null;
+			} catch (RuntimeException e) {
+				log.warn("Assistant: cannot build other-month answer guide screenKey={} error={}",
+						screenKey, e.getClass().getSimpleName());
+				return null;
+			}
 		}
 
 		try {

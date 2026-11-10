@@ -122,6 +122,12 @@ public class CostMonitoringModule implements ScreenModule {
 		return answerGuide.guide(question, params, lang);
 	}
 
+	// "Tháng 9 có gì bất thường?" -> template tổng quan / dự báo của tháng đó (test 2026-11-10 ext-17 / ext-68: 35–48 s qua LLM)
+	@Override
+	public AnswerGuide answerGuideForOtherMonth(String question, Map<String, String> params, String lang) {
+		return answerGuide.otherMonth(question, params, lang);
+	}
+
 	@Override
 	public List<SuggestionCondition> suggestionConditions(Map<String, String> params) {
 		return suggestionConditions.conditions(params);

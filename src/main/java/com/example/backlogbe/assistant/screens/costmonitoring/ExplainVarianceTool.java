@@ -1025,8 +1025,9 @@ public class ExplainVarianceTool implements AssistantTool {
 				.toList();
 
 		String cols = t(lang,
-				"] cột=tên|tháng này|cùng kỳ tháng trước|chênh|chênh / Actual",
-				"] cols=name|this month|same period last month|change|change / Actual");
+				// "chênh / Actual" bị model đọc thành "% tăng" (test 2026-11-10 seed-36, ext-45)
+				"] cột=tên|tháng này|cùng kỳ tháng trước|chênh K$|chênh chia Actual tháng này (tỷ trọng, KHÔNG phải % tăng)",
+				"] cols=name|this month|same period last month|change K$|change divided by this month's Actual (share, NOT % growth)");
 
 		sb.append('[').append(title).append(t(lang, " tăng mạnh nhất", " rising most")).append(cols).append('\n');
 		appendRows(sb, increases, act, lang);

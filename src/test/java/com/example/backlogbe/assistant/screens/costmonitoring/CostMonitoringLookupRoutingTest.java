@@ -102,4 +102,42 @@ class CostMonitoringLookupRoutingTest {
 		assertFalse(TopItemsPrefetchRule.isTopItemsQuestion("Máy nào chi nhiều nhất?", PARAMS));
 		assertFalse(TopItemsPrefetchRule.isTopItemsQuestion("Vì sao vật tư PRESS T&SL tăng?", PARAMS));
 	}
+
+	// Test 2026-11-10 seed-36: qua LLM 50 s, "+3.7%" ghi như % tăng
+	@Test
+	void itemChangeVsPreviousMonth() {
+		assertEquals(CostMonitoringLookupAnswers.ITEM_CHANGE,
+				itemChange("Vật tư nào làm MOLD RM tăng so với tháng trước?"));
+		assertEquals(CostMonitoringLookupAnswers.ITEM_CHANGE,
+				itemChange("Category nào giảm so với cùng kỳ ở PRESS T&SL?"));
+		// "Vì sao …" (ext-45: LLM nói sai chiều tổng) và máy / cost center cũng là item_change
+		assertEquals(CostMonitoringLookupAnswers.ITEM_CHANGE,
+				itemChange("Vì sao vật tư MOLD RM tăng so với tháng trước?"));
+		assertEquals(CostMonitoringLookupAnswers.ITEM_CHANGE, itemChange("Máy nào tăng so với tháng trước?"));
+		// Không nhắc tháng trước / không hỏi vật tư… -> không phải item_change
+		assertNull(itemChange("Vật tư nào tăng nhiều nhất?"));
+		assertNull(itemChange("Vì sao MOLD RM tăng so với tháng trước?"));
+	}
+
+	// Test 2026-11-10 ext-26 / ext-54
+	@Test
+	void weekAndSpikeQuestions() {
+		assertEquals(CostMonitoringLookupAnswers.WEEK_SPEND, kind("MOLD T&SL tuần này chi bao nhiêu?"));
+		assertEquals(CostMonitoringLookupAnswers.WEEK_SPEND, kind("tuần trước PRESS RM chi bao nhiêu"));
+		assertEquals(CostMonitoringLookupAnswers.SPIKE_DAYS, kind("GUIDE T&SL có ngày nào tăng đột biến không?"));
+		assertNull(kind("Có gì bất thường trong tháng này?"));
+	}
+
+	// Test 2026-11-10 ext-12 / ext-30
+	@Test
+	void alreadyOverAndPersonQuestions() {
+		assertEquals(CostMonitoringLookupAnswers.ALREADY_OVER, kind("PRESS RM đã vượt FC rồi à?"));
+		assertEquals(CostMonitoringLookupAnswers.ALREADY_OVER, kind("MOLD T&SL vượt chưa"));
+		assertEquals(CostMonitoringLookupAnswers.NO_PERSON, kind("Ai là người chi nhiều nhất?"));
+		assertNull(kind("Cuối tháng PRESS RM có vượt không?"));
+	}
+
+	private static String itemChange(String question) {
+		return CostMonitoringLookupAnswers.itemChangeKind(question, CostMonitoringIntentClassifier.fold(question));
+	}
 }

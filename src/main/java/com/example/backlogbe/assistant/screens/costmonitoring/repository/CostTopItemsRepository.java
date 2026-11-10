@@ -238,6 +238,39 @@ public class CostTopItemsRepository {
 
 	private final NamedParameterJdbcTemplate jdbcTemplate;
 
+	// ---------- Cache ngắn hạn cho truy vấn tổng hợp (top / sum / total) ----------
+	// Test AI 2026-11-10: câu so cùng kỳ 6 khung (12 truy vấn RM / T&SL) mất 6–11 s lần đầu, 1–3 s lần sau.
+	// Dữ liệu actual cập nhật theo ngày -> TTL 5 phút đủ an toàn. Trả bản sao (caller có thể sửa list / map).
+	private static final long CACHE_TTL_MS = 5 * 60 * 1000L;
+	private static final int CACHE_MAX = 500;
+
+	private record CacheEntry(long expiresAt, Object value) {
+	}
+
+	private final java.util.concurrent.ConcurrentHashMap<String, CacheEntry> cache = new java.util.concurrent.ConcurrentHashMap<>();
+
+	@SuppressWarnings("unchecked")
+	private <T> T cached(String key, java.util.function.Supplier<T> loader) {
+		long now = System.currentTimeMillis();
+		CacheEntry e = cache.get(key);
+		if (e != null && e.expiresAt() > now) {
+			return (T) e.value();
+		}
+		T value = loader.get();
+		if (cache.size() >= CACHE_MAX) {
+			cache.entrySet().removeIf(x -> x.getValue().expiresAt() <= now);
+			if (cache.size() >= CACHE_MAX) {
+				cache.clear();
+			}
+		}
+		cache.put(key, new CacheEntry(now + CACHE_TTL_MS, value));
+		return value;
+	}
+
+	private static String key(String kind, String cost, LocalDate from, LocalDate to, List<String> costCenters, int limit) {
+		return kind + '|' + cost + '|' + from + '|' + to + '|' + costCenters + '|' + limit;
+	}
+
 	/*
 	 * Khoản lớn bất thường (explain_variance): dòng xuất kho đơn lẻ ≥ minAmountK
 	 * hoặc Text / Category chứa từ khóa license / renewal / software / bản quyền / phần mềm.
@@ -345,7 +378,7 @@ public class CostTopItemsRepository {
 			int limit
 	) {
 
-		return jdbcTemplate.query(
+		return new java.util.ArrayList<>(cached(key("topItems", cost, from, to, costCenters, limit), () -> jdbcTemplate.query(
 				base(cost) + TOP_ITEMS,
 				params(from, to, costCenters, limit),
 				(rs, rowNum) -> new CostTopItemDto(
@@ -356,7 +389,7 @@ public class CostTopItemsRepository {
 						rs.getString("QtyUnit"),
 						getDouble(rs, "AmtK")
 				)
-		);
+		)));
 	}
 
 	public List<CostTopCostCenterDto> findTopCostCenters(
@@ -367,7 +400,7 @@ public class CostTopItemsRepository {
 			int limit
 	) {
 
-		return jdbcTemplate.query(
+		return new java.util.ArrayList<>(cached(key("topCostCenters", cost, from, to, costCenters, limit), () -> jdbcTemplate.query(
 				base(cost) + TOP_COST_CENTERS,
 				params(from, to, costCenters, limit),
 				(rs, rowNum) -> new CostTopCostCenterDto(
@@ -375,7 +408,7 @@ public class CostTopItemsRepository {
 						rs.getString("CcCode"),
 						getDouble(rs, "AmtK")
 				)
-		);
+		)));
 	}
 
 	public List<CostTopMachineDto> findTopMachines(
@@ -386,14 +419,14 @@ public class CostTopItemsRepository {
 			int limit
 	) {
 
-		return jdbcTemplate.query(
+		return new java.util.ArrayList<>(cached(key("topMachines", cost, from, to, costCenters, limit), () -> jdbcTemplate.query(
 				base(cost) + TOP_MACHINES,
 				params(from, to, costCenters, limit),
 				(rs, rowNum) -> new CostTopMachineDto(
 						rs.getString("Machine"),
 						getDouble(rs, "AmtK")
 				)
-		);
+		)));
 	}
 
 	// Tổng K$ của mọi dòng thỏa bộ lọc (gồm cả dòng âm); không có dòng -> null
@@ -404,11 +437,11 @@ public class CostTopItemsRepository {
 			List<String> costCenters
 	) {
 
-		List<Double> result = jdbcTemplate.query(
+		List<Double> result = cached(key("total", cost, from, to, costCenters, 0), () -> jdbcTemplate.query(
 				base(cost) + TOTAL,
 				params(from, to, costCenters, 1),
 				(rs, rowNum) -> getDouble(rs, "AmtK")
-		);
+		));
 
 		return result.isEmpty() ? null : result.get(0);
 	}
@@ -436,7 +469,8 @@ public class CostTopItemsRepository {
 			LocalDate to,
 			List<String> costCenters
 	) {
-		return sumByLabel(base(cost) + SUM_BY_CATEGORY, from, to, costCenters);
+		return new LinkedHashMap<>(cached(key("sumByCategory", cost, from, to, costCenters, 0),
+				() -> sumByLabel(base(cost) + SUM_BY_CATEGORY, from, to, costCenters)));
 	}
 
 	// Tổng K$ theo vật tư (Code + Text, trả riêng từng cột để tool tự ghép nhãn)
@@ -447,7 +481,7 @@ public class CostTopItemsRepository {
 			List<String> costCenters
 	) {
 
-		return jdbcTemplate.query(
+		return new java.util.ArrayList<>(cached(key("sumByItem", cost, from, to, costCenters, 0), () -> jdbcTemplate.query(
 				base(cost) + SUM_BY_ITEM,
 				params(from, to, costCenters, 1),
 				(rs, rowNum) -> new CostItemAmountDto(
@@ -455,7 +489,7 @@ public class CostTopItemsRepository {
 						rs.getString("Name"),
 						getDouble(rs, "AmtK")
 				)
-		);
+		)));
 	}
 
 	private Map<String, Double> sumByLabel(

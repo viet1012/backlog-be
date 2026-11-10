@@ -61,6 +61,12 @@ public interface ScreenModule {
 		return null;
 	}
 
+	// Câu hỏi nhắc ĐÚNG 1 tháng khác tháng đang xem (vd "Tháng 9 có gì bất thường?"): màn hình tự trả lời bằng template
+	// cho tháng đó nếu được (params = params tháng đang xem). null = không (mặc định) -> LLM với context tháng được hỏi.
+	default AnswerGuide answerGuideForOtherMonth(String question, Map<String, String> params, String lang) {
+		return null;
+	}
+
 	// Điều kiện cho câu gợi ý động. null = màn hình không có gợi ý động / greeting.
 	// Tham số sai -> IllegalArgumentException (400); lỗi khác (vd DB) -> engine bỏ câu động, log WARN.
 	default List<SuggestionCondition> suggestionConditions(Map<String, String> params) {

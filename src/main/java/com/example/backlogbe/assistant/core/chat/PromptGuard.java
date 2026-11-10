@@ -33,6 +33,11 @@ final class PromptGuard {
 					+ "(?:huong\\s+dan|chi\\s+dan|quy\\s+tac)\\s+(?:he\\s+thong|noi\\s+bo|cua\\s+ban|ban\\s+dau)"
 					+ "|ignore\\s+(?:\\S+\\s+){0,3}?(?:instructions|rules|prompt)"
 					+ "|(?:reveal|print|show|repeat)\\s+(?:me\\s+)?(?:your|the)\\s+(?:\\S+\\s+)?(?:instructions|rules|prompt)"
+					// Thông tin xác thực / cấu hình hệ thống (test 2026-11-10 ext-28: qua LLM 15 s)
+					+ "|api\\s*key|access\\s*token|secret\\s*key|private\\s*key|mat\\s*khau|password|passwd"
+					+ "|connection\\s*string|chuoi\\s*ket\\s*noi"
+					+ "|cau\\s*hinh\\s+(?:ket\\s*noi|he\\s*thong|server|may\\s*chu|database|co\\s*so\\s*du\\s*lieu|llm|model)"
+					+ "|(?:system|server|database|llm)\\s+(?:config|configuration|credentials)"
 	);
 
 	// Chữ cái chỉ có trong tiếng Việt (sau NFC)

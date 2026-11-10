@@ -158,9 +158,10 @@
   {
     "question": "đánh giá chart PRESS RM",
     "month": "2026-11",
-    "mustContain": ["PRESS", "RM"],
-    "mustNotContain": ["KẾT LUẬN", "MAIN_CAUSE"],
-    "answerSource": "llm"
+    "mustContain": ["PRESS RM", "Ngân sách còn lại mỗi ngày", "Dự báo:"],
+    "mustNotContain": ["KẾT LUẬN", "MAIN_CAUSE", "đúng tiến độ"],
+    "answerSource": "template",
+    "answerIntent": "frame_status"
   },
   {
     "question": "vật tư lớn trong press t&sl là gì",
@@ -427,5 +428,52 @@
     "month": "2026-11",
     "mustContain": [],
     "mustNotContain": ["Kính gửi", "xin nghỉ phép từ ngày", "[ngày bắt đầu]"]
+  },
+  {
+    "question": "Vật tư nào làm MOLD RM tăng so với tháng trước?",
+    "month": "2026-11",
+    "mustContain": ["MOLD RM", "cùng kỳ", "K$"],
+    "mustNotContain": ["PRESS", "GUIDE"],
+    "llmCallCount": 0,
+    "answerIntent": "item_change"
+  },
+  {
+    "question": "MOLD RM thì sao?",
+    "month": "2026-11",
+    "params": {"factory": "PRESS", "category": "T&SL"},
+    "mustContain": ["MOLD RM", "Dự báo"],
+    "mustNotContain": ["PRESS T&SL", "Nguyên nhân"],
+    "llmCallCount": 0,
+    "answerIntent": "frame_status"
+  },
+  {
+    "question": "Xu hướng chi PRESS RM trong tháng",
+    "month": "2026-11",
+    "mustContain": ["PRESS RM", "Dự báo:"],
+    "mustNotContain": ["\n- cuối tháng"],
+    "llmCallCount": 0
+  },
+  {
+    "question": "PRESS RM đã vượt FC rồi à?",
+    "month": "2026-11",
+    "mustContain": ["Chưa", "PRESS RM", "Dự báo:", "FC"],
+    "mustNotContain": ["MOLD", "GUIDE"],
+    "llmCallCount": 0,
+    "answerIntent": "already_over"
+  },
+  {
+    "question": "Ai là người chi nhiều nhất?",
+    "month": "2026-11",
+    "mustContain": ["không ghi theo người"],
+    "mustNotContain": ["K$"],
+    "llmCallCount": 0,
+    "answerIntent": "no_person"
+  },
+  {
+    "question": "Tháng 9 có gì bất thường?",
+    "month": "2026-11",
+    "mustContain": ["2026-09"],
+    "mustNotContain": ["2026-11", "WILL_EXCEED"],
+    "llmCallCount": 0
   }
 ]
