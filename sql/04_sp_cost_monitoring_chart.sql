@@ -83,6 +83,9 @@ BEGIN
                                           ELSE wr.Adj_Ratio_GU END) AS Fluct_TGT,
                t.PL_TGT * SUM(k.WD) OVER (PARTITION BY c.Div, c.Chart ORDER BY k.D ROWS UNBOUNDED PRECEDING)
                         / NULLIF(SUM(k.WD) OVER (PARTITION BY c.Div, c.Chart), 0) AS PL_MTD,
+               -- Pace cho Estimate: ưu tiên PL TGT, không có thì dùng FC TGT
+               COALESCE(t.PL_TGT, t.FC_TGT) * SUM(k.WD) OVER (PARTITION BY c.Div, c.Chart ORDER BY k.D ROWS UNBOUNDED PRECEDING)
+                        / NULLIF(SUM(k.WD) OVER (PARTITION BY c.Div, c.Chart), 0) AS Pace_MTD,
                CASE WHEN c.Chart <> N'OT' AND k.D <= x.Cutoff THEN
                     SUM(CASE WHEN k.D <= x.Cutoff THEN ISNULL(a.Amt, 0) END)
                         OVER (PARTITION BY c.Div, c.Chart ORDER BY k.D ROWS UNBOUNDED PRECEDING)
@@ -95,7 +98,7 @@ BEGIN
         LEFT JOIN DailyAct a ON a.Div = c.Div AND a.Chart = c.Chart AND a.D = k.D
     ),
     LastAct AS (
-        SELECT Div, Chart, D AS LastD, Act_MTD AS LastAct, PL_MTD AS LastPL
+        SELECT Div, Chart, D AS LastD, Act_MTD AS LastAct, Pace_MTD AS LastPace
         FROM (SELECT *, ROW_NUMBER() OVER (PARTITION BY Div, Chart ORDER BY D DESC) rn
               FROM Base WHERE Act_MTD IS NOT NULL) z
         WHERE rn = 1
@@ -106,8 +109,9 @@ BEGIN
            ROUND(b.BP, 3)      AS BP,
            ROUND(b.PL_MTD, 3)  AS PL_MTD,
            ROUND(b.Act_MTD, 3) AS Act_MTD,
-           ROUND(CASE WHEN l.LastD IS NULL THEN b.PL_MTD
-                      WHEN b.D > l.LastD  THEN l.LastAct + b.PL_MTD - l.LastPL END, 3) AS Est_MTD,
+           -- Estimate: nối từ điểm Actual cuối (D = LastD -> = LastAct), sau đó cộng thêm theo pace
+           ROUND(CASE WHEN l.LastD IS NOT NULL AND b.D >= l.LastD
+                      THEN l.LastAct + b.Pace_MTD - l.LastPace END, 3) AS Est_MTD,
            ROUND(b.Fluct_TGT, 3) AS Fluct_TGT
     FROM Base b
     LEFT JOIN LastAct l ON l.Div = b.Div AND l.Chart = b.Chart

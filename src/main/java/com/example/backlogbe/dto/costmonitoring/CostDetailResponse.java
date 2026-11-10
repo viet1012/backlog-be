@@ -33,7 +33,9 @@ public record CostDetailResponse(
 	 * fc, fluct           : FC TGT, Fluct cả tháng (giá trị Fluct mới nhất, giống nhãn cuối đường chart)
 	 * ratioPct            : Ratio Sale&Inven mới nhất của bộ phận, % (Fluct = FC × (1 + Ratio))
 	 * actMtd              : Actual lũy kế đến asOfDate (null = chưa có actual, vd OT)
-	 * estimateEom         : Estimate cuối tháng (đường Estimate theo PL; tháng đã qua = Actual)
+	 * estimateEom         : Estimate cuối tháng (đường Estimate theo PL, PL null thì theo FC; tháng đã qua = Actual);
+	 *                       null = chưa có (vd OT) -> FE hiển thị "-"
+	 * estimateNote        : "(theo FC)" khi PL_TGT null mà có Estimate (tháng đang diễn ra); còn lại null
 	 * pctOfFluct          : Actual / Fluct × 100 (1 chữ số, như badge)
 	 * currentRate         : tốc độ chi hiện tại = Actual / số ngày đến asOfDate (K$/ngày, 2 chữ số)
 	 * projectedEom        : dự báo cuối tháng theo tốc độ chi hiện tại = currentRate × N
@@ -48,6 +50,7 @@ public record CostDetailResponse(
 			Double ratioPct,
 			Double actMtd,
 			Double estimateEom,
+			String estimateNote,
 			Double pctOfFluct,
 			Double currentRate,
 			Double projectedEom,

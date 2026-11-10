@@ -1069,18 +1069,22 @@ public class CostMonitoringAnswerGuide {
 		return t(lang, "Có ", "There are ") + String.join(", ", parts) + ":";
 	}
 
-	// " (theo PL)" nếu mọi khung có dự báo theo PL; " (theo nhịp Fluct, chưa có PL)" nếu mọi khung theo Fluct;
-	// trộn -> " (dự báo chính)"
+	// " (theo PL)" nếu mọi khung có dự báo theo PL; " (theo FC, chưa có PL)" nếu mọi khung theo FC;
+	// " (theo nhịp Fluct)" nếu mọi khung theo Fluct; trộn -> " (dự báo chính)"
 	static String baseLabel(List<Frame> frames, String lang) {
 
 		boolean anyPl = frames.stream().anyMatch(f -> "PL".equals(f.a().estimateBase()));
+		boolean anyFc = frames.stream().anyMatch(f -> "FC".equals(f.a().estimateBase()));
 		boolean anyFluct = frames.stream().anyMatch(f -> "Fluct".equals(f.a().estimateBase()));
 
-		if (anyPl && !anyFluct) {
+		if (anyPl && !anyFc && !anyFluct) {
 			return t(lang, " (theo PL)", " (based on PL)");
 		}
-		if (anyFluct && !anyPl) {
-			return t(lang, " (theo nhịp Fluct, chưa có PL)", " (based on Fluct pace, no PL yet)");
+		if (anyFc && !anyPl && !anyFluct) {
+			return t(lang, " (theo FC, chưa có PL)", " (based on FC, no PL yet)");
+		}
+		if (anyFluct && !anyPl && !anyFc) {
+			return t(lang, " (theo nhịp Fluct)", " (based on Fluct pace)");
 		}
 		return t(lang, " (dự báo chính)", " (main forecast)");
 	}

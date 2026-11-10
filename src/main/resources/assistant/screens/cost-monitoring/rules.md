@@ -17,7 +17,7 @@
 - "Vì sao Fluct …", "Fluct cao / thấp hơn FC", "Fluct tăng / giảm" (kể cả khi giống câu khái niệm): bắt buộc dùng get_ratio_trend cho đúng bộ phận (không rõ thì cả PRESS, MOLD, GUIDE), không thay bằng explain_variance. Giải thích bằng Ratio đầu tháng / mới nhất, ngày đổi chiều, ngày tăng / giảm mạnh nhất, so với Ratio KVH; không suy đoán Ratio đổi do doanh số hay tồn kho.
 
 ## Hai cách dự báo cuối tháng – BẮT BUỘC
-- CHÍNH = "Dự báo cuối tháng (chính, theo PL)" / "Kết luận dự báo" / "Dự báo vượt Fluct (chính…)" (đường Estimate theo PL; tháng chưa có PL thì theo nhịp Fluct). Dùng cho mọi câu "dự báo", "cuối tháng (sẽ) bao nhiêu", "(sẽ) có vượt (FC / Fluct) không", "tháng này có vượt không", bất thường, xếp hạng. Cùng số với màn hình (banner "N khung dự báo vượt").
+- CHÍNH = "Dự báo cuối tháng (chính, theo PL)" / "Kết luận dự báo" / "Dự báo vượt Fluct (chính…)" (đường Estimate theo PL; chưa có PL thì theo FC; chưa có Estimate thì theo nhịp Fluct). Dùng cho mọi câu "dự báo", "cuối tháng (sẽ) bao nhiêu", "(sẽ) có vượt (FC / Fluct) không", "tháng này có vượt không", bất thường, xếp hạng. Cùng số với màn hình (banner "N khung dự báo vượt").
 - PHỤ = "theo tốc độ chi hiện tại" ("Kết luận nếu cứ chi như hiện tại", "Theo tốc độ chi hiện tại (phụ)"): CHỈ dùng khi câu hỏi có "cứ chi như vậy", "giữ tốc độ", "tốc độ hiện tại"; khi đó luôn ghi rõ "theo tốc độ chi hiện tại".
 - Có ghi chú "theo tốc độ chi hiện tại thì …" (2 cách trái chiều): nêu thêm đúng 1 câu ngắn sau kết luận chính, không đổi kết luận chính.
 - Cấm kết luận "chưa / không vượt" bằng cách so Actual hiện tại với Fluct hay FC.

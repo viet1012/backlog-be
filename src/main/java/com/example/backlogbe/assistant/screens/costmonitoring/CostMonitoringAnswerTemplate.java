@@ -222,15 +222,21 @@ final class CostMonitoringAnswerTemplate {
 			base = t(lang, "dự báo theo tốc độ chi hiện tại", "projection at the current spending rate");
 		} else {
 			boolean anyPl = frames.stream().anyMatch(f -> "PL".equals(f.a().estimateBase()));
+			boolean anyFc = frames.stream().anyMatch(f -> "FC".equals(f.a().estimateBase()));
 			boolean anyFluct = frames.stream().anyMatch(f -> "Fluct".equals(f.a().estimateBase()));
 
-			if (anyFluct && !anyPl) {
-				base = t(lang, "chưa có PL nên dự báo theo nhịp Fluct", "no PL yet, so the forecast follows the Fluct pace");
-			} else if (anyFluct) {
-				base = t(lang, "dự báo theo PL; khung chưa có PL theo nhịp Fluct",
-						"forecast based on PL; frames without PL follow the Fluct pace");
-			} else {
+			// Khung chưa có PL: Est theo FC; chưa có Est (chưa có Actual) theo nhịp Fluct
+			String noPl = anyFc && anyFluct
+					? t(lang, "theo FC hoặc nhịp Fluct", "follow FC or the Fluct pace")
+					: anyFc ? t(lang, "theo FC", "follow FC")
+					: t(lang, "theo nhịp Fluct", "follow the Fluct pace");
+
+			if (!anyFc && !anyFluct) {
 				base = t(lang, "dự báo theo PL", "forecast based on PL");
+			} else if (!anyPl) {
+				base = t(lang, "dự báo ", "forecast ") + noPl;
+			} else {
+				base = t(lang, "dự báo theo PL; khung chưa có PL ", "forecast based on PL; frames without PL ") + noPl;
 			}
 		}
 

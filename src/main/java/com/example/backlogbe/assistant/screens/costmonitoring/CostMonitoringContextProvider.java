@@ -148,7 +148,9 @@ public class CostMonitoringContextProvider {
 				continue;
 			}
 
-			sb.append("|Estimate=").append(CmText.k1(CostMonitoringSnapshot.estimate(chart)))
+			Double estimate = CostMonitoringSnapshot.estimate(chart);
+			sb.append("|Estimate=").append(estimate == null ? "-" : CmText.k1(estimate)
+							+ (CostMonitoringSnapshot.estimateByFc(chart) ? " (" + CmText.forecastBase("FC", lang) + ")" : ""))
 					.append("|Badge=").append(badgeText(a, lang))
 					.append(t(lang, "|Tiến độ chuẩn=", "|Standard pace=")).append(CmText.pct0(a.pace()))
 					.append(t(lang, "|Tiến độ=", "|Pace=")).append(CmText.pace(a.paceStatus(), lang))

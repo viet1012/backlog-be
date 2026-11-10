@@ -178,9 +178,14 @@ public record CostMonitoringSnapshot(
 		return day;
 	}
 
-	// Estimate cuối tháng; tháng đã qua (Est null) -> Actual cả tháng
+	// Estimate cuối tháng; Est null -> Actual cả tháng; cả hai null (vd OT) -> null
 	public static Double estimate(CostChartDto chart) {
 		return chart.estMonthEnd() != null ? chart.estMonthEnd() : chart.actMtdLatest();
+	}
+
+	// Est của SP tính theo FC (PL_TGT null nhưng có Est)
+	public static boolean estimateByFc(CostChartDto chart) {
+		return chart.plTgt() == null && chart.estMonthEnd() != null;
 	}
 
 	public static String fmt(Double value) {

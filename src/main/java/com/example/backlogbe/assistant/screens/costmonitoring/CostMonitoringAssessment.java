@@ -11,9 +11,11 @@ import com.example.backlogbe.dto.costmonitoring.CostChartDto;
 //   SLOWER_THAN_PACE  Pct < Pace − 3
 //   ON_PACE           còn lại
 // Forecast:
-//   có PL  : Est_MTD ngày cuối tháng của sp_CostMonitoringChart
-//            (= Act cuối + PL × WD_All còn lại / tổng WD_All tháng; ngày nghỉ nhà máy không cộng PL)
-//   không PL: Act + Fluct / N × (N − D)
+//   có Est : Est_MTD ngày cuối tháng của sp_CostMonitoringChart
+//            (= Act cuối + COALESCE(PL, FC) × WD_All còn lại / tổng WD_All tháng; ngày nghỉ nhà máy không cộng)
+//            cơ sở "PL" (PL có giá trị) hoặc "FC" (PL null)
+//   không Est: Act + Fluct / N × (N − D)
+//   Fluct = Fluct TGT ngày cuối tháng (CostMonitoringSnapshot.fluct)
 // ForecastStatus:
 //   WILL_EXCEED  Forecast > Fluct (ForecastGap = Forecast − Fluct, phần vượt)
 //   WITHIN       Forecast ≤ Fluct (ForecastGap = Fluct − Forecast, phần còn dư)
@@ -31,7 +33,7 @@ import com.example.backlogbe.dto.costmonitoring.CostChartDto;
 //       (dự báo cuối tháng theo tốc độ chi hiện tại; dùng cho câu hỏi "cứ chi như vậy / cuối tháng")
 //   "Ngân sách còn lại mỗi ngày": remainingPerDay = (Fluct − Act) / (N − D)  (âm = đã hết ngân sách)
 //   "Nhịp target mỗi ngày"      : fluctDailyRate = Fluct / N
-// targetRate = Fluct / N khi Forecast theo Fluct; null khi theo PL.
+// targetRate = Fluct / N khi Forecast theo Fluct; null khi theo Est (PL / FC).
 // Mode (chế độ phân tích của explain_variance):
 //   IN_PROGRESS  Act ≤ Fluct: dùng ExcessVsPace = Act − Fluct × D / N
 //                (= phần dự báo vượt khi Forecast tính theo Fluct)
@@ -137,17 +139,18 @@ public record CostMonitoringAssessment(
 
 		String paceStatus = paceStatus(pct, pace);
 
-		// Forecast theo PL = Est_MTD ngày cuối tháng của SP (PL phân bổ theo WD_All, không tự tính PL / N).
-		// PL trống (null hoặc ≤ 0 – Est khi đó = Actual, sẽ luôn "không vượt") hoặc không có Est
-		//   -> theo Fluct: Act + Fluct / N × (N − D)
+		// Forecast = Est_MTD ngày cuối tháng của SP khi có (pace COALESCE(PL, FC) phân bổ theo WD_All,
+		//   không tự tính PL / N); so với Fluct TGT ngày cuối tháng (giống điều kiện "vượt" trên FE).
+		//   Cơ sở: PL có giá trị -> "PL", PL null -> "FC".
+		// Không có Est (chưa có Actual, vd OT) -> theo Fluct: Act + Fluct / N × (N − D)
 		int remaining = Math.max(0, n - d);
 		Double estMonthEnd = chart.estMonthEnd();
-		boolean byPl = pl != null && pl > 0 && estMonthEnd != null;
-		String forecastBase = byPl ? "PL" : fluct != null ? "Fluct" : null;
+		boolean byEst = estMonthEnd != null;
+		String forecastBase = byEst ? (pl != null ? "PL" : "FC") : fluct != null ? "Fluct" : null;
 		Double forecast;
 		if (act == null) {
 			forecast = null;
-		} else if (byPl) {
+		} else if (byEst) {
 			forecast = estMonthEnd;
 		} else {
 			forecast = fluct != null && n > 0 ? act + fluct / n * remaining : null;
@@ -192,8 +195,8 @@ public record CostMonitoringAssessment(
 		}
 
 		Double currentRate = act != null && actDay > 0 ? act / actDay : null;
-		// Nhịp theo ngày lịch chỉ có nghĩa khi dự báo theo Fluct (PL phân bổ theo ngày làm việc)
-		Double targetRate = !byPl && fluct != null && n > 0 ? fluct / n : null;
+		// Nhịp theo ngày lịch chỉ có nghĩa khi dự báo theo Fluct (Est phân bổ theo ngày làm việc)
+		Double targetRate = !byEst && fluct != null && n > 0 ? fluct / n : null;
 
 		// "Nếu giữ tốc độ hiện tại" = Act / D × N
 		Double linearForecast = currentRate != null && n > 0 ? currentRate * n : null;
@@ -279,7 +282,7 @@ public record CostMonitoringAssessment(
 		return forecast;
 	}
 
-	// "PL" | "Fluct" (không có PL) | null
+	// "PL" | "FC" (Est theo FC, PL null) | "Fluct" (không có Est) | null
 	public String estimateBase() {
 		return forecastBase;
 	}

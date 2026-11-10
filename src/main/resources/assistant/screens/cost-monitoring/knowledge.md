@@ -23,7 +23,7 @@ D = ngày có dữ liệu mới nhất, N = số ngày trong tháng.
   - Vì sao dùng Fluct: OT, T&SL, RM là chi phí biến đổi theo sản lượng; FC giữ nguyên dù sản lượng đổi nên không công bằng.
   - Ratio do hệ thống tự cập nhật mỗi ngày; Fluct cũng đổi khi FC tháng được cập nhật. Không có thông tin về chỉnh tay: không khẳng định có hay không. Ngày chưa tới dùng Ratio mới nhất (hôm qua) nên phần tương lai của đường Fluct là đường thẳng. Có Ratio toàn nhà máy (KVH) để so sánh.
 - Actual (MTD) (mũi tên xanh dương): chi phí thực tế cộng dồn đến ngày D.
-- Estimate (nét đứt xanh) = Actual + phần PL các ngày còn lại (phân bổ theo ngày làm việc). Không có PL thì không có Estimate; khung chưa có Actual (OT) thì Estimate theo PL.
+- Estimate (nét đứt xanh) = Actual + phần PL các ngày còn lại (phân bổ theo ngày làm việc), nối từ điểm Actual cuối. Không có PL thì Estimate theo FC (ghi "(theo FC)"); khung chưa có Actual (OT) thì không có Estimate ("-").
 - Ngày làm việc: nhà máy làm cả Chủ nhật; chỉ ngày lễ / nhà máy nghỉ (cờ "nghỉ") là ngày nghỉ. Chi 0 vào ngày làm việc = không có xuất kho, không suy diễn thêm.
 - Tooltip chart hiện Fluct của ngày đó; nhãn cuối đường FC (xám), PL (xanh lá), Fluct (đỏ) là giá trị cả tháng.
 
@@ -31,7 +31,7 @@ D = ngày có dữ liệu mới nhất, N = số ngày trong tháng.
 - Badge: x = Actual / Fluct × 100 (số nguyên). "OK x%" khi Actual ≤ Fluct, "Vượt x%" khi Actual > Fluct, "Chưa có actual". Actual > FC nhưng ≤ Fluct vẫn là OK.
 - Tiến độ chuẩn = D / N × 100. Các kết luận do hệ thống tính sẵn:
   - Tiến độ: "Chi nhanh hơn tiến độ" (% đã dùng > tiến độ chuẩn + 3), "Đúng tiến độ", "Chi chậm hơn tiến độ" (< tiến độ chuẩn − 3).
-  - Dự báo cuối tháng CHÍNH (theo PL) = Estimate ngày cuối tháng; không có PL thì = Actual + Fluct / N × (N − D). Giả định từ nay chi đúng nhịp PL (hoặc Fluct). > Fluct là "Dự báo vượt Fluct", ngược lại "Dự báo trong Fluct". Đây là định nghĩa "dự báo vượt" của màn hình (banner "N khung dự báo vượt", lời chào, /chart).
+  - Dự báo cuối tháng CHÍNH = Estimate ngày cuối tháng (theo PL, không có PL thì theo FC); không có Estimate thì = Actual + Fluct / N × (N − D). Giả định từ nay chi đúng nhịp PL (hoặc FC / Fluct). > Fluct là "Dự báo vượt Fluct", ngược lại "Dự báo trong Fluct". Đây là định nghĩa "dự báo vượt" của màn hình (banner "N khung dự báo vượt", lời chào, /chart).
   - Rủi ro: "Rủi ro cao" (đã vượt hoặc dự báo vượt), "Cần theo dõi" (chi nhanh hơn tiến độ nhưng dự báo trong Fluct), "Ổn", "Chưa đủ dữ liệu".
 - Kịch bản cuối tháng (luôn so với Fluct; + = vượt, − = còn dư):
   - "Nếu từ nay chi đúng target" = Actual + Fluct / N × (N − D).

@@ -316,6 +316,10 @@ public final class CmText {
 			return t(lang, "theo PL", "based on PL");
 		}
 
+		if ("FC".equals(base)) {
+			return t(lang, "theo FC", "based on FC");
+		}
+
 		if ("Fluct".equals(base)) {
 			return t(lang, "theo Fluct", "based on Fluct");
 		}

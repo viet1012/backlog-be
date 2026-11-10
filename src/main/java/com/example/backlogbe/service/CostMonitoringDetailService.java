@@ -163,7 +163,7 @@ public class CostMonitoringDetailService {
 		Double ratioPct = latestRatioPct(ratios, div);
 
 		if (chart == null || a == null) {
-			return new Kpi(null, null, ratioPct, null, null, null, null, null, null, null, null);
+			return new Kpi(null, null, ratioPct, null, null, null, null, null, null, null, null, null);
 		}
 
 		Double act = a.act();
@@ -188,12 +188,19 @@ public class CostMonitoringDetailService {
 				? null
 				: act > fluct ? CostDetailResponse.STATUS_OVER : CostDetailResponse.STATUS_OK;
 
+		// Estimate null (vd OT) -> null, FE hiển thị "-"; PL null mà có Est -> ghi chú theo FC
+		Double estimate = CmText.r1(CostMonitoringSnapshot.estimate(chart));
+		String estimateNote = estimate != null && !a.closed() && CostMonitoringSnapshot.estimateByFc(chart)
+				? "(theo FC)"
+				: null;
+
 		return new Kpi(
 				CmText.r1(chart.fcTgt()),
 				CmText.r1(fluct),
 				ratioPct,
 				CmText.r1(act),
-				CmText.r1(CostMonitoringSnapshot.estimate(chart)),
+				estimate,
+				estimateNote,
 				a.pct() != null ? CmText.r1(a.pct()) : null,
 				currentRate,
 				projectedEom,

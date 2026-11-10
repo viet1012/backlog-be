@@ -207,10 +207,12 @@ D = ngày dữ liệu hiện tại, N = số ngày trong tháng.
 - **Ratio** = (Sale&Inven +/-) / Doanh số FC cả tháng của bộ phận;
   Sale&Inven +/- = (Doanh số thực tế MTD − Doanh số FC MTD) + (Tồn kho hiện tại − Tồn kho đầu tháng).
   Cùng một Ratio cho OT, T&SL, RM của một bộ phận. Ngày chưa tới dùng Ratio của hôm qua.
-- **Estimate** = Actual + phần PL các ngày còn lại, phân bổ theo `WD_All` (ngày nghỉ nhà máy không cộng). Không có PL thì không có Estimate.
+- **Estimate** (`Est_MTD`) = Actual cuối + phần COALESCE(PL, FC) các ngày còn lại, phân bổ theo `WD_All` (ngày nghỉ nhà máy không cộng);
+  bắt đầu từ ngày có Actual cuối (= Actual ngày đó). Chưa có Actual (vd OT) thì không có Estimate (hiển thị "-").
+  PL trống mà có Estimate → ghi chú "(theo FC)".
 - **Badge** = Actual / Fluct × 100 ("OK x%" / "Vượt x%"). **Tiến độ chuẩn** = D / N × 100.
-- **Dự báo cuối tháng**: có PL → Estimate ngày cuối tháng; không PL → Actual + Fluct / N × (N − D).
-  Dự báo > Fluct → "Dự báo vượt Fluct".
+- **Dự báo cuối tháng**: có Estimate → Estimate ngày cuối tháng (cơ sở "theo PL" hoặc "theo FC");
+  không có Estimate → Actual + Fluct / N × (N − D). Dự báo > Fluct ngày cuối tháng → "Dự báo vượt Fluct".
 - **Rủi ro**: HIGH khi đã vượt hoặc dự báo vượt; WATCH khi chi nhanh hơn tiến độ (> 3 điểm %) nhưng dự báo trong Fluct; còn lại OK.
 - **Kịch bản cuối tháng**:
   "Nếu từ nay chi đúng target" = Actual + Fluct / N × (N − D);
@@ -388,7 +390,8 @@ Tham số: `div` (PR|MO|Guide), `chart` (OT|T&SL|RM; URL-encode `T%26SL`) – c�
 `refresh` (như `/chart`).
 Sai / thiếu → 400 `{status, message}`, vd "div must be one of PR, MO, Guide." / "chart must be one of OT, T&SL, RM."
 
-- `kpi`: `fc`, `fluct`, `ratioPct`, `actMtd`, `estimateEom`, `pctOfFluct`, `currentRate`, `projectedEom`, `projectedOver`
+- `kpi`: `fc`, `fluct`, `ratioPct`, `actMtd`, `estimateEom` (null → FE hiển thị "-"), `estimateNote` ("(theo FC)" khi PL trống
+  mà có Estimate, tháng đang diễn ra; còn lại null), `pctOfFluct`, `currentRate`, `projectedEom`, `projectedOver`
   (so Fluct), `projectedOverFc`, `status` (OVER | OK | null khi chưa có Actual). Tháng đã kết thúc: `projectedEom` = Actual.
 - `daily`: ngày 1 → `asOfDate` (ngày có actual mới nhất của ô): `date`, `daily`, `cumulative`, `ratioPct`, `fluct`,
   `diff` (= cumulative − fluct). `daily` = chênh cumulative trên số 1 chữ số → Σ daily = `kpi.actMtd`.
@@ -696,6 +699,7 @@ server hoặc ADMIN (qua API admin) đọc; không gửi ra ngoài.
 | 2026-11-09 | Tên mascot thành cấu hình `assistant.name` (`AssistantProperties` đổi prefix `assistant`, LLM nằm ở nhóm lồng `llm` – key `assistant.llm.*` giữ nguyên). `common.md` dùng placeholder `{{assistantName}}` (PromptBuilder thay khi nạp). Thêm `GET /api/assistant/config` → `{ name }` cho FE. |
 | 2026-11-09 | Log thời gian (INFO) để điều tra API chậm: `RequestTimingFilter` gắn `requestId` (MDC) cho `/api/assistant/chat`, `/api/cost-monitoring/detail`; log `rid=` ở bước context / askedMonths / prefetch, từng lần gọi LLM, từng tool, tổng chat; `/detail` log snapshot, loadRatios, countRows / findTotal / findLines, total. Không đổi logic. |
 | 2026-11-09 | Tối ưu tốc độ chat Cost Monitoring: (1) `ForecastPrefetchRule` → `ExplainVariancePrefetchRule`, pre-fetch thêm câu hỏi phân tích 1 khung và mọi câu hỏi từ drawer; `PrefetchRule.matches` thêm overload nhận params (default giữ hành vi cũ). (2) `PromptBuilder`: system chỉ còn phần cố định (dòng `Reasoning:` chuyển xuống cuối system), context + câu hỏi chuyển sang user message cuối để dùng KV cache. (3) Rút gọn `rules.md` + `knowledge.md` ~33% token (ước lượng ~10.4k → ~6.9k): gộp quy tắc trả lời vào `rules.md`, bỏ trùng, bỏ 7 ví dụ thừa (13 → 6). |
+| 2026-11-10 | Estimate (MTD): `sp_CostMonitoringChart` thêm `Pace_MTD` = COALESCE(PL, FC) phân bổ theo `WD_All`; `Est_MTD` chỉ từ ngày có Actual cuối (OT không còn Estimate). `CostMonitoringAssessment` dùng `estMonthEnd` khi có (bỏ điều kiện PL > 0), cơ sở mới "FC" (PL trống); so với Fluct ngày cuối tháng. Context `Estimate=` null → "-", PL trống → "(theo FC)"; `/detail` thêm `kpi.estimateNote`. |
 | 2026-11-09 | Cost Monitoring tối ưu tiếp: (1) `DailySeriesPrefetchRule` pre-fetch `get_daily_series` cho câu hỏi theo ngày về 1 khung (câu hỏi / drawer); `ExplainVariancePrefetchRule` không chạy nhánh drawer cho câu hỏi theo ngày; tách `CostMonitoringQuestion` (nhận diện bộ phận / loại chi phí / khung). (2) Cache snapshot trong `CostMonitoringSnapshotLoader` theo (month, simuWeek, hôm nay), TTL `cost-monitoring.snapshot-cache-ttl-seconds` (mặc định 180), dùng chung trợ lý và `/detail`. (3) `ScreenModule.buildContext(params, lang, question)` (default giữ hành vi cũ); câu hỏi về đúng 1 khung → context chỉ gửi khung đó (~2.6k → ~0.4k token). |
 | 2026-11-09 | `CostMonitoringQuestion.asksOtherFrames`: câu hỏi nêu 1 khung nhưng hỏi khung khác ("khung khác / khung nào / các khung / tất cả / còn … thì sao / other frames / which") → câu hỏi chung (đủ context); thêm case eval tương ứng. `GET /api/cost-monitoring/chart` dùng chung cache snapshot với trợ lý và `/detail`; thêm `refresh=true` cho `/chart`, `/detail` (bỏ qua cache, ghi đè). |
 | 2026-11-09 | Thu hẹp `asksOtherFrames`: "tất cả" chỉ tính khi đi với khung / bộ phận / loại chi phí (en: all frames / divisions / cost types); "còn … thì sao" xét phần "…" + ô drawer, ghép được 1 khung thì là câu hỏi 1 khung (context thu gọn + pre-fetch). `EvalCase` thêm `params` tùy chọn (mô phỏng drawer); thêm 2 case eval. |
