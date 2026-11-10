@@ -186,7 +186,7 @@ public class CostMonitoringDetailService {
 
 		String status = act == null || fluct == null
 				? null
-				: act > fluct ? CostDetailResponse.STATUS_OVER : CostDetailResponse.STATUS_OK;
+				: CostMonitoringAssessment.exceeds(act, fluct) ? CostDetailResponse.STATUS_OVER : CostDetailResponse.STATUS_OK;
 
 		// Estimate null (vd OT) -> null, FE hiển thị "-"; PL null mà có Est -> ghi chú theo FC
 		Double estimate = CmText.r1(CostMonitoringSnapshot.estimate(chart));

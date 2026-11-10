@@ -188,6 +188,76 @@ public record CostMonitoringSnapshot(
 		return chart.plTgt() == null && chart.estMonthEnd() != null;
 	}
 
+	// Estimate (MTD) của SP tại 1 ngày (đường Estimate trên chart); không có -> null
+	public static Double estimateAt(CostChartDto chart, LocalDate date) {
+
+		for (CostChartPointDto point : chart.points()) {
+			if (date.equals(point.date())) {
+				return point.estMtd();
+			}
+		}
+
+		return null;
+	}
+
+	// Fluct của chính 1 ngày (tooltip chart); không có -> null
+	public static Double fluctAt(CostChartDto chart, LocalDate date) {
+
+		for (CostChartPointDto point : chart.points()) {
+			if (date.equals(point.date())) {
+				return point.fluctTgt();
+			}
+		}
+
+		return null;
+	}
+
+	/*
+	 * Ngày dự kiến vượt Fluct theo đường Estimate: ngày đầu tiên SAU ngày có Actual cuối mà
+	 *   Estimate (MTD) > Fluct của chính ngày đó (CostMonitoringAssessment.exceeds: số gốc, giống FE).
+	 * null khi: chưa có Actual / Estimate (vd OT), Actual ngày cuối đã vượt Fluct (đã vượt thực tế),
+	 *   hoặc Estimate không vượt Fluct đến hết tháng.
+	 */
+	public static LocalDate estimateCrossDay(CostChartDto chart) {
+
+		LocalDate lastAct = null;
+		Double lastActValue = null;
+		Double lastActFluct = null;
+
+		for (CostChartPointDto point : chart.points()) {
+			if (point.actMtd() != null && point.date() != null
+					&& (lastAct == null || point.date().isAfter(lastAct))) {
+				lastAct = point.date();
+				lastActValue = point.actMtd();
+				lastActFluct = point.fluctTgt();
+			}
+		}
+
+		if (lastAct == null || lastActFluct == null || CostMonitoringAssessment.exceeds(lastActValue, lastActFluct)) {
+			return null;
+		}
+
+		LocalDate cross = null;
+
+		for (CostChartPointDto point : chart.points()) {
+			if (point.date() == null || !point.date().isAfter(lastAct)
+					|| point.estMtd() == null || point.fluctTgt() == null) {
+				continue;
+			}
+			if (CostMonitoringAssessment.exceeds(point.estMtd(), point.fluctTgt())
+					&& (cross == null || point.date().isBefore(cross))) {
+				cross = point.date();
+			}
+		}
+
+		return cross;
+	}
+
+	// "24/11"
+	public static String ddmm(LocalDate date) {
+		return String.format(Locale.ROOT, "%02d/%02d", date.getDayOfMonth(), date.getMonthValue());
+	}
+
 	public static String fmt(Double value) {
 
 		if (value == null || value.isNaN() || value.isInfinite()) {

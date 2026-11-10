@@ -150,8 +150,16 @@ public class CostMonitoringContextProvider {
 
 			Double estimate = CostMonitoringSnapshot.estimate(chart);
 			sb.append("|Estimate=").append(estimate == null ? "-" : CmText.k1(estimate)
-							+ (CostMonitoringSnapshot.estimateByFc(chart) ? " (" + CmText.forecastBase("FC", lang) + ")" : ""))
-					.append("|Badge=").append(badgeText(a, lang))
+							+ (CostMonitoringSnapshot.estimateByFc(chart) ? " (" + CmText.forecastBase("FC", lang) + ")" : ""));
+
+			// Ngày Estimate (MTD) vượt Fluct của chính ngày đó (tính sẵn; model không tự dò chuỗi ngày)
+			String cross = CmText.estimateCrossText(chart, lang);
+			if (cross != null) {
+				sb.append(t(lang, "|Ngày dự kiến vượt Fluct (theo Estimate)=", "|Expected day to exceed Fluct (by Estimate)="))
+						.append(cross);
+			}
+
+			sb.append("|Badge=").append(badgeText(a, lang))
 					.append(t(lang, "|Tiến độ chuẩn=", "|Standard pace=")).append(CmText.pct0(a.pace()))
 					.append(t(lang, "|Tiến độ=", "|Pace=")).append(CmText.pace(a.paceStatus(), lang))
 					.append(t(lang, "|Dự báo cuối tháng=", "|Month-end forecast=")).append(forecastText(a, lang))
@@ -446,7 +454,7 @@ public class CostMonitoringContextProvider {
 	// "OK 19%" / "Vượt 137%" / "Chưa có actual" / "Chưa có target" (khớp badge FE)
 	private static String badgeText(CostMonitoringAssessment a, String lang) {
 
-		String code = status(a.act(), a.pct());
+		String code = status(a.act(), a.fluct(), a.pct());
 		String label = CmText.badge(code, lang);
 
 		return STATUS_OK.equals(code) || STATUS_OVER.equals(code)
@@ -501,7 +509,8 @@ public class CostMonitoringContextProvider {
 		return t(lang, "Tuần ", "Week ") + simuWeek.substring(simuWeek.length() - 1);
 	}
 
-	private static String status(Double act, Double pct) {
+	// Badge: cùng quy tắc vượt với FE (CostMonitoringAssessment.exceeds, số gốc)
+	private static String status(Double act, Double fluct, Double pct) {
 
 		if (act == null) {
 			return STATUS_NO_ACTUAL;
@@ -511,6 +520,6 @@ public class CostMonitoringContextProvider {
 			return STATUS_NO_TARGET;
 		}
 
-		return pct > 100 ? STATUS_OVER : STATUS_OK;
+		return CostMonitoringAssessment.exceeds(act, fluct) ? STATUS_OVER : STATUS_OK;
 	}
 }

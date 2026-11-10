@@ -475,5 +475,44 @@
     "mustContain": ["2026-09"],
     "mustNotContain": ["2026-11", "WILL_EXCEED"],
     "llmCallCount": 0
+  },
+  {
+    "question": "Khi nào PRESS T&SL sẽ vượt Fluct?",
+    "month": "2026-11",
+    "mustContain": ["PRESS T&SL", "Fluct"],
+    "mustNotContain": ["WILL_EXCEED", "Est_MTD", "estMtd"],
+    "llmCallCount": 0,
+    "answerIntent": "when_exceed"
+  },
+  {
+    "question": "Khi nào dữ liệu được cập nhật?",
+    "month": "2026-11",
+    "mustContain": ["T&SL", "RM"],
+    "mustNotContain": ["buổi sáng"],
+    "llmCallCount": 0,
+    "answerIntent": "data_update"
+  },
+  {
+    "question": "Estimate là gì?",
+    "month": "2026-11",
+    "mustContain": ["PL", "FC"],
+    "mustNotContain": ["nhịp target", "nhịp Fluct"],
+    "llmCallCount": 0,
+    "answerIntent": "estimate_concept"
+  },
+  {
+    "question": "Ngày 28 PRESS OT chi bao nhiêu?",
+    "month": "2026-11",
+    "mustContain": ["OT"],
+    "mustNotContain": ["53.2"],
+    "llmCallCount": 0,
+    "answerIntent": "ot_no_data"
+  },
+  {
+    "question": "Đến ngày 28 MOLD RM dự kiến chi bao nhiêu?",
+    "month": "2026-11",
+    "mustContain": ["chưa tới", "dự kiến"],
+    "mustNotContain": ["Est_MTD", "đã chi"],
+    "llmCallCount": 0
   }
 ]

@@ -18,6 +18,11 @@
         },
         {
             "when": "forecast_over",
+            "vi": "Khi nào {div} {cost} dự kiến vượt Fluct?",
+            "en": "When is {div} {cost} expected to exceed Fluct?"
+        },
+        {
+            "when": "forecast_over",
             "vi": "Ngày nào {div} {cost} chi nhiều nhất?",
             "en": "Which day did {div} {cost} spend the most?"
         },

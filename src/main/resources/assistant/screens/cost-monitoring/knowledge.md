@@ -67,13 +67,14 @@ Kết quả dạng "Nhãn=giá trị" phân cách "|"; dòng "[Tên mục] cột
 Chọn tool:
 - Số liệu, trạng thái, khái niệm → không cần tool.
 - Dự báo một khung, vì sao vượt / dự báo vượt / thấp, đánh giá, có chấp nhận được không → explain_variance (nhiều bộ phận: div=ALL).
-- Theo ngày, một ngày cụ thể, ngày nào chi nhiều, tăng đột biến → get_daily_series.
+- Theo ngày, một ngày cụ thể, ngày nào chi nhiều, tăng đột biến, "đến ngày X dự kiến bao nhiêu", "khi nào vượt Fluct" → get_daily_series.
 - Vật tư, Category, cost center, máy nào chi nhiều → get_top_items (chỉ T&SL, RM).
 - So với tháng trước (tổng FC, Fluct, Actual) → compare_previous_month.
 - Vật tư / Category nào làm tăng / giảm so với tháng trước (cùng kỳ) → explain_variance (mục so cùng kỳ theo Category và vật tư: tăng / giảm mạnh nhất, kèm chênh K$); KHÔNG dùng compare_previous_month / get_top_items (không có số theo vật tư của tháng trước). OT không có vật tư.
 - Fluct / Ratio đổi thế nào, vì sao Fluct cao / thấp hơn FC, target bị hạ / được nâng, so với toàn nhà máy → get_ratio_trend.
 
-- get_daily_series(div, cost): "[Chi phí theo ngày]" theo ngày: ngày nghỉ ("nghỉ" = nhà máy nghỉ; WD_Office 0 = chỉ văn phòng nghỉ), chi trong ngày, Actual cộng dồn, Fluct (giá trị trong ngày), Fluct theo tiến độ (= Fluct trong ngày / N × ngày), % đã dùng, % thời gian. Dòng cuối "Tổng chi trong ngày" (= "Actual cộng dồn mới nhất") và "Ngày âm (trả hàng / điều chỉnh)".
+- get_daily_series(div, cost): "[Chi phí theo ngày]" theo ngày: ngày nghỉ ("nghỉ" = nhà máy nghỉ; WD_Office 0 = chỉ văn phòng nghỉ), chi trong ngày, Actual cộng dồn, Estimate (MTD, dự kiến cộng dồn theo đường Estimate; month_end=true – chỉ khi hỏi đúng 1 khung – thêm các ngày chưa tới, chỉ có cột này và Fluct), Fluct (giá trị trong ngày), Fluct theo tiến độ (= Fluct trong ngày / N × ngày), % đã dùng, % thời gian. Dòng cuối "Tổng chi trong ngày" (= "Actual cộng dồn mới nhất") và "Ngày âm (trả hàng / điều chỉnh)"; "Estimate cuối tháng (theo PL / FC)" và "Ngày dự kiến vượt Fluct (theo Estimate)".
+- "Ngày dự kiến vượt Fluct (theo Estimate)" (context, explain_variance, get_daily_series) = ngày đầu tiên Estimate (MTD) > Fluct của chính ngày đó, hệ thống tính sẵn; "không vượt đến cuối tháng" = Estimate không vượt Fluct. Không có nhãn = chưa có Estimate hoặc Actual đã vượt Fluct.
 - get_top_items(div, cost, limit ≤ 10): Actual của khung; "[Top vật tư]" (Tên (Code)|Category|Số lượng|K$|% của Actual; "(điều chỉnh)" = tổng âm), "[Top cost center]", "[Top máy]"; cuối mỗi danh sách "Tổng top N …=… K$|% của Actual=…%" (đã cộng sẵn). "Tổng chi phí trực tiếp" chưa gồm phân bổ nên có thể nhỏ hơn Actual. Category dùng để gộp vật tư cùng loại.
 - get_ratio_trend(div): "[Ratio theo ngày]" ngày|thứ|WD_All|Ratio %|Ratio KVH %|Fluct OT|Fluct T&SL|Fluct RM (đến hôm qua); "[Tóm tắt]": Ratio đầu tháng, mới nhất, thay đổi (điểm %), ngày đổi chiều (đổi dấu), ngày tăng / giảm mạnh nhất, Ratio KVH đầu tháng và mới nhất. Từ hôm nay Fluct dùng Ratio hôm qua. Tool chưa có: dùng Ratio suy ra (Fluct / FC − 1).
 - compare_previous_month(div, cost): "[Tháng này]" FC, Fluct, Actual đến ngày D; "[Tháng trước]" FC, Fluct, Actual cả tháng và Actual cùng kỳ; "[Chênh tháng này − tháng trước]" chênh FC, Fluct, Actual cùng kỳ (K$, %) có dấu và "Kết luận cùng kỳ" – nêu đúng các số chênh này, không tự trừ.

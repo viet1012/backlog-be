@@ -227,16 +227,16 @@ final class CostMonitoringAnswerTemplate {
 
 			// Khung chưa có PL: Est theo FC; chưa có Est (chưa có Actual) theo nhịp Fluct
 			String noPl = anyFc && anyFluct
-					? t(lang, "theo FC hoặc nhịp Fluct", "follow FC or the Fluct pace")
-					: anyFc ? t(lang, "theo FC", "follow FC")
-					: t(lang, "theo nhịp Fluct", "follow the Fluct pace");
+					? t(lang, "theo FC hoặc nhịp Fluct", "based on FC or the Fluct pace")
+					: anyFc ? t(lang, "theo FC", "based on FC")
+					: t(lang, "theo nhịp Fluct", "based on the Fluct pace");
 
 			if (!anyFc && !anyFluct) {
 				base = t(lang, "dự báo theo PL", "forecast based on PL");
 			} else if (!anyPl) {
 				base = t(lang, "dự báo ", "forecast ") + noPl;
 			} else {
-				base = t(lang, "dự báo theo PL; khung chưa có PL ", "forecast based on PL; frames without PL ") + noPl;
+				base = t(lang, "dự báo theo PL; khung chưa có PL ", "forecast based on PL; frames without PL are ") + noPl;
 			}
 		}
 

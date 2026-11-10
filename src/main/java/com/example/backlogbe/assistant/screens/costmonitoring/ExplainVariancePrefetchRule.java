@@ -36,6 +36,9 @@ public class ExplainVariancePrefetchRule implements PrefetchRule {
 	// Không nêu loại chi phí -> 2 loại có actual
 	private static final List<String> DEFAULT_COSTS = List.of("T&SL", "RM");
 
+	// Nhãn tín hiệu COMPARE khi chỉ do nêu ≥ 2 khung (CostMonitoringIntentClassifier)
+	private static final String COMPARE_BY_FRAMES = ">=2 khung";
+
 	// So sánh ≤ mức này khung -> pre-fetch từng khung (bản đầy đủ); nhiều hơn -> div=ALL tóm tắt
 	private static final int COMPARE_FULL_MAX = 2;
 
@@ -175,6 +178,13 @@ public class ExplainVariancePrefetchRule implements PrefetchRule {
 				}
 
 				case COMPARE -> {
+					// "So sánh" chỉ vì nêu ≥ 2 khung (không có từ so sánh) + câu hỏi theo ngày / khi nào vượt:
+					// get_daily_series (DailySeriesPrefetchRule) đủ trả lời. Thêm explain_variance bản đầy đủ từng khung
+					// làm prompt ~17–18k token -> LLM HTTP 400 (test 2026-11-10 ext-88 / ext-89).
+					if (r.matched().get(Signal.COMPARE).equals(List.of(COMPARE_BY_FRAMES))
+							&& DailySeriesPrefetchRule.isDailyQuestion(question)) {
+						return null;
+					}
 					List<CostMonitoringFocus> frames = compareFrames(r, focus);
 					List<String> costs = frames.stream().map(CostMonitoringFocus::cost).distinct().toList();
 					return new Plan(Intent.COMPARE, CostMonitoringToolArgs.ALL, costs, true, false, frames, r);

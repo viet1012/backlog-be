@@ -40,9 +40,9 @@ import com.example.backlogbe.dto.costmonitoring.CostChartDto;
 //   OVER         Act > Fluct: tách Gap thành TargetCut / OverFC
 // Thiếu Act / Fluct -> các status tương ứng là NO_DATA.
 // Mọi phần chênh hiển thị (forecastGap, excessVsPace, so sánh kịch bản với Fluct / FC, monthResultGap,
-//   Fluct − Act trong ngân sách còn lại) và so sánh dự báo với Fluct tính từ số đã làm tròn 1 chữ số
+//   Fluct − Act trong ngân sách còn lại) tính từ số đã làm tròn 1 chữ số
 //   (CmText.r1 / subR1) để khớp phép trừ người dùng tự làm trên màn hình.
-//   pct / badge / mode (Act > Fluct) giữ giá trị chưa làm tròn để khớp badge FE.
+//   Vượt / không vượt (badge, mode, dự báo vượt, ngày dự kiến vượt) dùng exceeds(): số gốc, giống FE.
 // Tháng đã kết thúc (closed: tháng đang xem < tháng hiện tại, hoặc D = N):
 //   không tính tiến độ, dự báo, kịch bản, ngân sách còn lại (NO_DATA / null);
 //   risk = MONTH_CLOSED, thay bằng Kết quả tháng: monthResultGap = Act − Fluct
@@ -156,13 +156,13 @@ public record CostMonitoringAssessment(
 			forecast = fluct != null && n > 0 ? act + fluct / n * remaining : null;
 		}
 
-		// So sánh và phần chênh tính từ số đã làm tròn 1 chữ số (giống số hiển thị)
+		// Vượt / không vượt: exceeds() (số gốc, giống FE); phần chênh hiển thị tính từ số đã làm tròn 1 chữ số
 		String forecastStatus;
 		Double forecastGap;
 		if (forecast == null || fluct == null) {
 			forecastStatus = NO_DATA;
 			forecastGap = null;
-		} else if (CmText.r1(forecast) > CmText.r1(fluct)) {
+		} else if (exceeds(forecast, fluct)) {
 			forecastStatus = WILL_EXCEED;
 			forecastGap = CmText.subR1(forecast, fluct);
 		} else {
@@ -173,7 +173,7 @@ public record CostMonitoringAssessment(
 		String risk;
 		if (act == null || fluct == null) {
 			risk = NO_DATA;
-		} else if (act > fluct || WILL_EXCEED.equals(forecastStatus)) {
+		} else if (exceeds(act, fluct) || WILL_EXCEED.equals(forecastStatus)) {
 			risk = RISK_HIGH;
 		} else if (FASTER_THAN_PACE.equals(paceStatus) && WITHIN.equals(forecastStatus)) {
 			risk = RISK_WATCH;
@@ -185,7 +185,7 @@ public record CostMonitoringAssessment(
 		Double excessVsPace = null;
 		if (act == null || fluct == null) {
 			mode = NO_DATA;
-		} else if (act > fluct) {
+		} else if (exceeds(act, fluct)) {
 			mode = MODE_OVER;
 		} else {
 			mode = MODE_IN_PROGRESS;
@@ -231,7 +231,7 @@ public record CostMonitoringAssessment(
 	private static CostMonitoringAssessment closedMonth(Double act, Double fluct, Double fc, Double pct) {
 
 		String mode = act == null || fluct == null ? NO_DATA
-				: act > fluct ? MODE_OVER
+				: exceeds(act, fluct) ? MODE_OVER
 				: MODE_CLOSED_WITHIN;
 
 		return new CostMonitoringAssessment(
@@ -247,6 +247,16 @@ public record CostMonitoringAssessment(
 				null,
 				true, CmText.subR1(act, fluct)
 		);
+	}
+
+	/*
+	 * QUY TẮC "VƯỢT" DUY NHẤT (giống FE): value > target trên số gốc từ SP, KHÔNG làm tròn; thiếu số -> false.
+	 * Dùng cho: badge / mode (Actual > Fluct), dự báo vượt (Forecast > Fluct, banner / mainStatus),
+	 *   ngày dự kiến vượt (Estimate (MTD) > Fluct của ngày đó), status KPI /detail.
+	 * Phần chênh hiển thị vẫn tính từ số làm tròn 1 chữ số (subR1) -> sát ngưỡng có thể "vượt +0.0 K$".
+	 */
+	public static boolean exceeds(Double value, Double target) {
+		return value != null && target != null && value > target;
 	}
 
 	// Pct so với Pace (± 3 điểm %); thiếu số -> NO_DATA
@@ -327,7 +337,7 @@ public record CostMonitoringAssessment(
 	//   NO_DATA     thiếu Actual / Fluct
 	//   OVER        Actual > Fluct (đã vượt thực tế)
 	//   WITHIN      tháng đã kết thúc và không vượt
-	//   WILL_EXCEED dự báo chính (PL Estimate; PL trống -> Act + Fluct / N × (N − D)) > Fluct (số làm tròn 1 chữ số)
+	//   WILL_EXCEED dự báo chính (Estimate theo PL / FC; không có -> Act + Fluct / N × (N − D)) > Fluct (exceeds, số gốc)
 	//   WITHIN      còn lại
 	// PL trống KHÔNG làm dự báo null: forecast luôn có fallback theo Fluct khi có Actual và Fluct.
 	public String mainStatus() {

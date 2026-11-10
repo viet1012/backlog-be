@@ -598,8 +598,9 @@ public class ChatOrchestrator {
 	// =========================================================
 	// HƯỚNG DẪN TRẢ LỜI (ScreenModule.answerGuide)
 	//
-	// Chỉ khi câu hỏi theo tháng đang xem: nhắc tháng khác (đã / không dựng được context) -> null,
-	// vì kết luận màn hình tính theo tháng đang xem. Lỗi -> null (log WARN tên lỗi, không log nội dung).
+	// Đúng 1 tháng khác dựng được -> ScreenModule.answerGuideForOtherMonth (template tháng đó, không có -> null);
+	// ≥ 2 tháng khác, hoặc nhắc tháng khác không dựng được (mismatch) -> null, vì kết luận màn hình tính theo
+	// tháng đang xem. Lỗi -> null (log WARN tên lỗi, không log nội dung).
 	// =========================================================
 
 	private static AnswerGuide answerGuide(
@@ -615,10 +616,8 @@ public class ChatOrchestrator {
 			return null;
 		}
 
-		if (plan != null && plan.mismatch()) {
-			return null;
-		}
-
+		// Xét tháng khác TRƯỚC mismatch: câu chỉ nhắc 1 tháng khác (vd "Tháng 9 có gì bất thường?") luôn mismatch,
+		// kiểm tra mismatch trước làm nhánh template tháng khác không bao giờ chạy (test 2026-11-10 ext-17 / ext-68).
 		if (plan != null && !plan.extra().isEmpty()) {
 			// Đúng 1 tháng khác: màn hình có thể trả template cho tháng đó; còn lại -> LLM với context tháng được hỏi
 			if (plan.extra().size() != 1) {
@@ -632,6 +631,11 @@ public class ChatOrchestrator {
 						screenKey, e.getClass().getSimpleName());
 				return null;
 			}
+		}
+
+		// Nhắc tháng khác nhưng không dựng được (ngoài phạm vi / tương lai): kết luận tháng đang xem không áp dụng
+		if (plan != null && plan.mismatch()) {
+			return null;
 		}
 
 		try {

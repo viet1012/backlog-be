@@ -31,7 +31,8 @@ import java.util.regex.Pattern;
 // (KHÔNG mặc định overview).
 //
 // certain() – được phép trả lời bằng template:
-//   có intent chính, không có từ khóa không chắc chắn (danh gia, so sanh, tot, nen, tai sao, vi sao),
+//   có intent chính, không có từ khóa không chắc chắn (danh gia, so sanh, tot, nen, tai sao, vi sao;
+//   khi nao / bao gio / luc nao / when CHỈ khi đi kèm vuot / over / exceed),
 //   và chỉ khớp 1 intent cụ thể trong WHY / COMPARE / RANKING / FORECAST.
 //   OVERVIEW không tính là "khớp thêm": "bất thường nhất" = xếp hạng theo mức bất thường, "có gì bất thường, cuối
 //   tháng có vượt không" = dự báo chung (cùng các nhóm khung).
@@ -80,6 +81,17 @@ final class CostMonitoringIntentClassifier {
 	// Có các từ này -> không dùng template (đi LLM)
 	private static final List<String> UNCERTAIN = List.of(
 			"danh gia", "so sanh", "tot", "nen", "tai sao", "vi sao"
+	);
+
+	// Hỏi NGÀY dự kiến vượt: từ hỏi thời điểm (WHEN) + từ vượt (EXCEED) cùng có mặt -> không dùng template
+	//   (template dự báo chỉ có số cuối tháng; LLM trả lời theo "Ngày dự kiến vượt Fluct (theo Estimate)").
+	//   Chỉ có từ hỏi thời điểm (vd "khi nào cập nhật") -> không tính.
+	private static final List<String> WHEN = List.of(
+			"khi nao", "bao gio", "luc nao", "when"
+	);
+
+	private static final List<String> EXCEED = List.of(
+			"vuot", "over", "exceed", "exceeds", "exceeded"
 	);
 
 	private static final List<String> CURRENT_RATE = List.of(
@@ -241,7 +253,14 @@ final class CostMonitoringIntentClassifier {
 
 		Signal primary = PRIORITY.stream().filter(matched::containsKey).findFirst().orElse(null);
 
-		return new Result(primary, matched, found(f, UNCERTAIN), ignored, divs, costs,
+		List<String> uncertain = new ArrayList<>(found(f, UNCERTAIN));
+		List<String> when = found(f, WHEN);
+		List<String> exceed = found(f, EXCEED);
+		if (!when.isEmpty() && !exceed.isEmpty()) {
+			uncertain.add(String.join("|", when) + "+" + String.join("|", exceed));
+		}
+
+		return new Result(primary, matched, List.copyOf(uncertain), ignored, divs, costs,
 				!found(f, CURRENT_RATE).isEmpty(), previousMonth);
 	}
 

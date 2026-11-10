@@ -50,6 +50,11 @@ import static com.example.backlogbe.assistant.screens.costmonitoring.CmText.t;
 //                      (đột biến: ≥ SPIKE_RATIO lần và ≥ SPIKE_MIN_K) + khoản lớn bất thường trong ngày đó
 //                      (1 dòng ≥ 10% Actual). CostMonitoringAnswerGuide ghép tiếp template tổng quan tháng
 //                      (khung dự báo vượt) – giữ hành vi cũ "hôm nay = tháng tính đến ngày có actual mới nhất".
+//   when_exceed      : (khi nào / bao giờ / lúc nào / when) + (vượt / over / exceed), không hỏi riêng FC / PL ->
+//                      ngày dự kiến vượt Fluct theo Estimate (CostMonitoringSnapshot.estimateCrossDay) từng khung.
+//   data_update      : (cập nhật / update) + (khi nào / chưa / mới nhất …) -> ngày có Actual T&SL / RM, OT không có.
+//   estimate_concept : "Estimate là gì / cách tính" -> định nghĩa cố định.
+//   ot_no_data       : when_exceed / day_spend chỉ về OT -> OT không có Actual theo ngày / Estimate.
 // Bỏ qua: câu hỏi nguyên nhân, so sánh, tháng trước / cùng kỳ; tháng đã kết thúc (trừ top_item / top_day).
 // Khung: CostMonitoringQuestion.frame (câu hỏi + ô drawer); không xác định được -> bộ phận nêu trong câu (hoặc cả 3)
 //   × loại chi phí nêu trong câu (hoặc T&SL, RM). OT không có actual -> bỏ.
@@ -100,6 +105,27 @@ public class CostMonitoringLookupAnswers {
 	// "Vật tư / Category nào làm X tăng (giảm) so với tháng trước": chênh cùng kỳ tính sẵn
 	// (audit test 2026-11-10: qua LLM 50 s, ghi "+3.7%" là % tăng trong khi đó là chênh / Actual)
 	static final String ITEM_CHANGE = "item_change";
+
+	// "Khi nào / bao giờ X vượt Fluct" (test 2026-11-10 ext-73..77: qua LLM 28–42 s; ext-77 bỏ sót GUIDE T&SL và
+	// ghép PRESS RM "theo tốc độ hiện tại"): ngày dự kiến vượt tính sẵn (CostMonitoringSnapshot.estimateCrossDay)
+	static final String WHEN_EXCEED = "when_exceed";
+	private static final Pattern WHEN_WORD = CostMonitoringQuestion.word("khi nao|bao gio|luc nao|when");
+	private static final Pattern EXCEED_WORD = CostMonitoringQuestion.word("vuot|over|exceed|exceeds|exceeded");
+	private static final Pattern OTHER_TARGET = CostMonitoringQuestion.word("fc|fc tgt|pl|pl tgt|bp");
+	private static final Pattern FLUCT_WORD = CostMonitoringQuestion.word("fluct|fluc|target|muc tieu|ngan sach|budget");
+	// "Khi nào dữ liệu cập nhật" (ext-84 / 85: LLM bịa "buổi sáng hôm sau"): chỉ nêu ngày có actual từ snapshot
+	static final String DATA_UPDATE = "data_update";
+	private static final Pattern UPDATE_WORD = CostMonitoringQuestion.word(
+			"cap nhat|update|updated|updates|refresh|refreshed");
+	private static final Pattern UPDATE_ASK = CostMonitoringQuestion.word(
+			"khi nao|bao gio|luc nao|when|how often|bao lau|den ngay nao|den hom nao|moi nhat|chua|latest");
+	// "Estimate là gì" (ext-92: LLM nói Estimate theo nhịp Fluct – sai)
+	static final String ESTIMATE_CONCEPT = "estimate_concept";
+	private static final Pattern ESTIMATE_WORD = CostMonitoringQuestion.word("estimate|est");
+	private static final Pattern CONCEPT_WORD = CostMonitoringQuestion.word(
+			"la gi|nghia la|y nghia|cach tinh|tinh the nao|tinh nhu the nao|cong thuc|what is|what does|meaning|how is");
+	// OT chỉ có FC / Fluct (không Actual theo ngày, không Estimate) – ext-82: LLM đọc Fluct làm "chi phí ngày 28"
+	static final String OT_NO_DATA = "ot_no_data";
 
 	// top_detail: xếp hạng theo máy / cost center / Category (mỗi khung xếp riêng, không cộng T&SL với RM)
 	enum Dimension {
@@ -282,8 +308,29 @@ public class CostMonitoringLookupAnswers {
 			return null;
 		}
 
+		// Khái niệm Estimate: không cần dữ liệu
+		if (ESTIMATE_CONCEPT.equals(kind)) {
+			Answer concept = estimateConcept(lang);
+			return new AnswerGuide(null, false, kind, concept.text(), concept.suggestions(),
+					"lookup=" + kind + "; template=yes");
+		}
+
 		Map<String, String> safeParams = params != null ? params : Map.of();
 		CostMonitoringSnapshot snapshot = loader.load(safeParams);
+
+		if (DATA_UPDATE.equals(kind)) {
+			Answer update = dataUpdate(snapshot, lang);
+			return new AnswerGuide(null, false, kind, update.text(), update.suggestions(),
+					"lookup=" + kind + "; template=yes");
+		}
+
+		// Chỉ hỏi OT: không có Actual theo ngày / Estimate / ngày dự kiến vượt -> nói rõ, không qua LLM
+		if ((WHEN_EXCEED.equals(kind) || DAY_SPEND.equals(kind)) && otOnly(question, safeParams)) {
+			Answer ot = otNoData(lang);
+			return new AnswerGuide(null, false, OT_NO_DATA, ot.text(), ot.suggestions(),
+					"lookup=" + kind + "; cost=OT; template=yes");
+		}
+
 		List<CostMonitoringFocus> frames = frames(question, safeParams);
 
 		if (frames.isEmpty() || snapshot.d() < 1) {
@@ -296,8 +343,8 @@ public class CostMonitoringLookupAnswers {
 		if (singleDay(question, f)) {
 			LocalDate future = futureDay(f, snapshot.month(), loader.today());
 			if (future != null && (DAY_SPEND.equals(kind) || TOP_DETAIL.equals(kind) || TOP_ITEM.equals(kind))) {
-				return new AnswerGuide(null, false, DAY_SPEND, futureDayAnswer(future, lang).text(),
-						futureDayAnswer(future, lang).suggestions(),
+				Answer futureAnswer = futureDayAnswer(snapshot, frames, future, lang);
+				return new AnswerGuide(null, false, DAY_SPEND, futureAnswer.text(), futureAnswer.suggestions(),
 						"lookup=" + kind + "; day=" + future + " (future); template=yes");
 			}
 			day = resolveDay(question, f, snapshot.month(), loader.today());
@@ -337,6 +384,7 @@ public class CostMonitoringLookupAnswers {
 					CHANGE_DOWN.matcher(f).find() && !CHANGE_UP.matcher(f).find(), WHY.matcher(f).find(), lang);
 			case TREND -> closed || frames.size() != 1 ? null : trend(snapshot, frames.get(0), lang);
 			case FRAME_VALUE -> frameValue(snapshot, frames, lang);
+			case WHEN_EXCEED -> closed ? null : whenExceed(snapshot, frames, lang);
 			default -> null;
 		};
 
@@ -360,6 +408,24 @@ public class CostMonitoringLookupAnswers {
 
 		if (PERSON.matcher(f).find()) {
 			return NO_PERSON;
+		}
+
+		if (ESTIMATE_WORD.matcher(f).find() && CONCEPT_WORD.matcher(f).find()) {
+			return ESTIMATE_CONCEPT;
+		}
+
+		// Hỏi cập nhật Actual (không phải Fluct / Ratio / target – các số đó đổi theo Ratio, xem target_change)
+		if (UPDATE_WORD.matcher(f).find() && UPDATE_ASK.matcher(f).find() && !EXCEED_WORD.matcher(f).find()
+				&& !OTHER_TARGET.matcher(f).find() && !FLUCT_WORD.matcher(f).find()
+				&& !CostMonitoringQuestion.word("ratio").matcher(f).find()) {
+			return DATA_UPDATE;
+		}
+
+		// Chỉ khi có cả từ hỏi thời điểm và từ vượt (giống CostMonitoringIntentClassifier.WHEN + EXCEED);
+		// hỏi mốc khác Fluct (FC / PL / BP) mà không nhắc Fluct -> LLM (ngày dự kiến chỉ tính theo Fluct)
+		if (WHEN_WORD.matcher(f).find() && EXCEED_WORD.matcher(f).find()
+				&& (!OTHER_TARGET.matcher(f).find() || FLUCT_WORD.matcher(f).find())) {
+			return WHEN_EXCEED;
 		}
 
 		if (ALREADY.matcher(f).find() && !CostMonitoringQuestion.word("thang truoc|cung ky|last month").matcher(f).find()) {
@@ -475,12 +541,213 @@ public class CostMonitoringLookupAnswers {
 		return day.isAfter(today) ? day : null;
 	}
 
-	private static Answer futureDayAnswer(LocalDate day, String lang) {
-		return new Answer(t(lang,
-				"Ngày **" + dayLabel(day, lang) + "** chưa tới nên chưa có dữ liệu chi.",
-				"**" + dayLabel(day, lang) + "** has not come yet, so there is no spending data."),
+	/*
+	 * Ngày chưa tới: chưa có Actual; kèm Estimate (MTD) của SP tại ngày đó cho từng khung được hỏi
+	 *   (Actual cộng dồn dự kiến đến hết ngày đó, so với Fluct của chính ngày đó, số làm tròn 1 chữ số).
+	 * Khung không có Estimate (vd OT) thì bỏ qua; không khung nào có -> chỉ câu "chưa tới".
+	 */
+	private static Answer futureDayAnswer(CostMonitoringSnapshot snapshot, List<CostMonitoringFocus> frames,
+										  LocalDate day, String lang) {
+
+		StringBuilder sb = new StringBuilder(t(lang,
+				"Ngày **" + dayLabel(day, lang) + "** chưa tới nên chưa có Actual.",
+				"**" + dayLabel(day, lang) + "** has not come yet, so there is no Actual."));
+
+		List<String> lines = new ArrayList<>();
+
+		for (CostMonitoringFocus frame : frames) {
+
+			CostChartDto chart = snapshot.find(frame.div(), frame.cost());
+			Double est = chart != null ? CostMonitoringSnapshot.estimateAt(chart, day) : null;
+
+			if (est == null) {
+				continue;
+			}
+
+			Double fluctDay = CostMonitoringSnapshot.fluctAt(chart, day);
+			String base = CmText.forecastBase(chart.plTgt() != null ? "PL" : "FC", lang);
+			String line = "- " + CostMonitoringSnapshot.divName(frame.div()) + " " + frame.cost() + ": "
+					+ t(lang, "dự kiến cộng dồn khoảng **", "expected cumulative about **") + k1(est) + "**"
+					+ " (" + base + ")";
+
+			if (fluctDay != null) {
+				// Vượt / không: số gốc (exceeds, giống FE); số chênh hiển thị từ số làm tròn 1 chữ số
+				line += t(lang, "; Fluct ngày đó ", "; Fluct that day ") + k1(fluctDay)
+						+ (CostMonitoringAssessment.exceeds(est, fluctDay)
+						? t(lang, " → vượt Fluct ", " → over Fluct ") + CmText.signedK(CmText.subR1(est, fluctDay))
+						: t(lang, " → trong Fluct, còn dư ", " → within Fluct, ") + k1(CmText.subR1(fluctDay, est))
+						+ t(lang, "", " left"));
+			}
+
+			lines.add(line);
+		}
+
+		if (!lines.isEmpty()) {
+			sb.append(t(lang, " Theo đường Estimate:", " By the Estimate line:")).append('\n')
+					.append(String.join("\n", lines));
+		}
+
+		return new Answer(sb.toString(),
 				List.of(t(lang, "Hôm qua có gì bất thường không?", "Anything unusual yesterday?"),
 						t(lang, "Tháng này có khung nào dự báo vượt Fluct?", "Which frames are forecast to exceed Fluct?")));
+	}
+
+	/*
+	 * "Khi nào X vượt Fluct": theo đường Estimate (CostMonitoringSnapshot.estimateCrossDay, quy tắc vượt exceeds).
+	 * Nhóm (thứ tự hiển thị): 0 đã vượt thực tế | 1 dự kiến vượt (ngày sớm trước) | 2 không vượt trong tháng |
+	 *   3 chưa có Actual / Estimate. Mỗi khung kèm dự báo cuối tháng chính (CmText.estimateBrief).
+	 */
+	private static Answer whenExceed(CostMonitoringSnapshot snapshot, List<CostMonitoringFocus> frames, String lang) {
+
+		record Row(int group, LocalDate cross, String name, String text) {
+		}
+
+		List<Row> rows = new ArrayList<>();
+
+		for (CostMonitoringFocus fr : frames) {
+
+			CostChartDto chart = snapshot.find(fr.div(), fr.cost());
+			if (chart == null) {
+				continue;
+			}
+
+			CostMonitoringAssessment a = CostMonitoringAssessment.of(snapshot, chart);
+			String name = CostMonitoringSnapshot.divName(fr.div()) + " " + fr.cost();
+
+			if (a.act() == null || a.fluct() == null) {
+				rows.add(new Row(3, null, name, t(lang, "chưa có Actual nên chưa có Estimate", "no Actual yet, so no Estimate")));
+				continue;
+			}
+
+			if (a.alreadyOver()) {
+				rows.add(new Row(0, null, name, t(lang, "**đã vượt Fluct thực tế**: Actual ", "**already above Fluct**: Actual ")
+						+ k1(a.act()) + t(lang, ", vượt Fluct ", ", over Fluct ") + CmText.signedK(CmText.subR1(a.act(), a.fluct()))));
+				continue;
+			}
+
+			LocalDate cross = CostMonitoringSnapshot.estimateCrossDay(chart);
+
+			if (cross != null) {
+				rows.add(new Row(1, cross, name, t(lang, "dự kiến vượt Fluct từ **", "expected to exceed Fluct from **")
+						+ dayLabel(cross, lang) + "**; " + CmText.estimateBrief(a, lang)));
+			} else if (chart.estMonthEnd() != null) {
+				rows.add(new Row(2, null, name, t(lang, "dự kiến **không vượt** Fluct trong tháng; ",
+						"expected **not to exceed** Fluct this month; ") + CmText.estimateBrief(a, lang)));
+			} else {
+				rows.add(new Row(3, null, name, t(lang, "chưa có Estimate", "no Estimate yet")));
+			}
+		}
+
+		if (rows.isEmpty()) {
+			return null;
+		}
+
+		rows.sort(Comparator.comparingInt(Row::group)
+				.thenComparing(Row::cross, Comparator.nullsLast(Comparator.naturalOrder())));
+
+		StringBuilder sb = new StringBuilder();
+
+		if (rows.size() == 1) {
+			Row r = rows.get(0);
+			sb.append("**").append(r.name()).append("** ").append(r.text()).append('\n');
+		} else {
+			long expected = rows.stream().filter(r -> r.group() == 1).count();
+			long over = rows.stream().filter(r -> r.group() == 0).count();
+			sb.append(t(lang, "Theo đường Estimate, **" + expected + "/" + rows.size() + "** khung dự kiến vượt Fluct trong tháng",
+							"By the Estimate line, **" + expected + "/" + rows.size() + "** frame(s) are expected to exceed Fluct this month"))
+					.append(over > 0 ? t(lang, ", " + over + " khung đã vượt thực tế", ", " + over + " already above Fluct") : "")
+					.append(":\n");
+			for (Row r : rows) {
+				sb.append("- **").append(r.name()).append("**: ").append(r.text()).append('\n');
+			}
+		}
+
+		sb.append('\n').append(t(lang,
+				"_Ngày dự kiến vượt = ngày đầu tiên Estimate (MTD) vượt Fluct của chính ngày đó (Estimate theo PL; chưa có PL thì theo FC). ",
+				"_Expected day = first day the Estimate (MTD) exceeds that day's Fluct (Estimate based on PL; FC when no PL). "))
+				.append(footer(snapshot, lang).substring(1));
+
+		Row first = rows.get(0);
+		List<String> suggestions = first.group() <= 1
+				? List.of(t(lang, "Vì sao " + first.name() + " dự báo vượt?", "Why is " + first.name() + " forecast to exceed?"),
+				t(lang, "Ngân sách còn lại mỗi ngày của " + first.name(), "Remaining daily budget of " + first.name()))
+				: List.of(t(lang, "Tháng này có khung nào dự báo vượt Fluct?", "Which frames are forecast to exceed Fluct?"));
+
+		return new Answer(sb.toString().trim(), suggestions);
+	}
+
+	// "Khi nào dữ liệu cập nhật": chỉ nêu ngày có Actual mới nhất (T&SL / RM) từ snapshot, không đoán giờ cập nhật
+	private static Answer dataUpdate(CostMonitoringSnapshot snapshot, String lang) {
+
+		int tsl = 0;
+		int rm = 0;
+
+		for (CostChartDto chart : snapshot.response().charts()) {
+			int day = snapshot.lastActualDay(chart);
+			if ("T&SL".equals(chart.chart())) {
+				tsl = Math.max(tsl, day);
+			} else if ("RM".equals(chart.chart())) {
+				rm = Math.max(rm, day);
+			}
+		}
+
+		String none = t(lang, "chưa có", "none yet");
+		StringBuilder sb = new StringBuilder(t(lang,
+				"Số liệu Actual cập nhật theo ngày. Tháng " + snapshot.month() + " hiện có:",
+				"Actual data is updated daily. Month " + snapshot.month() + " currently has:")).append('\n');
+		sb.append(t(lang, "- T&SL: Actual đến **", "- T&SL: Actual up to **"))
+				.append(tsl > 0 ? dayLabel(snapshot.month().atDay(tsl), lang) : none).append("**\n");
+		sb.append(t(lang, "- RM: Actual đến **", "- RM: Actual up to **"))
+				.append(rm > 0 ? dayLabel(snapshot.month().atDay(rm), lang) : none).append("**")
+				.append(t(lang, " (RM ghi nhận chậm hơn T&SL khoảng 1 ngày)", " (RM is recorded about 1 day later than T&SL)"))
+				.append('\n');
+		sb.append(t(lang, "- OT: chưa có Actual (chỉ có FC / Fluct)", "- OT: no Actual (FC / Fluct only)")).append("\n\n");
+		sb.append(t(lang, "_Màn hình không có thông tin giờ cập nhật cụ thể._", "_The screen has no exact update time._"));
+
+		return new Answer(sb.toString(),
+				List.of(t(lang, "Hôm qua có gì bất thường không?", "Anything unusual yesterday?"),
+						t(lang, "Tháng này có khung nào dự báo vượt Fluct?", "Which frames are forecast to exceed Fluct?")));
+	}
+
+	// "Estimate là gì": định nghĩa cố định (khớp sp_CostMonitoringChart Est_MTD)
+	private static Answer estimateConcept(String lang) {
+		return new Answer(t(lang,
+				"**Estimate (MTD)** (đường nét đứt trên chart) là chi phí cộng dồn **dự kiến** đến từng ngày:\n"
+						+ "- Bắt đầu từ Actual của ngày có số mới nhất (tại ngày đó Estimate = Actual).\n"
+						+ "- Các ngày sau cộng thêm PL TGT phân bổ theo ngày làm việc của nhà máy (ngày nghỉ không cộng); "
+						+ "chưa có PL thì dùng FC TGT (ghi \"theo FC\").\n"
+						+ "- Estimate ngày cuối tháng là dự báo cuối tháng chính, so với Fluct để biết dự báo vượt / trong Fluct.\n"
+						+ "- Khung chưa có Actual (vd OT) thì không có Estimate.",
+				"**Estimate (MTD)** (dashed line on the chart) is the **expected** cumulative cost up to each day:\n"
+						+ "- It starts from the Actual of the latest day with data (on that day Estimate = Actual).\n"
+						+ "- Later days add PL TGT spread over factory working days (holidays add nothing); "
+						+ "without PL it uses FC TGT (\"based on FC\").\n"
+						+ "- The month-end Estimate is the main month-end forecast, compared with Fluct to tell over / within.\n"
+						+ "- Frames without Actual (e.g. OT) have no Estimate."),
+				List.of(t(lang, "Khi nào có khung vượt Fluct?", "When will any frame exceed Fluct?"),
+						t(lang, "Fluct là gì?", "What is Fluct?")));
+	}
+
+	// OT: chỉ có FC / Fluct
+	private static Answer otNoData(String lang) {
+		return new Answer(t(lang,
+				"Khung **OT** chưa có Actual trên màn hình này (chỉ có FC / Fluct), nên không có số chi theo ngày, "
+						+ "đường Estimate hay ngày dự kiến vượt.",
+				"**OT** frames have no Actual on this screen (FC / Fluct only), so there is no daily spending, "
+						+ "Estimate line or expected day to exceed."),
+				List.of(t(lang, "Tháng này có khung nào dự báo vượt Fluct?", "Which frames are forecast to exceed Fluct?")));
+	}
+
+	// Câu hỏi chỉ về OT (câu hỏi / ô drawer)
+	private static boolean otOnly(String question, Map<String, String> params) {
+
+		CostMonitoringFocus one = CostMonitoringQuestion.frame(question, params);
+
+		if (one != null) {
+			return "OT".equals(one.cost());
+		}
+
+		return List.of("OT").equals(CostMonitoringQuestion.costs(CostMonitoringQuestion.normalize(question)));
 	}
 
 	// Số dòng người dùng yêu cầu ("top 10", "3 máy"); không nêu -> 0 (mặc định)
@@ -1644,8 +1911,9 @@ public class CostMonitoringLookupAnswers {
 				continue;
 			}
 			String name = fr.div() + " " + fr.cost();
-			boolean overFluct = CmText.r1(a.act()) > CmText.r1(a.fluct());
-			boolean overFc = a.fc() != null && CmText.r1(a.act()) > CmText.r1(a.fc());
+			// Quy tắc vượt giống FE (số gốc)
+			boolean overFluct = CostMonitoringAssessment.exceeds(a.act(), a.fluct());
+			boolean overFc = CostMonitoringAssessment.exceeds(a.act(), a.fc());
 			lines++;
 
 			if (single) {

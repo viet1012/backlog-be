@@ -22,9 +22,15 @@ import static com.example.backlogbe.assistant.screens.costmonitoring.CostMonitor
 // =========================================================
 // TOOL get_daily_series(div, cost)
 //
-// Chuỗi theo ngày của 1 khung, từ ngày 1 đến ngày D (nhãn theo lang):
-//   ngày|thứ|ngày nghỉ|WD_Office|chi trong ngày|Actual cộng dồn|Fluct (giá trị trong ngày)|Fluct theo tiến độ
-//   |% đã dùng|% thời gian
+// Chuỗi theo ngày của 1 khung, từ ngày 1 đến ngày D; month_end=true (hỏi đúng 1 khung) -> đến cuối tháng
+// (nhãn theo lang):
+//   ngày|thứ|ngày nghỉ|WD_Office|chi trong ngày|Actual cộng dồn|Estimate (MTD)|Fluct (giá trị trong ngày)
+//   |Fluct theo tiến độ|% đã dùng|% thời gian
+//   Estimate (MTD) = Est_MTD của SP (đường Estimate: Actual cuối + COALESCE(PL, FC) theo ngày làm việc), có từ ngày
+//                  Actual cuối; ngày sau D (chỉ khi month_end=true) chỉ có Estimate / Fluct (chưa có Actual).
+//                  Tháng đã kết thúc: D = N.
+//   Dòng tổng kết (luôn có, kể cả month_end=false / prefetch nhiều khung):
+//     Estimate cuối tháng (cơ sở PL / FC) + Ngày dự kiến vượt Fluct (CmText.estimateCrossText).
 //   thứ          = Thứ Hai..Thứ Bảy, Chủ nhật (en: Mon..Sun), chỉ để hiển thị
 //   ngày nghỉ    = "nghỉ" khi F2_Working_Date.WD_All = 0 (nhà máy nghỉ); KHÔNG suy từ thứ trong tuần.
 //                  Ngày không có dòng / lỗi đọc -> trống
@@ -44,6 +50,9 @@ import static com.example.backlogbe.assistant.screens.costmonitoring.CostMonitor
 @RequiredArgsConstructor
 public class DailySeriesTool implements AssistantTool {
 
+	// true = chuỗi đến hết tháng (ngày chưa tới có Estimate (MTD)); chỉ dùng khi hỏi đúng 1 khung
+	static final String ARG_MONTH_END = "month_end";
+
 	private final CostMonitoringSnapshotLoader loader;
 	private final CostWorkingDateRepository workingDateRepository;
 
@@ -56,14 +65,22 @@ public class DailySeriesTool implements AssistantTool {
 	public String description() {
 		return "Lấy chi phí theo từng ngày của 1 khung trong tháng đang xem (thứ trong tuần, ngày nhà máy nghỉ, "
 				+ "WD_Office, chi trong ngày, "
-				+ "Actual cộng dồn, Fluct của chính ngày đó, Fluct theo tiến độ, % đã dùng, % thời gian), "
-				+ "từ ngày 1 đến ngày có dữ liệu mới nhất. Dùng cho câu hỏi về xu hướng theo ngày, "
-				+ "một ngày cụ thể, ngày nào chi nhiều, tăng đột biến.";
+				+ "Actual cộng dồn, Estimate (MTD) dự kiến, Fluct của chính ngày đó, Fluct theo tiến độ, % đã dùng, "
+				+ "% thời gian), từ ngày 1 đến ngày có dữ liệu mới nhất, kèm Estimate cuối tháng và ngày dự kiến vượt Fluct. "
+				+ "Dùng cho câu hỏi về xu hướng theo ngày, một ngày cụ thể, ngày nào chi nhiều, tăng đột biến, "
+				+ "đến ngày X dự kiến bao nhiêu, khi nào vượt Fluct.";
 	}
 
 	@Override
 	public Map<String, Object> parameters() {
-		return CostMonitoringToolArgs.divCostSchema(CostMonitoringSnapshot.COSTS, Map.of());
+		return CostMonitoringToolArgs.divCostSchema(CostMonitoringSnapshot.COSTS, Map.of(
+				ARG_MONTH_END, Map.of(
+						"type", "boolean",
+						"description", "true = thêm các ngày chưa tới đến hết tháng (chỉ có Estimate (MTD)). "
+								+ "Chỉ đặt true khi câu hỏi về ĐÚNG 1 khung và hỏi ngày chưa tới / khi nào vượt; "
+								+ "hỏi nhiều khung thì bỏ trống (dùng dòng tóm tắt)."
+				)
+		));
 	}
 
 	@Override
@@ -81,9 +98,21 @@ public class DailySeriesTool implements AssistantTool {
 			return header + "|" + t(lang, "Không có dữ liệu", "No data");
 		}
 
+		// OT: không có Actual theo ngày / Estimate – không trả chuỗi chỉ có Fluct (test 2026-11-10 ext-82: model đọc
+		// Fluct 53.2 K$ thành "chi phí ngày 28")
+		if ("OT".equals(cost)) {
+			return header + "|" + t(lang,
+					"OT chưa có Actual theo ngày (không có chi trong ngày, Estimate hay ngày dự kiến vượt); chỉ có FC / Fluct. "
+							+ "Không nêu số theo ngày cho OT.",
+					"OT has no daily Actual (no daily spending, Estimate or expected exceed day); FC / Fluct only. "
+							+ "Do not give daily figures for OT.");
+		}
+
 		int n = snapshot.n();
 		LocalDate from = snapshot.month().atDay(1);
-		LocalDate until = snapshot.month().atDay(snapshot.d());
+		// month_end=true (1 khung): đến cuối tháng, ngày sau D chỉ có Estimate (MTD) / Fluct; khác: đến ngày D
+		boolean monthEnd = monthEnd(args);
+		LocalDate until = monthEnd ? snapshot.month().atEndOfMonth() : snapshot.month().atDay(snapshot.d());
 
 		Map<LocalDate, WorkingDay> workingDays = loadWorkingDays(from, until);
 
@@ -97,11 +126,13 @@ public class DailySeriesTool implements AssistantTool {
 				.append('\n');
 		sb.append(t(lang,
 				"[Chi phí theo ngày] cột=ngày|thứ|ngày nghỉ (nhà máy, WD_All=0)|WD_Office (0 = văn phòng nghỉ)"
-						+ "|chi trong ngày|Actual cộng dồn|Fluct (giá trị trong ngày)"
-						+ "|Fluct theo tiến độ|% đã dùng|% thời gian",
+						+ "|chi trong ngày|Actual cộng dồn|Estimate (MTD, dự kiến cộng dồn)|Fluct (giá trị trong ngày)"
+						+ "|Fluct theo tiến độ|% đã dùng|% thời gian"
+						+ (monthEnd ? " (ngày sau D chưa tới: chỉ có Estimate, không phải Actual)" : ""),
 				"[Daily cost] cols=day|weekday|holiday (factory, WD_All=0)|WD_Office (0 = office closed)"
-						+ "|spent that day|cumulative actual|Fluct (value on that day)"
-						+ "|Fluct by pace|% used|% of time")).append('\n');
+						+ "|spent that day|cumulative actual|Estimate (MTD, expected cumulative)|Fluct (value on that day)"
+						+ "|Fluct by pace|% used|% of time"
+						+ (monthEnd ? " (days after D have not come yet: Estimate only, not Actual)" : ""))).append('\n');
 
 		Double lastMtd = 0.0;
 		// Σ chi trong ngày (1 chữ số) và các ngày âm, để đối chiếu với Actual cộng dồn
@@ -144,6 +175,7 @@ public class DailySeriesTool implements AssistantTool {
 					.append('|').append(flagValue(wd == null ? null : wd.wdOffice()))
 					.append('|').append(fmt(daily))
 					.append('|').append(fmt(point.actMtd()))
+					.append('|').append(fmt(point.estMtd()))
 					.append('|').append(fmt(fluctDay))
 					.append('|').append(fmt(fluctByPace))
 					.append('|').append(pct(usedPct))
@@ -164,6 +196,19 @@ public class DailySeriesTool implements AssistantTool {
 					.append('\n');
 		}
 
+		// Estimate cuối tháng + ngày dự kiến vượt Fluct (tính sẵn, model không tự dò cột Estimate)
+		if (!snapshot.monthClosed() && chart.estMonthEnd() != null) {
+			String base = CmText.forecastBase(chart.plTgt() != null ? "PL" : "FC", lang);
+			sb.append(t(lang, "Estimate cuối tháng (", "Month-end Estimate ("))
+					.append(base).append(")=").append(fmt(chart.estMonthEnd())).append(" K$");
+			String cross = CmText.estimateCrossText(chart, lang);
+			if (cross != null) {
+				sb.append(t(lang, "|Ngày dự kiến vượt Fluct (theo Estimate)=", "|Expected day to exceed Fluct (by Estimate)="))
+						.append(cross);
+			}
+			sb.append('\n');
+		}
+
 		if (workingDays.isEmpty()) {
 			sb.append(t(lang,
 					"Không có lịch ngày nghỉ (cột ngày nghỉ và WD_Office trống); không suy ngày nghỉ từ thứ.",
@@ -176,6 +221,12 @@ public class DailySeriesTool implements AssistantTool {
 		}
 
 		return sb.toString().trim();
+	}
+
+	// month_end: Boolean hoặc chuỗi "true"; thiếu / khác -> false
+	private static boolean monthEnd(Map<String, Object> args) {
+		Object value = args.get(ARG_MONTH_END);
+		return value instanceof Boolean b ? b : value != null && "true".equalsIgnoreCase(value.toString().trim());
 	}
 
 	// Lỗi đọc lịch làm việc thì vẫn trả chuỗi theo ngày, cột ngày nghỉ để trống

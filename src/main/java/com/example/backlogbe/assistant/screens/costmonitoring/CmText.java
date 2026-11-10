@@ -1,5 +1,8 @@
 package com.example.backlogbe.assistant.screens.costmonitoring;
 
+import com.example.backlogbe.dto.costmonitoring.CostChartDto;
+
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -308,6 +311,31 @@ public final class CmText {
 		return closed
 				? t(lang, "đã kết thúc", "closed")
 				: t(lang, "đang diễn ra", "in progress");
+	}
+
+	/*
+	 * Ngày dự kiến vượt Fluct theo đường Estimate (CostMonitoringSnapshot.estimateCrossDay):
+	 *   có ngày            -> "24/11 (Thứ Ba)"
+	 *   Estimate không vượt -> "không vượt đến cuối tháng"
+	 *   không có Estimate / Actual đã vượt Fluct -> null (không ghi nhãn)
+	 */
+	public static String estimateCrossText(CostChartDto chart, String lang) {
+
+		LocalDate cross = CostMonitoringSnapshot.estimateCrossDay(chart);
+
+		if (cross != null) {
+			return CostMonitoringSnapshot.ddmm(cross) + " (" + DailySeriesTool.weekday(cross.getDayOfWeek(), lang) + ")";
+		}
+
+		Double act = chart.actMtdLatest();
+		Double fluct = CostMonitoringSnapshot.fluct(chart);
+
+		if (chart.estMonthEnd() == null || act == null || fluct == null
+				|| CostMonitoringAssessment.exceeds(act, fluct)) {
+			return null;
+		}
+
+		return t(lang, "không vượt đến cuối tháng", "does not exceed by month-end");
 	}
 
 	public static String forecastBase(String base, String lang) {

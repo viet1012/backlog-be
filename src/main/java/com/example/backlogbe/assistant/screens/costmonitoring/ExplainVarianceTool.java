@@ -324,8 +324,14 @@ public class ExplainVarianceTool implements AssistantTool {
 			sb.append(t(lang, "Dự báo cuối tháng", "Month-end forecast")).append(baseSuffix).append('=').append(forecast)
 					.append(t(lang, "|Kết luận dự báo", "|Forecast outlook")).append(baseSuffix).append('=')
 					.append(CmText.forecastOutlook(a, lang))
-					.append(t(lang, "|Rủi ro=", "|Risk=")).append(CmText.risk(a.risk(), lang))
-					.append('\n');
+					.append(t(lang, "|Rủi ro=", "|Risk=")).append(CmText.risk(a.risk(), lang));
+
+			String cross = CmText.estimateCrossText(chart, lang);
+			if (cross != null) {
+				sb.append(t(lang, "|Ngày dự kiến vượt Fluct (theo Estimate)=", "|Expected day to exceed Fluct (by Estimate)="))
+						.append(cross);
+			}
+			sb.append('\n');
 
 			appendScenarios(sb, a, lang);
 		}
@@ -401,8 +407,14 @@ public class ExplainVarianceTool implements AssistantTool {
 				sb.append(t(lang, "Kết luận dự báo", "Forecast outlook"))
 						.append(base.isEmpty() ? "" : " (" + base + ")").append('=')
 						.append(CmText.forecastOutlook(a, lang))
-						.append(t(lang, "|Rủi ro=", "|Risk=")).append(CmText.risk(a.risk(), lang))
-						.append('\n');
+						.append(t(lang, "|Rủi ro=", "|Risk=")).append(CmText.risk(a.risk(), lang));
+
+				String cross = CmText.estimateCrossText(chart, lang);
+				if (cross != null) {
+					sb.append(t(lang, "|Ngày dự kiến vượt Fluct (theo Estimate)=", "|Expected day to exceed Fluct (by Estimate)="))
+							.append(cross);
+				}
+				sb.append('\n');
 
 				appendScenarios(sb, a, lang);
 			}
