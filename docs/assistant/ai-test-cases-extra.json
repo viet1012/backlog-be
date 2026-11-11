@@ -1776,6 +1776,172 @@
         "cost": "T&SL"
       },
       "maxSec": null
+    },
+    {
+      "id": "ext-215",
+      "group": "41. Chi tiết vật tư (xuất nhiều, lúc nào, đơn giá, bất thường)",
+      "question": "Tool nào được mua nhiều nhất?",
+      "expected": "Template item_most_issued CHỈ 3 khung T&SL (\"tool\" = T&SL, không lấy thép RM): xếp theo SỐ LẦN xuất, mỗi dòng: lần / ngày, SL + đơn vị, K$, đơn giá TB; mỗi khung thêm dòng \"Theo thành tiền, lớn nhất là …\". Footer: tiêu chí + dữ liệu là xuất kho (cần xác nhận). Không qua LLM.",
+      "drawer": null,
+      "maxSec": 5
+    },
+    {
+      "id": "ext-216",
+      "group": "41. Chi tiết vật tư (xuất nhiều, lúc nào, đơn giá, bất thường)",
+      "question": "Vật tư nào PRESS T&SL dùng nhiều nhất?",
+      "expected": "Template item_most_issued chỉ PRESS T&SL, top 5 theo số lần xuất (khác top theo K$ của \"chi nhiều nhất\").",
+      "drawer": null,
+      "maxSec": 3
+    },
+    {
+      "id": "ext-217",
+      "group": "41. Chi tiết vật tư (xuất nhiều, lúc nào, đơn giá, bất thường)",
+      "question": "Vật tư nào chi nhiều nhất ở PRESS T&SL?",
+      "expected": "KHÔNG phải item_most_issued: vẫn top_detail theo thành tiền (K$).",
+      "drawer": null,
+      "maxSec": 3
+    },
+    {
+      "id": "ext-218",
+      "group": "41. Chi tiết vật tư (xuất nhiều, lúc nào, đơn giá, bất thường)",
+      "question": "Tool mua nhiều nhất vào lúc nào?",
+      "expected": "Drawer PRESS T&SL: câu đầu nêu vật tư xuất nhiều lần nhất; rồi template item_when: tổng lần / ngày / SL / K$, lần gần nhất, top 3 ngày xuất nhiều nhất (kèm thứ), thứ hay xuất (nếu ≥ 40%), các tháng trước, nhịp cả tháng.",
+      "drawer": {
+        "div": "PR",
+        "cost": "T&SL"
+      },
+      "maxSec": 3
+    },
+    {
+      "id": "ext-219",
+      "group": "41. Chi tiết vật tư (xuất nhiều, lúc nào, đơn giá, bất thường)",
+      "question": "T0026400 xuất vào những ngày nào?",
+      "expected": "Template item_when cho mã T0026400 (G.W./455*150…, PRESS T&SL): ngày xuất nhiều nhất + các tháng trước. Không qua LLM.",
+      "drawer": null,
+      "maxSec": 3
+    },
+    {
+      "id": "ext-220",
+      "group": "41. Chi tiết vật tư (xuất nhiều, lúc nào, đơn giá, bất thường)",
+      "question": "EDM wire mua lúc nào nhiều nhất?",
+      "expected": "Nhận tên \"EDM WIRE\" (MOLD T&SL) → template item_when. Nếu nhiều mã EDM WIRE thì lấy mã có K$ lớn nhất.",
+      "drawer": null,
+      "maxSec": 3
+    },
+    {
+      "id": "ext-221",
+      "group": "41. Chi tiết vật tư (xuất nhiều, lúc nào, đơn giá, bất thường)",
+      "question": "Giá vật tư thay đổi thế nào?",
+      "expected": "Template item_price (không nêu vật tư) → các vật tư đổi đơn giá ≥ 10% so với TB 3 tháng trước, từng khung: Tăng giá (top 5) / Giảm giá (top 3), giá cũ → mới, %, ảnh hưởng K$. Footer: đơn giá = thành tiền / SL (cần xác nhận là giá bình quân kho hay giá mua).",
+      "drawer": null,
+      "maxSec": 5
+    },
+    {
+      "id": "ext-222",
+      "group": "41. Chi tiết vật tư (xuất nhiều, lúc nào, đơn giá, bất thường)",
+      "question": "Giá T0026400 tăng hay giảm?",
+      "expected": "Template item_price 1 mã. Dạng: \"**G.W./455*150*228.60MM… (T0026400)** (PRESS T&SL): tháng 11 là **278.49 $/ST**, tăng +1.0% so với tháng 10 (275.72), tăng liên tục 4 tháng (+3.3% so với tháng 8).\" rồi 1 dòng \"08: 269.61 (36 ST) · 09: 270.92 (32 ST) · 10: 275.72 (40 ST) · 11 đến 10/11: 278.49 (18 ST)\"; ghi chú \"Đơn giá là giá bình quân kho (đầu kỳ / cuối kỳ), không phải giá mua.\" (số theo dữ liệu 11/11).",
+      "drawer": null,
+      "maxSec": 3
+    },
+    {
+      "id": "ext-223",
+      "group": "41. Chi tiết vật tư (xuất nhiều, lúc nào, đơn giá, bất thường)",
+      "question": "Đơn giá tool mua nhiều nhất của MOLD thay đổi ra sao?",
+      "expected": "\"tool\" → chỉ MOLD T&SL: vật tư xuất nhiều lần nhất của MOLD T&SL (không phải thép RM) → đơn giá theo tháng của mã đó.",
+      "drawer": null,
+      "maxSec": 3
+    },
+    {
+      "id": "ext-224",
+      "group": "41. Chi tiết vật tư (xuất nhiều, lúc nào, đơn giá, bất thường)",
+      "question": "Which items had price increases?",
+      "expected": "Template item_price tiếng Anh (\"Price up\" / \"Price down\").",
+      "drawer": null,
+      "maxSec": 5
+    },
+    {
+      "id": "ext-225",
+      "group": "41. Chi tiết vật tư (xuất nhiều, lúc nào, đơn giá, bất thường)",
+      "question": "Vật tư nào bất thường?",
+      "expected": "Template item_anomaly 6 khung, mỗi vật tư 1 dòng (gộp nhiều dấu hiệu): tăng giá ≥ 20%, xuất ≥ 2 lần nhịp TB 3 tháng (chỉ vật tư xuất đều, phần vượt ≥ 0.3 K$), mã mới ≥ 0.5 K$ (mã -RX ghi là biến thể của mã gốc), 1 dòng ≥ 1 K$ / bản quyền. Không còn \"1 ST gấp 9.0 lần\"; số điểm còn lại ít (trước 97). Lần đầu < 5 s.",
+      "drawer": null,
+      "maxSec": 5
+    },
+    {
+      "id": "ext-226",
+      "group": "41. Chi tiết vật tư (xuất nhiều, lúc nào, đơn giá, bất thường)",
+      "question": "Có gì bất thường trong chi tiết giao dịch của GUIDE RM không?",
+      "expected": "Template item_anomaly chỉ GUIDE RM.",
+      "drawer": null,
+      "maxSec": 3
+    },
+    {
+      "id": "ext-227",
+      "group": "41. Chi tiết vật tư (xuất nhiều, lúc nào, đơn giá, bất thường)",
+      "question": "Nhận định bất thường vật tư tháng này",
+      "expected": "Drawer MOLD T&SL → item_anomaly chỉ MOLD T&SL.",
+      "drawer": {
+        "div": "MO",
+        "cost": "T&SL"
+      },
+      "maxSec": 3
+    },
+    {
+      "id": "ext-228",
+      "group": "41. Chi tiết vật tư (xuất nhiều, lúc nào, đơn giá, bất thường)",
+      "question": "Có ngày nào chi đột biến không?",
+      "expected": "KHÔNG phải item_anomaly (không nói vật tư): vẫn spike_days 6 khung.",
+      "drawer": null,
+      "maxSec": 3
+    },
+    {
+      "id": "ext-229",
+      "group": "41. Chi tiết vật tư (xuất nhiều, lúc nào, đơn giá, bất thường)",
+      "question": "Khi nào PRESS T&SL vượt Fluct?",
+      "expected": "KHÔNG phải item_when (có \"vượt\"): vẫn when_exceed.",
+      "drawer": null,
+      "maxSec": 3
+    },
+    {
+      "id": "ext-230",
+      "group": "41. Chi tiết vật tư (xuất nhiều, lúc nào, đơn giá, bất thường)",
+      "question": "Đánh giá chart PRESS RM",
+      "expected": "\"đánh giá\" KHÔNG bị hiểu là hỏi giá: vẫn frame_status.",
+      "drawer": null,
+      "maxSec": 3
+    },
+    {
+      "id": "ext-231",
+      "group": "41. Chi tiết vật tư (xuất nhiều, lúc nào, đơn giá, bất thường)",
+      "question": "Tháng trước tool nào được mua nhiều nhất?",
+      "expected": "Dòng đầu \"**Tháng 2026-10** (đã kết thúc) – theo tháng trong câu hỏi\"; item_most_issued 3 khung T&SL của tháng 10 (01/10–31/10). KHÔNG dùng số tháng 11.",
+      "drawer": null,
+      "maxSec": 5
+    },
+    {
+      "id": "ext-232",
+      "group": "41. Chi tiết vật tư (xuất nhiều, lúc nào, đơn giá, bất thường)",
+      "question": "Tháng 9 vật tư nào bất thường?",
+      "expected": "item_anomaly tháng 2026-09 so với 3 tháng trước đó (06–08; dữ liệu chỉ có từ 08 → ghi \"chỉ có 1 tháng dữ liệu\"). Dòng đầu ghi tháng 2026-09.",
+      "drawer": null,
+      "maxSec": 5
+    },
+    {
+      "id": "ext-233",
+      "group": "41. Chi tiết vật tư (xuất nhiều, lúc nào, đơn giá, bất thường)",
+      "question": "Giá T0026400 tháng 10 thế nào?",
+      "expected": "item_price mã T0026400 với tháng đang xét = 2026-10 (so với 07–09).",
+      "drawer": null,
+      "maxSec": 3
+    },
+    {
+      "id": "ext-234",
+      "group": "41. Chi tiết vật tư (xuất nhiều, lúc nào, đơn giá, bất thường)",
+      "question": "Giá T0026400 so với tháng trước thế nào?",
+      "expected": "\"so với tháng trước\" là so sánh → vẫn tháng đang xem (2026-11), KHÔNG đổi sang tháng 10. Dạng: \"**G.W./455*150*228.60MM… (T0026400)** (PRESS T&SL): tháng 11 là **278.49 $/ST**, tăng +1.0% so với tháng 10 (275.72), tăng liên tục 4 tháng (+3.3% so với tháng 8).\" rồi 1 dòng \"08: 269.61 (36 ST) · 09: 270.92 (32 ST) · 10: 275.72 (40 ST) · 11 đến 10/11: 278.49 (18 ST)\"; ghi chú \"Đơn giá là giá bình quân kho (đầu kỳ / cuối kỳ), không phải giá mua.\" (số theo dữ liệu 11/11).",
+      "drawer": null,
+      "maxSec": 3
     }
   ],
   "runs": {}

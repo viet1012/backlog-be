@@ -19,8 +19,8 @@ import java.util.Map;
 // Params : month (yyyy-MM | yyyy.MM, trống = tháng hiện tại), simuWeek / plTgtMode (Simu_W1..Simu_W5),
 //          factory + category (ô đang mở từ drawer, tùy chọn – CostMonitoringFocus).
 // Context: CostMonitoringContextProvider (đầy đủ / rút gọn cho tháng được hỏi).
-// Tool   : get_daily_series, get_top_items, compare_previous_month, explain_variance, get_ratio_trend
-//          (thứ tự giữ nguyên khi gửi cho LLM).
+// Tool   : get_daily_series, get_top_items, compare_previous_month, explain_variance, get_ratio_trend,
+//          get_item_insight (thứ tự giữ nguyên khi gửi cho LLM).
 // Prefetch: RatioTrendPrefetchRule (get_ratio_trend), ExplainVariancePrefetchRule (explain_variance cho câu hỏi
 //          dự báo, câu hỏi phân tích 1 khung, câu hỏi từ drawer), DailySeriesPrefetchRule (get_daily_series cho câu
 //          hỏi theo ngày về 1 khung), TopItemsPrefetchRule (get_top_items cho câu hỏi vật tư / máy / cost center).
@@ -71,6 +71,7 @@ public class CostMonitoringModule implements ScreenModule {
 			ComparePreviousMonthTool comparePreviousMonthTool,
 			ExplainVarianceTool explainVarianceTool,
 			RatioTrendTool ratioTrendTool,
+			ItemInsightTool itemInsightTool,
 			RatioTrendPrefetchRule ratioTrendPrefetchRule,
 			ExplainVariancePrefetchRule explainVariancePrefetchRule,
 			DailySeriesPrefetchRule dailySeriesPrefetchRule,
@@ -81,7 +82,7 @@ public class CostMonitoringModule implements ScreenModule {
 		this.contextProvider = contextProvider;
 		this.suggestionConditions = suggestionConditions;
 		this.tools = List.of(dailySeriesTool, topItemsTool, comparePreviousMonthTool, explainVarianceTool,
-				ratioTrendTool);
+				ratioTrendTool, itemInsightTool);
 		this.prefetchRules = List.of(ratioTrendPrefetchRule, explainVariancePrefetchRule, dailySeriesPrefetchRule,
 				topItemsPrefetchRule);
 	}

@@ -68,6 +68,7 @@ public class CostMonitoringAnswerGuide {
 	private final CostMonitoringSnapshotLoader loader;
 	private final CostMonitoringLookupAnswers lookupAnswers;
 	private final CostMonitoringManagerAnswers managerAnswers;
+	private final CostMonitoringItemAnswers itemAnswers;
 
 	public AnswerGuide guide(String question, Map<String, String> params, String lang) {
 
@@ -76,6 +77,12 @@ public class CostMonitoringAnswerGuide {
 		AnswerGuide manager = managerAnswers.guide(question, params, lang);
 		if (manager != null) {
 			return manager;
+		}
+
+		// Chi tiết vật tư: xuất nhiều lần nhất, xuất vào lúc nào, đơn giá thay đổi, vật tư bất thường (template từ dòng xuất kho)
+		AnswerGuide item = itemAnswers.guide(question, params, lang);
+		if (item != null) {
+			return item;
 		}
 
 		// "Tháng trước có gì bất thường / tình hình tháng trước": template tổng quan của tháng trước
@@ -123,6 +130,12 @@ public class CostMonitoringAnswerGuide {
 
 	// ChatOrchestrator gọi khi câu hỏi nhắc 1 tháng khác (không đi qua guide()): chỉ template tổng quan tháng đó
 	public AnswerGuide otherMonth(String question, Map<String, String> params, String lang) {
+		// Chi tiết vật tư tự dò tháng trong câu ("tháng 9", "T10"…) – test 1643 ext-232 / 233: nhánh tháng khác không
+		// gọi itemAnswers nên qua LLM 15–40 s, trả "không có dữ liệu" / "275 đ/ST"
+		AnswerGuide item = itemAnswers.guide(question, params, lang);
+		if (item != null) {
+			return item;
+		}
 		return previousMonthOverview(question, params, lang);
 	}
 

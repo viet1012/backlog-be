@@ -1,6 +1,7 @@
 package com.example.backlogbe.assistant.screens.costmonitoring.repository;
 
 import com.example.backlogbe.assistant.screens.costmonitoring.dto.CostItemAmountDto;
+import com.example.backlogbe.assistant.screens.costmonitoring.dto.CostItemStatDto;
 import com.example.backlogbe.assistant.screens.costmonitoring.dto.CostLineDto;
 import com.example.backlogbe.assistant.screens.costmonitoring.dto.CostTopCostCenterDto;
 import com.example.backlogbe.assistant.screens.costmonitoring.dto.CostTopItemDto;
@@ -199,6 +200,40 @@ public class CostTopItemsRepository {
 			ORDER BY Amt DESC, UsedDate, Code
 			OFFSET :offset ROWS FETCH NEXT :limit ROWS ONLY
 			""";
+
+	// Thống kê theo vật tư (Code + QtyUnit) – câu hỏi chi tiết vật tư (CostMonitoringItemAnswers).
+	// %1$s = cột Period, %2$s = điều kiện thêm, %3$s = GROUP BY. Đơn giá dòng = Amt / Qty (chỉ dòng Qty > 0, Amt > 0).
+	private static final String ITEM_AGG = """
+			SELECT %1$s                    AS Period,
+			       Code,
+			       MAX(Name)               AS Name,
+			       MAX(Category)           AS Category,
+			       QtyUnit,
+			       SUM(Qty)                AS Qty,
+			       SUM(Amt) / 1000.0       AS AmtK,
+			       COUNT(*)                AS Lines,
+			       COUNT(DISTINCT UsedDate) AS Days,
+			       SUM(CASE WHEN Qty > 0 AND Amt > 0 THEN Qty END) AS PosQty,
+			       SUM(CASE WHEN Qty > 0 AND Amt > 0 THEN Amt END) AS PosAmt,
+			       MIN(CASE WHEN Qty > 0 AND Amt > 0 THEN Amt / Qty END) AS MinPrice,
+			       MAX(CASE WHEN Qty > 0 AND Amt > 0 THEN Amt / Qty END) AS MaxPrice,
+			       MAX(UsedDate)           AS LastDate
+			FROM B
+			WHERE CC IN (:costCenters)
+			  AND Code IS NOT NULL
+			  %2$s
+			GROUP BY %3$s
+			""";
+
+	private static final String ITEM_STATS = ITEM_AGG.formatted(
+			"CAST(NULL AS VARCHAR(10))", "", "Code, QtyUnit");
+
+	private static final String ITEM_MONTHLY = ITEM_AGG.formatted(
+			"CONVERT(VARCHAR(7), UsedDate, 23)", "", "Code, QtyUnit, CONVERT(VARCHAR(7), UsedDate, 23)");
+
+	private static final String ITEM_DAILY = ITEM_AGG.formatted(
+			"CONVERT(VARCHAR(10), UsedDate, 23)", "AND Code = :code",
+			"Code, QtyUnit, CONVERT(VARCHAR(10), UsedDate, 23)") + "ORDER BY Period\n";
 
 	// Từ khóa nhận diện khoản đặc biệt (bản quyền / phần mềm), so khớp trên Text và Category (lowercase)
 	private static final List<String> UNUSUAL_KEYWORDS = List.of(
@@ -427,6 +462,48 @@ public class CostTopItemsRepository {
 						getDouble(rs, "AmtK")
 				)
 		)));
+	}
+
+	// Thống kê từng vật tư trong [from, to] (cả khoảng)
+	public List<CostItemStatDto> itemStats(String cost, LocalDate from, LocalDate to, List<String> costCenters) {
+		return new java.util.ArrayList<>(cached(key("itemStats", cost, from, to, costCenters, 0), () -> jdbcTemplate.query(
+				base(cost) + ITEM_STATS, params(from, to, costCenters, 1), (rs, rowNum) -> toItemStat(rs))));
+	}
+
+	// Thống kê từng vật tư theo tháng (period = yyyy-MM)
+	public List<CostItemStatDto> itemMonthly(String cost, LocalDate from, LocalDate to, List<String> costCenters) {
+		return new java.util.ArrayList<>(cached(key("itemMonthly", cost, from, to, costCenters, 0), () -> jdbcTemplate.query(
+				base(cost) + ITEM_MONTHLY, params(from, to, costCenters, 1), (rs, rowNum) -> toItemStat(rs))));
+	}
+
+	// 1 vật tư theo ngày (period = yyyy-MM-dd), tăng dần theo ngày
+	public List<CostItemStatDto> itemDaily(String cost, LocalDate from, LocalDate to, List<String> costCenters, String code) {
+		return new java.util.ArrayList<>(cached(key("itemDaily:" + code, cost, from, to, costCenters, 0), () -> jdbcTemplate.query(
+				base(cost) + ITEM_DAILY,
+				params(from, to, costCenters, 1).addValue("code", code, Types.NVARCHAR),
+				(rs, rowNum) -> toItemStat(rs))));
+	}
+
+	private static CostItemStatDto toItemStat(ResultSet rs) throws SQLException {
+
+		Date last = rs.getDate("LastDate");
+
+		return new CostItemStatDto(
+				rs.getString("Period"),
+				rs.getString("Code"),
+				rs.getString("Name"),
+				rs.getString("Category"),
+				rs.getString("QtyUnit"),
+				getDouble(rs, "Qty"),
+				getDouble(rs, "AmtK"),
+				rs.getInt("Lines"),
+				rs.getInt("Days"),
+				getDouble(rs, "PosQty"),
+				getDouble(rs, "PosAmt"),
+				getDouble(rs, "MinPrice"),
+				getDouble(rs, "MaxPrice"),
+				last != null ? last.toLocalDate() : null
+		);
 	}
 
 	// Tổng K$ của mọi dòng thỏa bộ lọc (gồm cả dòng âm); không có dòng -> null
