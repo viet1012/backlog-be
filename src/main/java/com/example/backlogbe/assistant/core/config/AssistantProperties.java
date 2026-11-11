@@ -87,6 +87,13 @@ public class AssistantProperties {
 		// Ước tính token từ số ký tự prompt (tiếng Việt có dấu + nhãn dữ liệu); hiệu chỉnh theo audit
 		// (promptChars / promptTokens của lần gọi đầu). Chưa gồm mô tả tool.
 		private double charsPerToken = 3.0;
+
+		// Ngắt nhanh khi LLM treo (LlmCircuitBreaker): số lần lỗi LLM (timeout / HTTP / không kết nối) liên tiếp để
+		// mở mạch; trong circuit-open-seconds giây sau đó câu hỏi cần LLM trả 503 LLM_ERROR ngay thay vì chờ ~170 s.
+		// 0 = tắt. Hết thời gian mở mạch: cho 1 request thử lại, thành công thì đóng mạch.
+		private int circuitFailureThreshold = 2;
+
+		private int circuitOpenSeconds = 60;
 	}
 
 	// assistant.audit.* – file audit JSONL (logger "assistant.audit", cấu hình appender trong logback-spring.xml)

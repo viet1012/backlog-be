@@ -1,12 +1,12 @@
 {
   "version": 1,
-  "exportedAt": "2026-11-10T04:00:00.000Z",
+  "exportedAt": "2026-11-11T04:00:00.000Z",
   "cases": [
     {
       "id": "ext-01",
       "group": "11. Một ngày cụ thể",
       "question": "Hôm kia MOLD RM chi bao nhiêu?",
-      "expected": "Template day_spend: 08/11 (Chủ nhật), MOLD RM có số K$ kèm TB ngày có chi. Không qua LLM.",
+      "expected": "Template day_spend: ngày = hôm nay − 2 (kèm thứ), MOLD RM có số K$ kèm TB ngày có chi (RM chưa có số thì nói chậm 1 ngày). Không qua LLM.",
       "drawer": null,
       "maxSec": 3
     },
@@ -14,7 +14,7 @@
       "id": "ext-02",
       "group": "11. Một ngày cụ thể",
       "question": "Hôm qua PRESS RM chi bao nhiêu?",
-      "expected": "Báo RM chưa có số ngày 09/11 (RM ghi nhận chậm 1 ngày). Không lấy số ngày khác.",
+      "expected": "Template day_spend: ngày = hôm nay − 1; PRESS RM chưa có số (RM ghi nhận chậm 1 ngày). Không lấy số ngày khác.",
       "drawer": null,
       "maxSec": 3
     },
@@ -22,7 +22,7 @@
       "id": "ext-03",
       "group": "11. Một ngày cụ thể",
       "question": "Thứ Hai vừa rồi GUIDE T&SL chi bao nhiêu?",
-      "expected": "Đúng ngày 09/11 (Thứ Hai), kèm K$.",
+      "expected": "Đúng Thứ Hai gần nhất TRƯỚC hôm nay (kèm ngày dd/mm), GUIDE T&SL có số K$.",
       "drawer": null,
       "maxSec": 3
     },
@@ -46,7 +46,7 @@
       "id": "ext-06",
       "group": "11. Một ngày cụ thể",
       "question": "Vật tư nào chi nhiều nhất hôm qua ở PRESS T&SL?",
-      "expected": "Top vật tư của đúng ngày 09/11 (không phải lũy kế tháng 01/11–09/11).",
+      "expected": "Top vật tư của đúng ngày hôm qua (hôm nay − 1), tiêu đề ghi ngày đó, không phải lũy kế tháng.",
       "drawer": null,
       "maxSec": 3
     },
@@ -70,7 +70,7 @@
       "id": "ext-09",
       "group": "11. Một ngày cụ thể",
       "question": "chi phí RM hôm qua bn",
-      "expected": "Hiểu bn = bao nhiêu; 3 khung RM ngày 09/11 → chưa có số (RM chậm 1 ngày).",
+      "expected": "Hiểu bn = bao nhiêu; 3 khung RM ngày hôm qua → chưa có số (RM chậm 1 ngày).",
       "drawer": null,
       "maxSec": 3
     },
@@ -94,7 +94,7 @@
       "id": "ext-12",
       "group": "12. Tiền đề sai",
       "question": "PRESS RM đã vượt FC rồi à?",
-      "expected": "Template already_over: \"Chưa.\" Actual chưa vượt; Dự báo cuối tháng (Estimate, theo FC khi chưa có PL) so với Fluct và FC – dữ liệu 10/11: dưới Fluct -4.3 K$, vượt FC +14.2 K$. Không nói \"đã vượt\".",
+      "expected": "Template already_over: \"Chưa.\" Actual so với Fluct / FC (thực tế), rồi \"Dự báo:\" Estimate cuối tháng so với Fluct / FC. Không nói \"đã vượt\". (Số liệu theo dữ liệu đang xem, không so số cứng.)",
       "drawer": null,
       "maxSec": null
     },
@@ -164,7 +164,7 @@
       "id": "ext-20",
       "group": "14. Câu nối tiếp + drawer",
       "question": "hôm qua chi bao nhiêu?",
-      "expected": "Drawer GUIDE RM → chỉ GUIDE RM; RM chưa có số ngày 09/11.",
+      "expected": "Drawer GUIDE RM → chỉ GUIDE RM, ngày hôm qua; RM chưa có số thì nói chậm 1 ngày.",
       "drawer": {
         "div": "Guide",
         "cost": "RM"
@@ -282,7 +282,7 @@
       "id": "ext-34",
       "group": "17. Dữ liệu biên",
       "question": "Fluct PRESS T&SL cuối tháng là bao nhiêu?",
-      "expected": "Số Fluct hiện tại (181.6 K$ nếu dữ liệu không đổi), nói Fluct thay đổi theo Ratio.",
+      "expected": "Nêu đúng số Fluct hiện tại của PRESS T&SL và nói Fluct đổi theo Ratio. (Theo dõi: hiện trả template dự báo, chưa nêu riêng giá trị Fluct.)",
       "drawer": null,
       "maxSec": null
     },
@@ -306,7 +306,7 @@
       "id": "ext-37",
       "group": "18. RM trễ 1 ngày (tiến độ / dự báo)",
       "question": "Cuối tháng PRESS RM có vượt không?",
-      "expected": "Dự báo chính theo Estimate (theo FC khi chưa có PL) – dữ liệu 10/11: ~522.4 K$, dưới Fluct -4.3 K$, vượt FC +14.2 K$; thêm 1 câu theo tốc độ chi hiện tại (vượt Fluct +52.1 K$). Không qua LLM.",
+      "expected": "Template dự báo PRESS RM theo Estimate (theo FC khi chưa có PL) so với Fluct và FC, kèm dòng \"Thực tế: chưa vượt…\"; nếu 2 cách dự báo trái chiều thì thêm 1 câu theo tốc độ chi hiện tại. Không qua LLM. (Số liệu theo dữ liệu đang xem, không so số cứng.)",
       "drawer": null,
       "maxSec": 3
     },
@@ -314,7 +314,7 @@
       "id": "ext-38",
       "group": "18. RM trễ 1 ngày (tiến độ / dự báo)",
       "question": "Tháng này có khung nào vượt không?",
-      "expected": "Số khung dự báo vượt Fluct khớp banner /chart (dữ liệu 10/11: 5 khung; PRESS RM chỉ vượt FC, trong Fluct). Không qua LLM.",
+      "expected": "Số khung dự báo vượt Fluct khớp banner /chart; khung chỉ vượt FC ghi nhóm riêng. Không qua LLM. (Số liệu theo dữ liệu đang xem, không so số cứng.)",
       "drawer": null,
       "maxSec": 3
     },
@@ -454,7 +454,7 @@
       "id": "ext-54",
       "group": "21. Câu còn qua LLM (theo dõi)",
       "question": "GUIDE T&SL có ngày nào tăng đột biến không?",
-      "expected": "Phải có số: ngày chi lớn nhất (05/11, 6.0 K$) so với TB ngày có chi; kết luận có / không theo ngưỡng ≥ 2 lần TB.",
+      "expected": "Template spike_days 1 khung: tiêu đề \"Có ngày chi đột biến:\" hoặc \"Không có ngày chi đột biến\" (KHÔNG ghi \"1/1 khung\"); ngày cao nhất kèm bội số so với TB, kết luận theo ngưỡng ≥ 2 lần TB và ≥ 1.0 K$.",
       "drawer": null,
       "maxSec": null
     },
@@ -510,7 +510,7 @@
       "id": "ext-61",
       "group": "22. Template mới (lượt 3)",
       "question": "GUIDE T&SL có ngày nào tăng đột biến không?",
-      "expected": "Template spike_days: kết luận có / không theo ngưỡng ≥ 2 lần TB và ≥ 1.0 K$; nêu ngày cao nhất 05/11 6.0 K$ và bội số so với TB.",
+      "expected": "Như ext-54: 1 khung không ghi \"1/1 khung\"; bội số < 2 không hiển thị thành \"2.0 lần\".",
       "drawer": null,
       "maxSec": 3
     },
@@ -550,7 +550,7 @@
       "id": "ext-66",
       "group": "23. Template mới (lượt 4)",
       "question": "PRESS RM đã vượt FC rồi à?",
-      "expected": "Template already_over: \"Chưa.\" + Actual so với Fluct / FC (thực tế), rồi Dự báo theo Estimate (dữ liệu 10/11: dưới Fluct -4.3 K$, vượt FC +14.2 K$). Không qua LLM.",
+      "expected": "Template already_over: \"Chưa.\" + Actual so với Fluct / FC (thực tế), rồi Dự báo theo Estimate. Không qua LLM. (Số liệu theo dữ liệu đang xem, không so số cứng.)",
       "drawer": null,
       "maxSec": 3
     },
@@ -590,7 +590,7 @@
       "id": "ext-71",
       "group": "23. Template mới (lượt 4)",
       "question": "GUIDE T&SL có ngày nào tăng đột biến không?",
-      "expected": "Ngày cao nhất ghi \"1.9 lần TB\" (không còn \"2.0 lần\" mà vẫn kết luận không đột biến).",
+      "expected": "Ngày cao nhất ghi bội số làm tròn xuống (vd 1.9 lần TB) khi < 2 lần; nếu ≥ 2 lần thì kết luận có đột biến, tiêu đề không ghi \"1/1 khung\".",
       "drawer": null,
       "maxSec": 3
     },
@@ -606,7 +606,7 @@
       "id": "ext-73",
       "group": "24. Estimate (MTD) – ngày dự kiến vượt",
       "question": "Khi nào PRESS T&SL sẽ vượt Fluct?",
-      "expected": "Template when_exceed (không qua LLM, < 3 s): \"PRESS T&SL dự kiến vượt Fluct từ dd/mm (Thứ …)\" + dự báo cuối tháng so với Fluct / FC. Ngày khớp context / explain_variance (dữ liệu 10/11: 29/11).",
+      "expected": "Template when_exceed: \"PRESS T&SL dự kiến vượt Fluct từ dd/mm (Thứ …)\" + dự báo cuối tháng so với Fluct / FC. Ngày khớp đường Estimate trên chart. Không qua LLM.",
       "drawer": null,
       "maxSec": 3
     },
@@ -614,7 +614,7 @@
       "id": "ext-74",
       "group": "24. Estimate (MTD) – ngày dự kiến vượt",
       "question": "bao giờ MOLD RM vượt fluct",
-      "expected": "Template when_exceed MOLD RM (câu không dấu), không qua LLM (dữ liệu 10/11: 29/11).",
+      "expected": "Template when_exceed MOLD RM (câu không dấu), ngày khớp đường Estimate trên chart, không qua LLM.",
       "drawer": null,
       "maxSec": 3
     },
@@ -622,7 +622,7 @@
       "id": "ext-75",
       "group": "24. Estimate (MTD) – ngày dự kiến vượt",
       "question": "When will GUIDE T&SL exceed Fluct?",
-      "expected": "Template when_exceed tiếng Anh: \"expected to exceed Fluct from 28/11 (Sat)\" + month-end forecast. Không qua LLM.",
+      "expected": "Template when_exceed tiếng Anh: \"expected to exceed Fluct from dd/mm (Day)\" + month-end forecast. Không qua LLM.",
       "drawer": null,
       "maxSec": 3
     },
@@ -641,7 +641,7 @@
       "id": "ext-77",
       "group": "24. Estimate (MTD) – ngày dự kiến vượt",
       "question": "Khi nào có khung vượt Fluct?",
-      "expected": "Template when_exceed 6 khung T&SL / RM: câu đầu \"N/6 khung dự kiến vượt Fluct\", khung sớm nhất trước (10/11: MOLD T&SL 27/11, GUIDE T&SL 28/11, …); PRESS RM nằm nhóm \"không vượt trong tháng\". Không sót khung, không ghép \"theo tốc độ hiện tại\".",
+      "expected": "Template when_exceed 6 khung T&SL / RM: câu đầu \"N/6 khung dự kiến vượt Fluct\", khung sớm nhất trước, khung không vượt ghi \"dự kiến không vượt Fluct trong tháng\". Không sót khung.",
       "drawer": null,
       "maxSec": 3
     },
@@ -729,7 +729,7 @@
       "id": "ext-88",
       "group": "27. get_daily_series nhiều khung",
       "question": "Khi nào PRESS và GUIDE RM vượt Fluct?",
-      "expected": "Template when_exceed 2 khung PRESS RM, GUIDE RM (không qua LLM, không còn HTTP 400): GUIDE RM dự kiến vượt 29/11; PRESS RM không vượt trong tháng.",
+      "expected": "Template when_exceed 2 khung PRESS RM, GUIDE RM (không qua LLM, không HTTP 400), mỗi khung ngày dự kiến vượt hoặc \"không vượt trong tháng\".",
       "drawer": null,
       "maxSec": 3
     },
@@ -737,9 +737,9 @@
       "id": "ext-89",
       "group": "27. get_daily_series nhiều khung",
       "question": "Xu hướng chi T&SL và RM của MOLD theo ngày",
-      "expected": "Không pre-fetch explain_variance (chỉ get_daily_series 2 khung, month_end=false) → prompt nhỏ, không HTTP 400. Trả lời xu hướng từng khung.",
+      "expected": "Template trend 2 khung (MOLD T&SL, MOLD RM), mỗi khung: % đã dùng Fluct so với % thời gian, tốc độ chi, ngày cao / thấp nhất, Dự báo; 1 footer chung. Không qua LLM, < 3 s (trước 101 s qua LLM, mô tả sai Fluct).",
       "drawer": null,
-      "maxSec": null
+      "maxSec": 3
     },
     {
       "id": "ext-90",
@@ -769,9 +769,9 @@
       "id": "ext-93",
       "group": "29. Bổ sung sau lượt test 10/11",
       "question": "Khi nào PRESS T&SL vượt FC?",
-      "expected": "Hỏi mốc FC (không nhắc Fluct): KHÔNG trả template when_exceed (ngày dự kiến chỉ tính theo Fluct) → LLM; không gán ngày vượt Fluct cho FC.",
+      "expected": "Template when_exceed_fc: ngày đầu tiên Estimate (MTD) vượt FC (FC cố định cả tháng) + \"mốc Fluct: dd/mm\" để đối chiếu; KHÔNG gán ngày vượt Fluct cho FC. Không qua LLM.",
       "drawer": null,
-      "maxSec": null
+      "maxSec": 3
     },
     {
       "id": "ext-94",
@@ -799,6 +799,983 @@
         "cost": "OT"
       },
       "maxSec": 3
+    },
+    {
+      "id": "ext-97",
+      "group": "30. Quản lý – Tổng quan nhanh",
+      "question": "Tóm tắt tình hình chi phí tháng này trong 3 câu",
+      "expected": "Template exec_summary bản 3 câu: (1) N/M khung T&SL / RM dự báo vượt Fluct + tổng phần vượt; (2) khung nặng nhất: dự báo so với Fluct (K$, % Fluct) + ngày dự kiến vượt; (3) khung trong Fluct + OT chưa có Actual. Footer ngày dữ liệu + cơ sở dự báo (theo FC / PL). Không qua LLM. (Số liệu theo dữ liệu đang xem, không so số cứng.)",
+      "drawer": null,
+      "maxSec": 3
+    },
+    {
+      "id": "ext-98",
+      "group": "30. Quản lý – Tổng quan nhanh",
+      "question": "Tổng chi phí 3 bộ phận cuối tháng dự kiến bao nhiêu so với target?",
+      "expected": "Template total_forecast: từng bộ phận (T&SL + RM) dự báo so với Fluct và FC, rồi tổng 3 bộ phận; tổng = cộng số đã làm tròn (kiểm tra cộng tay khớp). Ghi OT không tính. Không qua LLM. (Số liệu theo dữ liệu đang xem, không so số cứng.)",
+      "drawer": null,
+      "maxSec": 3
+    },
+    {
+      "id": "ext-99",
+      "group": "30. Quản lý – Tổng quan nhanh",
+      "question": "Bộ phận nào đáng lo nhất?",
+      "expected": "Template division_rank: dòng \"Tiêu chí: tổng K$ dự báo vượt Fluct …\", \"Đáng lo nhất: <bộ phận>\", danh sách 3 bộ phận kèm T&SL / RM, thêm khung đơn lẻ vượt nhiều nhất theo K$ (và theo % nếu khác). Không qua LLM.",
+      "drawer": null,
+      "maxSec": 3
+    },
+    {
+      "id": "ext-100",
+      "group": "30. Quản lý – Tổng quan nhanh",
+      "question": "Có gì cần tôi chú ý hôm nay không?",
+      "expected": "Template attention: tối đa 3 điểm theo mức độ (đã vượt thực tế → dự báo vượt nhiều nhất kèm ngân sách/ngày → vượt sớm nhất → chi đột biến ngày gần nhất), mỗi điểm có số. KHÔNG được nói \"không có gì cần chú ý\" khi có khung dự báo vượt. Không qua LLM.",
+      "drawer": null,
+      "maxSec": 3
+    },
+    {
+      "id": "ext-101",
+      "group": "30. Quản lý – Tổng quan nhanh",
+      "question": "Give me a summary in English for the management meeting",
+      "expected": "Template exec_summary tiếng Anh: Conclusion, Key points (3), Suggested follow-up, footer ngày dữ liệu + forecast base. Không tên cột nội bộ, không mâu thuẫn số khung. Không qua LLM.",
+      "drawer": null,
+      "maxSec": 3
+    },
+    {
+      "id": "ext-102",
+      "group": "31. Quản lý – Hành động / kiểm soát",
+      "question": "Mỗi ngày PRESS T&SL phải giảm chi bao nhiêu để không vượt Fluct?",
+      "expected": "Template remaining_budget (drawer PRESS T&SL): ngân sách K$/ngày = (Fluct − Actual) / ngày còn lại, đang chi x K$/ngày → \"cần giảm y K$/ngày (z%)\"; y = tốc độ − ngân sách (khớp 2 số hiển thị). Không qua LLM.",
+      "drawer": {
+        "div": "PR",
+        "cost": "T&SL"
+      },
+      "maxSec": 3
+    },
+    {
+      "id": "ext-103",
+      "group": "31. Quản lý – Hành động / kiểm soát",
+      "question": "Nếu từ mai giảm 10% chi tiêu thì MOLD T&SL có còn vượt không?",
+      "expected": "Template what_if: \"Giả định\" + hiện dự báo, phần còn lại (Estimate − Actual) giảm 10% → cuối tháng khoảng … → vẫn vượt / trong Fluct; thêm \"cần giảm ít nhất x% phần còn lại\" nếu vẫn vượt. Ghi rõ là kịch bản giả định. Không qua LLM.",
+      "drawer": null,
+      "maxSec": 3
+    },
+    {
+      "id": "ext-104",
+      "group": "31. Quản lý – Hành động / kiểm soát",
+      "question": "Nên cắt giảm vật tư nào trước ở GUIDE T&SL?",
+      "expected": "Qua LLM (câu vật tư): top vật tư / Category vừa chiếm tỷ trọng lớn vừa tăng so với cùng kỳ, kèm K$; ghi \"tham khảo\", không viết \"Bạn nên cắt giảm …\" như quyết định.",
+      "drawer": null,
+      "maxSec": null
+    },
+    {
+      "id": "ext-105",
+      "group": "31. Quản lý – Hành động / kiểm soát",
+      "question": "Máy nào đang tốn T&SL nhất ở PRESS? Có bất thường không?",
+      "expected": "Top máy (MA-xxxx) PRESS T&SL kèm K$, so với cùng kỳ tháng trước. Kết luận bất thường theo ngưỡng của spike_days hoặc item_change, có số.",
+      "drawer": null,
+      "maxSec": 3
+    },
+    {
+      "id": "ext-106",
+      "group": "31. Quản lý – Hành động / kiểm soát",
+      "question": "Để các khung không vượt thì phải tiết kiệm tổng cộng bao nhiêu?",
+      "expected": "Template saving_total: tổng phần dự báo vượt Fluct của các khung vượt (liệt kê từng khung), tổng ròng (bù phần dư khung trong Fluct) ghi rõ \"tổng ròng – chỉ tham khảo\". Không qua LLM. (Số liệu theo dữ liệu đang xem, không so số cứng.)",
+      "drawer": null,
+      "maxSec": 3
+    },
+    {
+      "id": "ext-107",
+      "group": "32. Quản lý – Độ tin cậy dự báo",
+      "question": "Dự báo cuối tháng này có đáng tin không?",
+      "expected": "Template forecast_reliability: cách tính Estimate, đã qua D/N ngày (%), khung theo FC / theo PL, khung có 2 cách dự báo trái chiều, \"không tính % độ tin cậy\". Không qua LLM.",
+      "drawer": null,
+      "maxSec": 3
+    },
+    {
+      "id": "ext-108",
+      "group": "32. Quản lý – Độ tin cậy dự báo",
+      "question": "Vì sao badge PRESS T&SL ghi Vượt 106%?",
+      "expected": "Template badge_explain: % dự báo = Estimate cuối tháng / Fluct (≈ x%), Actual / Fluct (≈ y%) → chưa vượt, ngày dự kiến vượt; footnote badge theo Actual. Không qua LLM.",
+      "drawer": null,
+      "maxSec": 3
+    },
+    {
+      "id": "ext-109",
+      "group": "32. Quản lý – Độ tin cậy dự báo",
+      "question": "PRESS T&SL đã vượt thật chưa hay chỉ là dự báo?",
+      "expected": "Template already_over: câu đầu \"Chưa.\" Actual so với Fluct / FC, rồi \"Dự báo:\". Không gọi Estimate là đã chi.",
+      "drawer": null,
+      "maxSec": 3
+    },
+    {
+      "id": "ext-110",
+      "group": "32. Quản lý – Độ tin cậy dự báo",
+      "question": "So với tuần trước, tốc độ chi của MOLD T&SL có giảm không?",
+      "expected": "Template week_compare: MOLD T&SL K$/ngày làm việc tuần này (ngày đã có số) so với tuần trước → nhanh / chậm hơn bao nhiêu (K$/ngày, %); ghi tuần này mới có N ngày. Không qua LLM.",
+      "drawer": null,
+      "maxSec": 3
+    },
+    {
+      "id": "ext-111",
+      "group": "32. Quản lý – Độ tin cậy dự báo",
+      "question": "Dự báo cuối tháng PRESS T&SL hôm nay so với hôm qua thay đổi thế nào?",
+      "expected": "Template no_forecast_history: nói rõ hệ thống không lưu lịch sử dự báo theo ngày, nêu dự báo hiện tại + chi ngày gần nhất. KHÔNG nói \"không thay đổi\". Không qua LLM.",
+      "drawer": null,
+      "maxSec": 3
+    },
+    {
+      "id": "ext-112",
+      "group": "33. Quản lý – So sánh dài hạn / BP",
+      "question": "So với BP thì tháng này thế nào?",
+      "expected": "Qua LLM: có BP thì so từng khung; không có thì nói rõ \"không có BP trong dữ liệu đang xem\", không thay BP bằng FC. (Theo dõi – cần xác nhận dữ liệu BP.)",
+      "drawer": null,
+      "maxSec": null
+    },
+    {
+      "id": "ext-113",
+      "group": "33. Quản lý – So sánh dài hạn / BP",
+      "question": "3 tháng gần đây PRESS T&SL có tháng nào vượt không?",
+      "expected": "Template multi_month: PRESS T&SL 3 tháng đã kết thúc gần nhất (cũ → mới), mỗi tháng Actual so với Fluct / FC; câu đầu \"x/3 tháng có vượt Fluct\". Không trả dự báo tháng này. Không qua LLM.",
+      "drawer": null,
+      "maxSec": 3
+    },
+    {
+      "id": "ext-114",
+      "group": "33. Quản lý – So sánh dài hạn / BP",
+      "question": "Chi T&SL toàn nhà máy tháng này so với cùng kỳ tháng trước tăng hay giảm?",
+      "expected": "Template factory_prev_month: \"nhà máy\" KHÔNG bị hiểu là máy; tổng T&SL 3 bộ phận cùng kỳ tháng này so với tháng trước (K$, %), từng bộ phận, bộ phận tăng nhiều nhất; footer kỳ so sánh. Không qua LLM.",
+      "drawer": null,
+      "maxSec": 3
+    },
+    {
+      "id": "ext-115",
+      "group": "33. Quản lý – So sánh dài hạn / BP",
+      "question": "MOLD RM vượt có phải do sản lượng tăng không?",
+      "expected": "Template no_production_data: không có dữ liệu sản lượng nên không kết luận nhân quả; MOLD RM thực tế chưa vượt, chỉ dự báo vượt; Fluct so với FC (target bị hạ / được nâng). Không qua LLM.",
+      "drawer": null,
+      "maxSec": 3
+    },
+    {
+      "id": "ext-116",
+      "group": "33. Quản lý – So sánh dài hạn / BP",
+      "question": "Tháng 12 dự kiến chi bao nhiêu?",
+      "expected": "Chưa có Actual/Estimate. Chỉ nêu target tháng 2026.12 nếu F2_PL_TGT đã có, không thì nói chưa có dữ liệu. Không bịa.",
+      "drawer": null,
+      "maxSec": null
+    },
+    {
+      "id": "ext-117",
+      "group": "34. Quản lý – Câu ngắn / báo cáo / ngoài phạm vi",
+      "question": "ok hay không?",
+      "expected": "Template short_status: 1–2 câu \"**Chưa ổn:** N/6 khung … dự báo vượt Fluct (tổng …); … Nặng nhất …\" hoặc \"**Ổn:** …\". Không nói về OT / PL. Không qua LLM.",
+      "drawer": null,
+      "maxSec": 3
+    },
+    {
+      "id": "ext-118",
+      "group": "34. Quản lý – Câu ngắn / báo cáo / ngoài phạm vi",
+      "question": "tóm lại có vượt không",
+      "expected": "Drawer MOLD RM → template short_status 1 khung: thực tế chưa vượt (Actual / Fluct); dự báo vượt +x K$ (y% Fluct), dự kiến vượt từ dd/mm. Tối đa 2 câu.",
+      "drawer": {
+        "div": "MO",
+        "cost": "RM"
+      },
+      "maxSec": 3
+    },
+    {
+      "id": "ext-119",
+      "group": "34. Quản lý – Câu ngắn / báo cáo / ngoài phạm vi",
+      "question": "Báo cáo nhanh cho giám đốc",
+      "expected": "Template exec_summary: Kết luận, 3 điểm chính có số, Đề xuất theo dõi (ngân sách/ngày khung nặng nhất), footer ghi đúng cơ sở dự báo (theo FC nếu chưa có PL – KHÔNG ghi \"theo PL\" sai), phân biệt Actual và dự báo. ≤ 8 dòng. Không qua LLM.",
+      "drawer": null,
+      "maxSec": 3
+    },
+    {
+      "id": "ext-120",
+      "group": "34. Quản lý – Câu ngắn / báo cáo / ngoài phạm vi",
+      "question": "Cần báo cáo lên cấp trên những khung nào?",
+      "expected": "Template report_list: khung đã vượt thực tế trước, rồi dự báo vượt theo K$ giảm dần, mỗi dòng dự báo / Fluct / chênh / % / ngày dự kiến vượt; khung trong Fluct ghi riêng \"Chưa cần báo cáo\". Không qua LLM.",
+      "drawer": null,
+      "maxSec": 3
+    },
+    {
+      "id": "ext-121",
+      "group": "34. Quản lý – Câu ngắn / báo cáo / ngoài phạm vi",
+      "question": "Ai chịu trách nhiệm khung PRESS T&SL?",
+      "expected": "Template no_owner: không có dữ liệu người phụ trách; khung PRESS T&SL thuộc bộ phận PRESS (cost center 614100). Không bịa tên. Không qua LLM.",
+      "drawer": null,
+      "maxSec": 3
+    },
+    {
+      "id": "ext-122",
+      "group": "34. Quản lý – Câu ngắn / báo cáo / ngoài phạm vi",
+      "question": "Duyệt giúp tôi tăng target MOLD RM lên 95",
+      "expected": "Template refuse_action: chỉ đọc số, không duyệt / sửa target; target từ dữ liệu kế hoạch (FC / PL / BP), Fluct = FC × (1 + Ratio). KHÔNG trả template Ratio / target_change. Không qua LLM.",
+      "drawer": null,
+      "maxSec": 3
+    },
+    {
+      "id": "ext-123",
+      "group": "34. Quản lý – Câu ngắn / báo cáo / ngoài phạm vi",
+      "question": "Xuất báo cáo Excel giúp tôi",
+      "expected": "Template export_unsupported: chưa hỗ trợ xuất file / email, gợi ý \"Báo cáo nhanh cho giám đốc\". Không qua LLM.",
+      "drawer": null,
+      "maxSec": 3
+    },
+    {
+      "id": "ext-124",
+      "group": "35. So sánh khung (template)",
+      "question": "hôm nay Press t&sl so sánh Mold t&sl",
+      "expected": "Template compare (intentMatch có template=compare): mỗi khung 1 dòng (% đã dùng Fluct, Actual / Fluct / FC, tiến độ, dự báo cuối tháng so với Fluct / FC), dòng đậm \"Khung tốt hơn theo dự báo chính: …\". Không \"mất kết nối\", không qua LLM.",
+      "drawer": null,
+      "maxSec": 3
+    },
+    {
+      "id": "ext-125",
+      "group": "35. So sánh khung (template)",
+      "question": "So sánh PRESS RM và GUIDE RM",
+      "expected": "Template compare 2 khung RM, kết luận khung tốt hơn theo % Fluct dự báo (chênh < 1 điểm % → \"tương đương\").",
+      "drawer": null,
+      "maxSec": 3
+    },
+    {
+      "id": "ext-126",
+      "group": "35. So sánh khung (template)",
+      "question": "PRESS T&SL vs MOLD T&SL vs GUIDE T&SL",
+      "expected": "Template compare 3 khung T&SL, mỗi khung 1 dòng, kết luận khung tốt nhất so với khung thứ 2.",
+      "drawer": null,
+      "maxSec": 3
+    },
+    {
+      "id": "ext-127",
+      "group": "35. So sánh khung (template)",
+      "question": "Compare PRESS T&SL with MOLD T&SL",
+      "expected": "Template compare tiếng Anh (\"Better frame by main forecast: …\"). Không qua LLM.",
+      "drawer": null,
+      "maxSec": 3
+    },
+    {
+      "id": "ext-128",
+      "group": "35. So sánh khung (template)",
+      "question": "So sánh MOLD T&SL tháng này với tháng trước",
+      "expected": "KHÔNG dùng template compare (1 khung, tháng trước): template prev_month (FC / Fluct / Actual cùng kỳ).",
+      "drawer": null,
+      "maxSec": null
+    },
+    {
+      "id": "ext-129",
+      "group": "35. So sánh khung (template)",
+      "question": "So sánh vật tư PRESS T&SL với MOLD T&SL",
+      "expected": "Câu vật tư → không template compare; qua LLM / tra cứu vật tư, không lỗi \"mất kết nối\". (Theo dõi thời gian.)",
+      "drawer": null,
+      "maxSec": null
+    },
+    {
+      "id": "ext-130",
+      "group": "35. So sánh khung (template)",
+      "question": "Vì sao PRESS T&SL tệ hơn MOLD T&SL?",
+      "expected": "Có \"vì sao\" → không template compare; qua LLM với khối KẾT LUẬN so sánh, không lỗi.",
+      "drawer": null,
+      "maxSec": null
+    },
+    {
+      "id": "ext-131",
+      "group": "35. So sánh khung (template)",
+      "question": "so sánh với MOLD",
+      "expected": "Drawer PRESS T&SL + \"so sánh với MOLD\": kỳ vọng so PRESS T&SL với MOLD T&SL. (Theo dõi: hiện chỉ lấy MOLD T&SL nên đi LLM.)",
+      "drawer": {
+        "div": "PR",
+        "cost": "T&SL"
+      },
+      "maxSec": null
+    },
+    {
+      "id": "ext-132",
+      "group": "36. Quản lý – biến thể template",
+      "question": "Tóm tắt tình hình PRESS",
+      "expected": "Template exec_summary chỉ 2 khung PRESS T&SL, PRESS RM (\"x/2 khung …\"), không nêu MOLD / GUIDE.",
+      "drawer": null,
+      "maxSec": 3
+    },
+    {
+      "id": "ext-133",
+      "group": "36. Quản lý – biến thể template",
+      "question": "Summarize this month in 3 sentences",
+      "expected": "Template exec_summary tiếng Anh, đúng 3 câu + footer.",
+      "drawer": null,
+      "maxSec": 3
+    },
+    {
+      "id": "ext-134",
+      "group": "36. Quản lý – biến thể template",
+      "question": "Tóm tắt",
+      "expected": "Câu tổng hợp KHÔNG bám drawer: tóm tắt 6 khung T&SL / RM, không chỉ PRESS T&SL.",
+      "drawer": {
+        "div": "PR",
+        "cost": "T&SL"
+      },
+      "maxSec": 3
+    },
+    {
+      "id": "ext-135",
+      "group": "36. Quản lý – biến thể template",
+      "question": "Tình hình ổn hay không?",
+      "expected": "Template short_status 6 khung: \"**Chưa ổn:** …\" / \"**Ổn:** …\", 1–2 câu.",
+      "drawer": null,
+      "maxSec": 3
+    },
+    {
+      "id": "ext-136",
+      "group": "36. Quản lý – biến thể template",
+      "question": "ok hay không?",
+      "expected": "Drawer GUIDE RM → short_status 1 khung GUIDE RM: thực tế + dự báo (+ ngày dự kiến vượt).",
+      "drawer": {
+        "div": "Guide",
+        "cost": "RM"
+      },
+      "maxSec": 3
+    },
+    {
+      "id": "ext-137",
+      "group": "36. Quản lý – biến thể template",
+      "question": "Có gì cần lưu ý ở MOLD không?",
+      "expected": "Template attention chỉ MOLD T&SL / RM, tối đa 3 điểm có số.",
+      "drawer": null,
+      "maxSec": 3
+    },
+    {
+      "id": "ext-138",
+      "group": "36. Quản lý – biến thể template",
+      "question": "What should I watch today?",
+      "expected": "Template attention tiếng Anh (\"point(s) to watch\").",
+      "drawer": null,
+      "maxSec": 3
+    },
+    {
+      "id": "ext-139",
+      "group": "36. Quản lý – biến thể template",
+      "question": "Which frames should I report to management?",
+      "expected": "Template report_list tiếng Anh, đã vượt trước rồi dự báo vượt theo K$ giảm dần.",
+      "drawer": null,
+      "maxSec": 3
+    },
+    {
+      "id": "ext-140",
+      "group": "36. Quản lý – biến thể template",
+      "question": "Tổng dự kiến cuối tháng của RM 3 bộ phận so với Fluct?",
+      "expected": "Template total_forecast chỉ RM: 3 bộ phận + tổng, dự báo so với Fluct / FC.",
+      "drawer": null,
+      "maxSec": 3
+    },
+    {
+      "id": "ext-141",
+      "group": "36. Quản lý – biến thể template",
+      "question": "What is the total month-end forecast vs target?",
+      "expected": "Template total_forecast tiếng Anh, T&SL + RM, OT excluded.",
+      "drawer": null,
+      "maxSec": 3
+    },
+    {
+      "id": "ext-142",
+      "group": "36. Quản lý – biến thể template",
+      "question": "MOLD cần cắt giảm tổng cộng bao nhiêu để không vượt?",
+      "expected": "Template saving_total chỉ MOLD T&SL / RM: tổng phần dự báo vượt Fluct + từng khung.",
+      "drawer": null,
+      "maxSec": 3
+    },
+    {
+      "id": "ext-143",
+      "group": "36. Quản lý – biến thể template",
+      "question": "Which division is the most concerning?",
+      "expected": "Template division_rank tiếng Anh (\"Criterion: …\", \"Most concerning: …\").",
+      "drawer": null,
+      "maxSec": 3
+    },
+    {
+      "id": "ext-144",
+      "group": "36. Quản lý – biến thể template",
+      "question": "Bộ phận nào tệ nhất?",
+      "expected": "Template division_rank.",
+      "drawer": null,
+      "maxSec": 3
+    },
+    {
+      "id": "ext-145",
+      "group": "36. Quản lý – biến thể template",
+      "question": "Nếu GUIDE RM tăng chi 20% thì sao?",
+      "expected": "Template what_if chiều tăng: phần còn lại × 1.2, cuối tháng so với Fluct; không có dòng \"cần giảm ít nhất\".",
+      "drawer": null,
+      "maxSec": 3
+    },
+    {
+      "id": "ext-146",
+      "group": "36. Quản lý – biến thể template",
+      "question": "Nếu cắt 5% thì các khung có còn vượt không?",
+      "expected": "Template what_if 6 khung T&SL / RM, mỗi khung 1 dòng, ghi rõ giả định.",
+      "drawer": null,
+      "maxSec": 3
+    },
+    {
+      "id": "ext-147",
+      "group": "36. Quản lý – biến thể template",
+      "question": "What if PRESS T&SL cuts spending by 15%?",
+      "expected": "Template what_if tiếng Anh (\"cuts\" được nhận là giảm).",
+      "drawer": null,
+      "maxSec": 3
+    },
+    {
+      "id": "ext-148",
+      "group": "36. Quản lý – biến thể template",
+      "question": "Số liệu dự báo có chính xác không?",
+      "expected": "Template forecast_reliability.",
+      "drawer": null,
+      "maxSec": 3
+    },
+    {
+      "id": "ext-149",
+      "group": "36. Quản lý – biến thể template",
+      "question": "Badge GUIDE T&SL nghĩa là gì?",
+      "expected": "Template badge_explain GUIDE T&SL: % dự báo = Estimate / Fluct, % thực tế = Actual / Fluct.",
+      "drawer": null,
+      "maxSec": 3
+    },
+    {
+      "id": "ext-150",
+      "group": "36. Quản lý – biến thể template",
+      "question": "Estimate hôm nay khác hôm qua bao nhiêu?",
+      "expected": "Template no_forecast_history: không lưu lịch sử, không bịa số hôm qua.",
+      "drawer": null,
+      "maxSec": 3
+    },
+    {
+      "id": "ext-151",
+      "group": "36. Quản lý – biến thể template",
+      "question": "6 tháng gần đây MOLD RM thế nào?",
+      "expected": "Template multi_month 6 tháng đã kết thúc của MOLD RM (cũ → mới), tháng không có dữ liệu ghi rõ.",
+      "drawer": null,
+      "maxSec": 5
+    },
+    {
+      "id": "ext-152",
+      "group": "36. Quản lý – biến thể template",
+      "question": "Last 3 months PRESS T&SL over Fluct?",
+      "expected": "Template multi_month tiếng Anh 3 tháng.",
+      "drawer": null,
+      "maxSec": 5
+    },
+    {
+      "id": "ext-153",
+      "group": "36. Quản lý – biến thể template",
+      "question": "3 tháng gần đây có khung nào vượt?",
+      "expected": "Template multi_month 6 khung: mỗi tháng \"x/6 khung vượt Fluct (tên +K$ …)\".",
+      "drawer": null,
+      "maxSec": 5
+    },
+    {
+      "id": "ext-154",
+      "group": "36. Quản lý – biến thể template",
+      "question": "Tổng chi RM 3 bộ phận so với cùng kỳ tháng trước?",
+      "expected": "Template factory_prev_month chỉ RM, kỳ RM 01–(ngày có actual RM).",
+      "drawer": null,
+      "maxSec": 3
+    },
+    {
+      "id": "ext-155",
+      "group": "36. Quản lý – biến thể template",
+      "question": "Chi phí tăng có phải do doanh số tăng không?",
+      "expected": "Template no_production_data: không có dữ liệu sản lượng / doanh số, không khẳng định nhân quả.",
+      "drawer": null,
+      "maxSec": 3
+    },
+    {
+      "id": "ext-156",
+      "group": "36. Quản lý – biến thể template",
+      "question": "Ai phụ trách GUIDE RM?",
+      "expected": "Template no_owner: bộ phận GUIDE (cost center 614600, 614700), không tên người.",
+      "drawer": null,
+      "maxSec": 3
+    },
+    {
+      "id": "ext-157",
+      "group": "36. Quản lý – biến thể template",
+      "question": "Phê duyệt ngân sách thêm cho PRESS",
+      "expected": "Template refuse_action.",
+      "drawer": null,
+      "maxSec": 3
+    },
+    {
+      "id": "ext-158",
+      "group": "36. Quản lý – biến thể template",
+      "question": "Sửa Fluct PRESS T&SL thành 200",
+      "expected": "Template refuse_action (sửa target / Fluct … thành số).",
+      "drawer": null,
+      "maxSec": 3
+    },
+    {
+      "id": "ext-159",
+      "group": "36. Quản lý – biến thể template",
+      "question": "Export to PDF",
+      "expected": "Template export_unsupported tiếng Anh.",
+      "drawer": null,
+      "maxSec": 3
+    },
+    {
+      "id": "ext-160",
+      "group": "36. Quản lý – biến thể template",
+      "question": "Gửi email báo cáo cho sếp",
+      "expected": "Từ chối (prompt guard ngoài phạm vi hoặc export_unsupported): không soạn / gửi email.",
+      "drawer": null,
+      "maxSec": 3
+    },
+    {
+      "id": "ext-161",
+      "group": "37. Định tuyến – không bắt nhầm",
+      "question": "Bộ phận nào chi nhiều nhất?",
+      "expected": "KHÔNG phải division_rank (không hỏi \"đáng lo\"): trả theo chi (Actual / xếp hạng), không trả \"Tiêu chí: tổng K$ dự báo vượt\".",
+      "drawer": null,
+      "maxSec": null
+    },
+    {
+      "id": "ext-162",
+      "group": "37. Định tuyến – không bắt nhầm",
+      "question": "Trả lời ngắn gọn: vì sao PRESS T&SL dự báo vượt?",
+      "expected": "Có \"vì sao\" → template nguyên nhân (why), KHÔNG short_status.",
+      "drawer": null,
+      "maxSec": 3
+    },
+    {
+      "id": "ext-163",
+      "group": "37. Định tuyến – không bắt nhầm",
+      "question": "Tóm tắt nguyên nhân MOLD RM dự báo vượt",
+      "expected": "Có \"nguyên nhân\" → luồng nguyên nhân MOLD RM, KHÔNG exec_summary 6 khung.",
+      "drawer": null,
+      "maxSec": null
+    },
+    {
+      "id": "ext-164",
+      "group": "37. Định tuyến – không bắt nhầm",
+      "question": "PRESS T&SL tháng này tổng cộng chi bao nhiêu?",
+      "expected": "Hỏi Actual → frame_value (Actual / FC / Fluct), KHÔNG total_forecast.",
+      "drawer": null,
+      "maxSec": 3
+    },
+    {
+      "id": "ext-165",
+      "group": "37. Định tuyến – không bắt nhầm",
+      "question": "Máy nào ở nhà máy PRESS chi nhiều nhất?",
+      "expected": "Vẫn template top_detail theo máy PRESS T&SL (\"máy nào\" vẫn là máy, \"nhà máy\" không gây nhầm).",
+      "drawer": null,
+      "maxSec": 3
+    },
+    {
+      "id": "ext-166",
+      "group": "37. Định tuyến – không bắt nhầm",
+      "question": "Chi phí toàn nhà máy tháng này thế nào?",
+      "expected": "\"nhà máy\" không phải máy: KHÔNG trả top máy; trả tổng quan / dự báo các khung.",
+      "drawer": null,
+      "maxSec": null
+    },
+    {
+      "id": "ext-167",
+      "group": "37. Định tuyến – không bắt nhầm",
+      "question": "If spending continues like this, will PRESS T&SL exceed FC?",
+      "expected": "Dự báo theo tốc độ chi hiện tại (forecast_one_current_rate), KHÔNG what_if (không có %).",
+      "drawer": null,
+      "maxSec": 3
+    },
+    {
+      "id": "ext-168",
+      "group": "37. Định tuyến – không bắt nhầm",
+      "question": "Tóm tắt tình hình tháng trước",
+      "expected": "Template tổng quan tháng trước (\"Tháng trước (YYYY-MM)\"), KHÔNG exec_summary tháng này.",
+      "drawer": null,
+      "maxSec": 3
+    },
+    {
+      "id": "ext-169",
+      "group": "37. Định tuyến – không bắt nhầm",
+      "question": "Có khung nào vượt 10% không?",
+      "expected": "KHÔNG badge_explain (không hỏi ghi / vì sao); trả dự báo / tổng quan các khung.",
+      "drawer": null,
+      "maxSec": null
+    },
+    {
+      "id": "ext-170",
+      "group": "37. Định tuyến – không bắt nhầm",
+      "question": "Ngày 28 MOLD RM dự kiến chi bao nhiêu?",
+      "expected": "Vẫn template day_spend (future) theo Estimate, KHÔNG no_forecast_history.",
+      "drawer": null,
+      "maxSec": 3
+    },
+    {
+      "id": "ext-171",
+      "group": "37. Định tuyến – không bắt nhầm",
+      "question": "Vật tư nào tăng so với tháng trước?",
+      "expected": "Vẫn template item_change 6 khung, KHÔNG factory_prev_month.",
+      "drawer": null,
+      "maxSec": 5
+    },
+    {
+      "id": "ext-172",
+      "group": "38. Tra cứu mới",
+      "question": "Khi nào GUIDE RM vượt FC?",
+      "expected": "Template when_exceed_fc GUIDE RM: ngày Estimate vượt FC (hoặc đã vượt FC thực tế / không vượt trong tháng) + mốc Fluct.",
+      "drawer": null,
+      "maxSec": 3
+    },
+    {
+      "id": "ext-173",
+      "group": "38. Tra cứu mới",
+      "question": "When will MOLD T&SL exceed FC?",
+      "expected": "Template when_exceed_fc tiếng Anh.",
+      "drawer": null,
+      "maxSec": 3
+    },
+    {
+      "id": "ext-174",
+      "group": "38. Tra cứu mới",
+      "question": "Khi nào PRESS T&SL vượt PL?",
+      "expected": "Hỏi PL → KHÔNG when_exceed / when_exceed_fc (qua LLM), không gán ngày Fluct / FC cho PL.",
+      "drawer": null,
+      "maxSec": null
+    },
+    {
+      "id": "ext-175",
+      "group": "38. Tra cứu mới",
+      "question": "khi nào vượt FC?",
+      "expected": "Drawer PRESS OT → template ot_no_data.",
+      "drawer": {
+        "div": "PR",
+        "cost": "OT"
+      },
+      "maxSec": 3
+    },
+    {
+      "id": "ext-176",
+      "group": "38. Tra cứu mới",
+      "question": "Tốc độ chi tuần này của PRESS RM nhanh hơn tuần trước không?",
+      "expected": "Template week_compare PRESS RM (RM chậm 1 ngày: tuần này chưa có số thì nói rõ).",
+      "drawer": null,
+      "maxSec": 3
+    },
+    {
+      "id": "ext-177",
+      "group": "38. Tra cứu mới",
+      "question": "So với tuần trước thì T&SL các bộ phận chi nhanh hay chậm?",
+      "expected": "Template week_compare 3 khung T&SL.",
+      "drawer": null,
+      "maxSec": 3
+    },
+    {
+      "id": "ext-178",
+      "group": "38. Tra cứu mới",
+      "question": "Xu hướng chi của PRESS T&SL và GUIDE T&SL",
+      "expected": "Template trend 2 khung, 1 footer chung, không qua LLM.",
+      "drawer": null,
+      "maxSec": 3
+    },
+    {
+      "id": "ext-179",
+      "group": "38. Tra cứu mới",
+      "question": "Mỗi ngày MOLD RM cần giảm bao nhiêu?",
+      "expected": "Template remaining_budget MOLD RM (còn N ngày theo actual RM), \"cần giảm x K$/ngày (y%)\" hoặc \"trong ngân sách\".",
+      "drawer": null,
+      "maxSec": 3
+    },
+    {
+      "id": "ext-180",
+      "group": "38. Tra cứu mới",
+      "question": "PRESS T&SL cuối tháng có vượt không?",
+      "expected": "Template forecast_one + dòng \"Thực tế: chưa vượt (Actual / Fluct); dự kiến vượt Fluct từ dd/mm\" (nếu dự báo vượt).",
+      "drawer": null,
+      "maxSec": 3
+    },
+    {
+      "id": "ext-181",
+      "group": "38. Tra cứu mới",
+      "question": "Cuối tháng MOLD có vượt không?",
+      "expected": "Template forecast_one MOLD (T&SL + RM theo câu / drawer), mỗi khung có dòng thực tế + ngày dự kiến vượt (có tên khung).",
+      "drawer": {
+        "div": "MO",
+        "cost": "T&SL"
+      },
+      "maxSec": 3
+    },
+    {
+      "id": "ext-182",
+      "group": "39. Tháng đã kết thúc (chọn tháng cũ trên màn hình)",
+      "question": "Tóm tắt tình hình chi phí",
+      "expected": "Chọn tháng đã kết thúc: exec_summary không áp dụng (cần dự báo) → tổng quan kết quả tháng, không nói dự báo / ngày dự kiến vượt.",
+      "drawer": null,
+      "maxSec": null
+    },
+    {
+      "id": "ext-183",
+      "group": "39. Tháng đã kết thúc (chọn tháng cũ trên màn hình)",
+      "question": "Nếu giảm 10% thì PRESS T&SL có vượt không?",
+      "expected": "Tháng đã kết thúc: không what_if; nói tháng đã kết thúc, nêu kết quả tháng.",
+      "drawer": null,
+      "maxSec": null
+    },
+    {
+      "id": "ext-184",
+      "group": "39. Tháng đã kết thúc (chọn tháng cũ trên màn hình)",
+      "question": "So sánh PRESS T&SL và MOLD T&SL",
+      "expected": "Template compare theo Actual / Fluct (tháng đã kết thúc), \"Khung tốt hơn theo Actual / Fluct (tháng đã kết thúc)\".",
+      "drawer": null,
+      "maxSec": 3
+    },
+    {
+      "id": "ext-185",
+      "group": "40. Lãnh đạo – văn nói đời thường",
+      "question": "Tháng này tình hình sao rồi em?",
+      "expected": "Tổng quan / tóm tắt tháng này, kết luận trước: x/6 khung T&SL / RM dự báo vượt Fluct, khung nặng nhất kèm K$ và %, khung trong Fluct; ghi ngày dữ liệu. Không liệt kê dài 9 khung. (Theo dõi: \"sao rồi\" có vào template không.)",
+      "drawer": null,
+      "maxSec": null
+    },
+    {
+      "id": "ext-186",
+      "group": "40. Lãnh đạo – văn nói đời thường",
+      "question": "Có gì căng không em?",
+      "expected": "Hiểu \"căng\" = có vấn đề / sắp vượt: tối đa 3 điểm theo mức độ (khung dự báo vượt nhiều nhất, khung dự kiến vượt sớm nhất), mỗi điểm có số K$. Không trả lời chung chung. (Theo dõi: từ lóng.)",
+      "drawer": null,
+      "maxSec": null
+    },
+    {
+      "id": "ext-187",
+      "group": "40. Lãnh đạo – văn nói đời thường",
+      "question": "Nói nhanh giúp anh: tháng này có cháy ngân sách không?",
+      "expected": "Hiểu \"cháy ngân sách\" = vượt Fluct; 1–2 câu: thực tế chưa khung nào vượt, x/6 khung dự báo vượt cuối tháng, nặng nhất … +K$. Không danh sách dài.",
+      "drawer": null,
+      "maxSec": 3
+    },
+    {
+      "id": "ext-188",
+      "group": "40. Lãnh đạo – văn nói đời thường",
+      "question": "Khung nào đang đỏ?",
+      "expected": "\"Đỏ\" = badge Vượt: nói rõ khung nào đã vượt Fluct thực tế (Actual > Fluct, khớp badge FE); chưa có thì nói chưa có, kèm các khung dự báo vượt. Không gọi dự báo là đã vượt.",
+      "drawer": null,
+      "maxSec": null
+    },
+    {
+      "id": "ext-189",
+      "group": "40. Lãnh đạo – văn nói đời thường",
+      "question": "Mấy cái chart này nhìn có gì đáng lo không?",
+      "expected": "Tổng quan / điểm cần chú ý: khung dự báo vượt xếp theo mức độ, có số. Không giải thích cách đọc chart chung chung.",
+      "drawer": null,
+      "maxSec": null
+    },
+    {
+      "id": "ext-190",
+      "group": "40. Lãnh đạo – văn nói đời thường",
+      "question": "thang nay co vuot k e",
+      "expected": "Không dấu + \"k\" = không: template dự báo 6 khung T&SL / RM (x khung dự báo vượt Fluct), không qua LLM.",
+      "drawer": null,
+      "maxSec": 3
+    },
+    {
+      "id": "ext-191",
+      "group": "40. Lãnh đạo – văn nói đời thường",
+      "question": "Overall tháng này ok ko?",
+      "expected": "Câu lẫn Anh – Việt: short_status 6 khung (\"Chưa ổn: …\" / \"Ổn: …\"), trả lời tiếng Việt, 1–2 câu.",
+      "drawer": null,
+      "maxSec": 3
+    },
+    {
+      "id": "ext-192",
+      "group": "40. Lãnh đạo – văn nói đời thường",
+      "question": "PRESS dạo này tiêu hoang quá nhỉ?",
+      "expected": "Kiểm tra tiền đề bằng số: PRESS T&SL / RM chi so với tiến độ (+K$), dự báo cuối tháng so với Fluct; PRESS RM vẫn trong Fluct. Đồng ý / không đồng ý rõ ràng, không chỉ hùa theo câu hỏi.",
+      "drawer": null,
+      "maxSec": null
+    },
+    {
+      "id": "ext-193",
+      "group": "40. Lãnh đạo – văn nói đời thường",
+      "question": "Sao MOLD tháng này đốt tiền ghê vậy?",
+      "expected": "Nguyên nhân MOLD (T&SL + RM) bằng số: chi so với tiến độ, Fluct bị hạ (Ratio âm), ngày chi lớn nhất; nếu so cùng kỳ tháng trước không tăng thì nói rõ (MOLD T&SL cùng kỳ ~bằng nhau). Không bịa nguyên nhân sản xuất.",
+      "drawer": null,
+      "maxSec": null
+    },
+    {
+      "id": "ext-194",
+      "group": "40. Lãnh đạo – văn nói đời thường",
+      "question": "Ông nào chi nhiều nhất?",
+      "expected": "\"Ông nào\" mơ hồ: dữ liệu không ghi theo người; nếu hiểu là bộ phận thì xếp bộ phận theo tổng Actual (division_spend) và nói rõ cách hiểu. Không bịa tên người.",
+      "drawer": null,
+      "maxSec": null
+    },
+    {
+      "id": "ext-195",
+      "group": "40. Lãnh đạo – văn nói đời thường",
+      "question": "PR với MO bên nào chi đậm hơn?",
+      "expected": "So PRESS với MOLD: Actual (K$) và % Fluct dự báo; nói rõ PRESS chi nhiều K$ hơn vì target lớn hơn, còn theo % Fluct thì … Không chỉ nêu 1 tiêu chí.",
+      "drawer": null,
+      "maxSec": null
+    },
+    {
+      "id": "ext-196",
+      "group": "40. Lãnh đạo – văn nói đời thường",
+      "question": "Cuối tháng có kịp kéo về không?",
+      "expected": "Hiểu \"kéo về\" = giữ trong Fluct: từng khung dự báo vượt cần giảm bao nhiêu K$/ngày (y%) so với tốc độ chi hiện tại; khung nào khó kéo về (cần giảm nhiều %) nói rõ. Không hứa \"kịp\" nếu số không ủng hộ.",
+      "drawer": null,
+      "maxSec": null
+    },
+    {
+      "id": "ext-197",
+      "group": "40. Lãnh đạo – văn nói đời thường",
+      "question": "Giờ phải siết bao nhiêu mỗi ngày thì mới không vượt?",
+      "expected": "Template remaining_budget 6 khung: ngân sách K$/ngày còn lại so với đang chi → cần giảm x K$/ngày (y%); RM ghi số ngày theo actual RM.",
+      "drawer": null,
+      "maxSec": 3
+    },
+    {
+      "id": "ext-198",
+      "group": "40. Lãnh đạo – văn nói đời thường",
+      "question": "Vượt thì vượt bao nhiêu, nói con số thôi",
+      "expected": "Template saving_total: tổng phần dự báo vượt Fluct (K$) + từng khung; ngắn, không giải thích dài.",
+      "drawer": null,
+      "maxSec": 3
+    },
+    {
+      "id": "ext-199",
+      "group": "40. Lãnh đạo – văn nói đời thường",
+      "question": "Ok, vậy giờ nên làm gì trước?",
+      "expected": "Tối đa 3 việc ưu tiên có số (khung vượt nhiều nhất cần giảm x K$/ngày, khung vượt sớm nhất, vật tư / máy tăng mạnh nếu có); chỉ là gợi ý tham khảo, không ra quyết định thay người dùng.",
+      "drawer": null,
+      "maxSec": null
+    },
+    {
+      "id": "ext-200",
+      "group": "40. Lãnh đạo – văn nói đời thường",
+      "question": "Tóm lại có cần họp gấp không?",
+      "expected": "Không quyết định thay: nêu dữ kiện 1–2 câu (thực tế chưa vượt / x khung dự báo vượt, sớm nhất từ dd/mm) để người dùng tự quyết. Không trả lời \"cần\" / \"không cần\" chắc chắn.",
+      "drawer": null,
+      "maxSec": null
+    },
+    {
+      "id": "ext-201",
+      "group": "40. Lãnh đạo – văn nói đời thường",
+      "question": "Anh cần 1 câu để báo sếp tổng",
+      "expected": "Bản tóm tắt rất ngắn (1–3 câu) có số khung dự báo vượt, khung nặng nhất kèm K$, ghi ngày dữ liệu; phân biệt Actual và dự báo.",
+      "drawer": null,
+      "maxSec": 3
+    },
+    {
+      "id": "ext-202",
+      "group": "40. Lãnh đạo – văn nói đời thường",
+      "question": "Tuần này xài nhanh hơn tuần trước không?",
+      "expected": "\"Xài\" = chi: template week_compare 6 khung (K$/ngày làm việc tuần này so với tuần trước); RM tuần này ít ngày số liệu thì ghi rõ.",
+      "drawer": null,
+      "maxSec": 3
+    },
+    {
+      "id": "ext-203",
+      "group": "40. Lãnh đạo – văn nói đời thường",
+      "question": "Tháng trước có đỡ hơn không?",
+      "expected": "So với tháng trước (2026-10, đã kết thúc: 6/6 khung vượt Fluct) – nói rõ tháng này đến nay / dự báo tốt hơn hay tệ hơn, có số. Không nhầm sang tổng quan tháng này đơn thuần. (Theo dõi.)",
+      "drawer": null,
+      "maxSec": null
+    },
+    {
+      "id": "ext-204",
+      "group": "40. Lãnh đạo – văn nói đời thường",
+      "question": "RM tháng này có ổn không hay lại vượt như tháng trước?",
+      "expected": "3 khung RM: thực tế + dự báo cuối tháng so với Fluct; nhắc tháng trước RM cả 3 khung vượt (kết quả tháng 2026-10). Có số từng khung.",
+      "drawer": null,
+      "maxSec": null
+    },
+    {
+      "id": "ext-205",
+      "group": "40. Lãnh đạo – văn nói đời thường",
+      "question": "Hôm qua có gì lạ không?",
+      "expected": "Chi ngày hôm qua của các khung so với TB các ngày có chi khác; RM chưa có số (chậm 1 ngày) thì nói rõ; kết luận có / không bất thường theo ngưỡng.",
+      "drawer": null,
+      "maxSec": 3
+    },
+    {
+      "id": "ext-206",
+      "group": "40. Lãnh đạo – văn nói đời thường",
+      "question": "Đường nét đứt trên chart là gì vậy?",
+      "expected": "Template estimate_concept: Estimate (MTD) = Actual cuối + PL (chưa có PL thì FC) theo ngày làm việc; Estimate cuối tháng là dự báo chính.",
+      "drawer": null,
+      "maxSec": 3
+    },
+    {
+      "id": "ext-207",
+      "group": "40. Lãnh đạo – văn nói đời thường",
+      "question": "Cái số 108% trên PRESS T&SL là sao?",
+      "expected": "Template badge_explain PRESS T&SL: % dự báo = Estimate cuối tháng / Fluct; thực tế Actual / Fluct chưa vượt. (Theo dõi: \"cái số 108%\" có vào badge_explain không.)",
+      "drawer": null,
+      "maxSec": 3
+    },
+    {
+      "id": "ext-208",
+      "group": "40. Lãnh đạo – văn nói đời thường",
+      "question": "Số này lấy từ đâu, tin được không?",
+      "expected": "Template forecast_reliability: Actual là số đã chi, dự báo = Estimate (theo FC khi chưa có PL), mới qua ~1/3 tháng nên có thể lệch; không bịa % độ tin cậy.",
+      "drawer": null,
+      "maxSec": 3
+    },
+    {
+      "id": "ext-209",
+      "group": "40. Lãnh đạo – văn nói đời thường",
+      "question": "Bên Guide ổn không?",
+      "expected": "GUIDE T&SL + GUIDE RM ngắn gọn: thực tế chưa vượt, dự báo vượt Fluct +K$ từng khung, ngày dự kiến vượt. Không nêu PRESS / MOLD.",
+      "drawer": null,
+      "maxSec": null
+    },
+    {
+      "id": "ext-210",
+      "group": "40. Lãnh đạo – văn nói đời thường",
+      "question": "Chi phí OT bên Press sao rồi?",
+      "expected": "OT chưa có Actual: nói rõ, nêu FC / Fluct PRESS OT, không bịa số đã chi / dự báo.",
+      "drawer": null,
+      "maxSec": 3
+    },
+    {
+      "id": "ext-211",
+      "group": "40. Lãnh đạo – văn nói đời thường",
+      "question": "Sao cái này cao vậy?",
+      "expected": "Drawer PRESS T&SL: nguyên nhân tính sẵn (chi nhanh hơn tiến độ +K$, Fluct so với FC, 3 ngày chi lớn nhất) + dự báo. Nếu thực tế không \"cao\" so với target thì nói rõ.",
+      "drawer": {
+        "div": "PR",
+        "cost": "T&SL"
+      },
+      "maxSec": 3
+    },
+    {
+      "id": "ext-212",
+      "group": "40. Lãnh đạo – văn nói đời thường",
+      "question": "Cái này có sao không?",
+      "expected": "Drawer MOLD RM: 1–2 câu – thực tế chưa vượt (Actual / Fluct), dự báo vượt +K$ (x% Fluct), dự kiến vượt từ dd/mm.",
+      "drawer": {
+        "div": "MO",
+        "cost": "RM"
+      },
+      "maxSec": 3
+    },
+    {
+      "id": "ext-213",
+      "group": "40. Lãnh đạo – văn nói đời thường",
+      "question": "Mỗi ngày còn xài được bao nhiêu?",
+      "expected": "Drawer GUIDE T&SL: template remaining_budget chỉ GUIDE T&SL (K$/ngày còn lại, đang chi, cần giảm y%).",
+      "drawer": {
+        "div": "Guide",
+        "cost": "T&SL"
+      },
+      "maxSec": 3
+    },
+    {
+      "id": "ext-214",
+      "group": "40. Lãnh đạo – văn nói đời thường",
+      "question": "Vậy so với tháng trước thì sao?",
+      "expected": "Drawer PRESS T&SL: template prev_month PRESS T&SL (Actual cùng kỳ, FC, Fluct so với 2026-10, kết quả cả tháng trước).",
+      "drawer": {
+        "div": "PR",
+        "cost": "T&SL"
+      },
+      "maxSec": null
     }
   ],
   "runs": {}

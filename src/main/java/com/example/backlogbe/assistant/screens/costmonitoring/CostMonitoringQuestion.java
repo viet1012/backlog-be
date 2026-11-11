@@ -33,7 +33,12 @@ final class CostMonitoringQuestion {
 
 	// "pr" = PRESS (viết tắt hay dùng, vd "PR TSL vuot ko"); KHÔNG nhận "mo" cho MOLD ("mở" bỏ dấu cũng là "mo")
 	private static final Pattern PRESS = word("press|pr");
-	private static final Pattern MOLD = word("mold");
+	// "mo" chỉ nhận khi đi kèm loại chi phí ("MO T&SL") hoặc đứng cạnh bộ phận khác ("PR với MO") – test 1440 ext-195
+	// "PR với MO bên nào chi đậm hơn?" chỉ hiểu PRESS
+	private static final Pattern MOLD = word("mold"
+			+ "|mo(?=\\s+(?:t\\s*&\\s*sl|tsl|rm|ot)(?![\\p{L}\\p{N}_]))"
+			+ "|(?<=(?:pr|press|guide|gu)\\s{1,3}(?:và|va|với|voi|vs|and|,|&)\\s{0,3})mo"
+			+ "|mo(?=\\s{0,3}(?:và|va|với|voi|vs|and|,|&)\\s{1,3}(?:pr|press|guide|gu)(?![\\p{L}\\p{N}_]))");
 	private static final Pattern GUIDE = word("p?guide|mguide");
 
 	private static final Pattern OT = word("ot");

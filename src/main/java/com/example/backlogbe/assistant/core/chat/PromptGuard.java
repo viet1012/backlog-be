@@ -47,7 +47,11 @@ final class PromptGuard {
 	private static final List<String> ENGLISH_WORDS = List.of(
 			"what", "which", "why", "how", "when", "where", "who", "is", "are", "was", "the", "does", "do",
 			"did", "will", "most", "spends", "spend", "spent", "show", "list", "this", "month", "much", "many",
-			"can", "please", "of", "in", "for", "and", "than"
+			"can", "please", "of", "in", "for", "and", "than",
+			// test 2026-11-11 (1303): "Compare … with …", "What if … cuts … by 15%", "What should I watch today?",
+			// "Which frames should I report to …", "Last 3 months … over …", "Export to PDF" bị trả lời tiếng Việt
+			"should", "would", "could", "if", "with", "by", "to", "compare", "last", "months", "over", "export",
+			"today", "give", "me", "my", "summarize", "summarise", "explain", "tell", "there", "any", "has", "have"
 	);
 
 	// Token điều khiển của model (harmony / chat template) lọt vào content, vd "commentary to=functions?",

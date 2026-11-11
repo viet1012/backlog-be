@@ -65,7 +65,9 @@ final class CostMonitoringIntentClassifier {
 	private static final List<String> FORECAST = List.of(
 			"cu chi", "giu toc do", "toc do hien tai", "toc do nay", "cuoi thang", "du bao", "se vuot",
 			"forecast", "projection", "projected", "end of month", "month-end", "month end",
-			"at this rate", "current rate", "keep spending", "will it exceed", "going to exceed"
+			"at this rate", "current rate", "keep spending", "will it exceed", "going to exceed",
+			// 1303 ext-167 "If spending continues like this, will PRESS T&SL exceed FC?" -> LLM 24 s
+			"continues like this", "continue like this", "spending continues", "same pace", "current pace"
 	);
 
 	// "(có) vượt (FC / Fluct / …) không / ko / chưa"
@@ -96,7 +98,8 @@ final class CostMonitoringIntentClassifier {
 
 	private static final List<String> CURRENT_RATE = List.of(
 			"cu chi", "giu toc do", "toc do hien tai", "toc do nay", "chi nhu vay", "chi nhu nay",
-			"at this rate", "current rate", "keep spending"
+			"at this rate", "current rate", "keep spending",
+			"continues like this", "continue like this", "spending continues", "same pace", "current pace"
 	);
 
 	private static final List<String> PREVIOUS_MONTH = List.of(
@@ -182,7 +185,8 @@ final class CostMonitoringIntentClassifier {
 				.replace('đ', 'd').replace('Đ', 'D')
 				.toLowerCase(Locale.ROOT);
 
-		return s.replaceAll("\\s+", " ").trim();
+		// "nhà máy" (factory) không phải "máy" (machine) – test 2026-11-11 ext-114: "Chi T&SL toàn nhà máy…" bị trả theo máy
+		return s.replaceAll("\\s+", " ").trim().replaceAll("(?<![\\p{L}\\p{N}_])nha may(?![\\p{L}\\p{N}_])", "nhamay");
 	}
 
 	/**

@@ -54,6 +54,9 @@ final class CostMonitoringAnswerTemplate {
 
 		if (plan.intent() == Intent.FORECAST_ONE) {
 			one(sb, frames, closed, currentRate, lang);
+			if (!closed && !currentRate) {
+				actualAndCross(sb, snapshot, frames, lang);
+			}
 		} else if (plan.intent() == Intent.RANKING) {
 			ranking(sb, frames, closed, lang);
 		} else {
@@ -165,6 +168,36 @@ final class CostMonitoringAnswerTemplate {
 				.append(String.join("; ", verdicts)).append(".\n\n");
 
 		CostMonitoringAnswerGuide.appendOne(sb, frames, currentRate, lang);
+	}
+
+	// Dự báo 1 bộ phận: thêm "thực tế chưa vượt (Actual / Fluct); dự kiến vượt Fluct từ dd/mm" để người đọc phân biệt
+	// đã chi và dự báo (test 2026-11-11 ext-118: "tóm lại có vượt không" chỉ có dự báo, thiếu thực tế / ngày vượt)
+	private static void actualAndCross(StringBuilder sb, CostMonitoringSnapshot snapshot, List<Frame> frames, String lang) {
+
+		if (frames.size() > 3) {
+			return;
+		}
+
+		for (Frame f : frames) {
+
+			CostMonitoringAssessment a = f.a();
+			int space = f.name().indexOf(' ');
+
+			if (a.act() == null || a.fluct() == null || a.alreadyOver() || space < 0) {
+				continue;
+			}
+
+			var chart = snapshot.find(f.name().substring(0, space), f.name().substring(space + 1));
+			String cross = chart == null ? null : CmText.estimateCrossText(chart, lang);
+
+			sb.append("- ").append(frames.size() > 1 ? f.name() + " – " : "")
+					.append(t(lang, "Thực tế: chưa vượt (Actual ", "Actual: not above yet (Actual "))
+					.append(CmText.k1(a.act())).append(" / Fluct ").append(CmText.k1(a.fluct())).append(')');
+			if (cross != null && a.estimateWillExceed()) {
+				sb.append(t(lang, "; dự kiến vượt Fluct từ ", "; expected to exceed Fluct from ")).append(cross);
+			}
+			sb.append('\n');
+		}
 	}
 
 	// Kết luận 1 khung (nêu cả Fluct và FC), số đã làm tròn 1 chữ số

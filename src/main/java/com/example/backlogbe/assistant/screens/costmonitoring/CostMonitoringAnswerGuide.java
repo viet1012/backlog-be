@@ -67,8 +67,16 @@ public class CostMonitoringAnswerGuide {
 
 	private final CostMonitoringSnapshotLoader loader;
 	private final CostMonitoringLookupAnswers lookupAnswers;
+	private final CostMonitoringManagerAnswers managerAnswers;
 
 	public AnswerGuide guide(String question, Map<String, String> params, String lang) {
+
+		// Câu hỏi cấp quản lý (tóm tắt, báo cáo, tổng dự kiến, what-if, bộ phận đáng lo, duyệt / xuất file…): template
+		// trước mọi luồng khác (test 2026-11-11 nhóm 30–34: qua LLM 12–70 s, nhiều câu sai)
+		AnswerGuide manager = managerAnswers.guide(question, params, lang);
+		if (manager != null) {
+			return manager;
+		}
 
 		// "Tháng trước có gì bất thường / tình hình tháng trước": template tổng quan của tháng trước
 		AnswerGuide previous = previousMonthOverview(question, params, lang);
@@ -225,15 +233,28 @@ public class CostMonitoringAnswerGuide {
 		return switch (plan.intent()) {
 			case FORECAST_ONE, FORECAST_ALL, OVERVIEW -> precomputed(plan, question, folded, params, lang, true, intent, match);
 			case RANKING -> precomputed(plan, question, folded, params, lang, !detail, intent, match);
-			// So sánh: luôn qua LLM, khối KẾT LUẬN cho đúng các khung được hỏi
-			case COMPARE -> new AnswerGuide(compareConclusion(plan, params, lang), !detail, intent,
-					null, List.of(), match);
+			// So sánh 2–3 khung (không hỏi vật tư / tháng trước / nguyên nhân): template từ kết luận tính sẵn.
+			// Test 2026-11-11 "hôm nay Press t&sl so sánh Mold t&sl": qua LLM với 2 explain_variance bản đầy đủ -> prompt quá
+			// lớn, LLM lỗi, FE báo "mất kết nối". Còn lại: LLM với khối KẾT LUẬN cho đúng các khung được hỏi.
+			case COMPARE -> {
+				AnswerGuide direct = detail ? null : compareTemplate(plan, folded, params, lang, intent, match);
+				yield direct != null ? direct
+						: new AnswerGuide(compareConclusion(plan, params, lang), !detail, intent, null, List.of(), match);
+			}
 			// Nguyên nhân: khối sự kiện + chỉ thị; vẫn cho gọi tool (có thể cần get_top_items / get_daily_series)
 			case WHY -> {
 				// Tiền đề sai ("vì sao thấp hơn target" khi thực tế chi nhanh / dự báo vượt): trả lời bằng code
 				AnswerGuide premise = wrongPremise(plan, folded, params, lang, intent, match);
 				if (premise != null) {
 					yield premise;
+				}
+				// "Vì sao X tệ hơn / tốt hơn Y": so sánh 2 khung kèm kiểm tra tiền đề (template compare)
+				if (!detail && plan.frames().size() == 2
+						&& (CLAIM_WORSE.matcher(folded).find() || CLAIM_BETTER.matcher(folded).find())) {
+					AnswerGuide versus = compareTemplate(plan, folded, params, lang, intent, match);
+					if (versus != null) {
+						yield versus;
+					}
 				}
 				// "Vì sao X vượt / dự báo vượt / chi nhiều": nguyên nhân tính bằng code (template); câu hỏi thêm về vật tư /
 				// Category / tháng trước / Ratio -> LLM với khối KẾT LUẬN như cũ
@@ -382,9 +403,93 @@ public class CostMonitoringAnswerGuide {
 		return sb.toString().trim();
 	}
 
+	// Câu trả lời template cho so sánh 2–3 khung: mỗi khung 1 dòng (như khối KẾT LUẬN, không nhãn rủi ro) + kết luận
+	// khung tốt hơn (betterLine). Không áp dụng: hỏi tháng trước / cùng kỳ, nguyên nhân, < 2 hoặc > 3 khung, thiếu khung.
+	private static final Pattern COMPARE_LLM = CostMonitoringQuestion.word(
+			"vi sao|tai sao|nguyen nhan|ly do|why|cause|reason|nen|should");
+
+	private AnswerGuide compareTemplate(Plan plan, String folded, Map<String, String> params, String lang,
+										String intent, String match) {
+
+		// Drawer + "so sánh với MOLD" (câu chỉ nêu 1 khung khác khung đang mở): so khung drawer với khung đó
+		// (test 2026-11-11 1303 ext-131: chỉ lấy MOLD T&SL, qua LLM 10 s, sai chính tả "Rủi rò")
+		List<CostMonitoringFocus> targets = new ArrayList<>(plan.frames());
+		CostMonitoringFocus drawer = CostMonitoringFocus.from(params);
+		if (targets.size() == 1 && drawer != null && !targets.contains(drawer)) {
+			targets.add(0, drawer);
+		}
+
+		// "Vì sao X tệ hơn / tốt hơn Y" (2 khung): template kèm kiểm tra tiền đề (1303 ext-130: LLM 42 s, "108.4% … trong khi
+		// MOLD chỉ 118.7%" rồi kết luận PRESS rủi ro hơn – ngược với % Fluct)
+		boolean claimWorse = CLAIM_WORSE.matcher(folded).find();
+		boolean claimBetter = !claimWorse && CLAIM_BETTER.matcher(folded).find();
+		boolean premiseCheck = (claimWorse || claimBetter) && targets.size() == 2;
+
+		if (targets.size() < 2 || targets.size() > 3 || (COMPARE_LLM.matcher(folded).find() && !premiseCheck)
+				|| (plan.match() != null && plan.match().previousMonth())) {
+			return null;
+		}
+
+		CostMonitoringSnapshot snapshot = loader.load(params);
+		boolean closed = snapshot.monthClosed();
+		List<Frame> frames = new ArrayList<>();
+
+		for (CostMonitoringFocus f : targets) {
+			CostChartDto chart = snapshot.find(f.div(), f.cost());
+			if (chart == null) {
+				return null;
+			}
+			CostMonitoringAssessment a = CostMonitoringAssessment.of(snapshot, chart);
+			if (a.act() == null || a.fluct() == null) {
+				return null;
+			}
+			frames.add(new Frame(f.div() + " " + f.cost(), a));
+		}
+
+		StringBuilder sb = new StringBuilder();
+		if (premiseCheck) {
+			String premise = premiseLine(frames.get(0), frames.get(1), claimWorse, closed, lang);
+			if (premise == null) {
+				return null;
+			}
+			sb.append(premise).append("\n\n");
+		}
+
+		List<String> names = frames.stream().map(Frame::name).toList();
+		sb.append(t(lang, "**So sánh ", "**Comparison: "))
+				.append(names.size() == 2 ? String.join(t(lang, " và ", " vs "), names)
+						: String.join(", ", names.subList(0, names.size() - 1)) + t(lang, " và ", " and ") + names.get(names.size() - 1))
+				.append(closed ? t(lang, "** (tháng đã kết thúc):", "** (month closed):")
+						: t(lang, "** (tháng tính đến ngày có actual mới nhất):", "** (month to date):"))
+				.append('\n');
+
+		for (Frame f : frames) {
+			sb.append("- **").append(f.name()).append("**: ").append(compareLine(f.a(), closed, lang, false)).append('\n');
+		}
+
+		sb.append('\n').append("**").append(betterLine(frames, closed, lang).replace(" = ", ": ")).append("**\n\n");
+		sb.append("_").append(t(lang, "Số liệu tháng ", "Data for month ")).append(snapshot.month())
+				.append(closed ? t(lang, " (đã kết thúc).", " (closed).")
+						: t(lang, ", actual đến ngày ", ", actual up to day ") + snapshot.d()
+						+ t(lang, "; \"tốt hơn\" = dự báo cuối tháng bằng % Fluct thấp hơn.",
+						"; \"better\" = lower month-end forecast as % of Fluct."))
+				.append("_");
+
+		String first = frames.get(0).name();
+		return new AnswerGuide(null, false, intent, sb.toString().trim(), List.of(
+				t(lang, "Vì sao " + first + " dự báo vượt?", "Why is " + first + " forecast to exceed?"),
+				t(lang, "Ngày nào " + first + " chi nhiều nhất?", "Which day did " + first + " spend the most?")),
+				match + "; template=compare");
+	}
+
 	// "đã dùng 85.3% Fluct; tiến độ: Chi nhanh hơn tiến độ (+3.2 K$); dự báo cuối tháng 231.0 K$ (theo PL) – vượt Fluct
 	//  +46.7 K$ (+25.3%), vượt FC +55.8 K$ (+31.8%); rủi ro: Rủi ro cao"
 	private static String compareLine(CostMonitoringAssessment a, boolean closed, String lang) {
+		return compareLine(a, closed, lang, true);
+	}
+
+	// withRisk = false: bỏ nhãn rủi ro (câu trả lời template cho người đọc)
+	private static String compareLine(CostMonitoringAssessment a, boolean closed, String lang, boolean withRisk) {
 
 		StringBuilder sb = new StringBuilder();
 
@@ -398,10 +503,22 @@ public class CostMonitoringAnswerGuide {
 					.toString();
 		}
 
-		sb.append(t(lang, "; tiến độ: ", "; pace: "))
-				.append(a.paceStatus() == null ? CmText.noData(lang) : CmText.pace(a.paceStatus(), lang));
-		if (a.excessVsPace() != null) {
-			sb.append(" (").append(t(lang, "so với tiến độ ", "vs pace ")).append(CmText.signedK(a.excessVsPace())).append(')');
+		// "Đúng tiến độ" (trong dung sai) nhưng chênh khác 0 -> ghi rõ nhanh / chậm, khớp frame_status / trend
+		// (1303 ext-125: PRESS RM "Đúng tiến độ (+10.7 K$)" trong khi câu khác ghi "chi nhanh hơn tiến độ")
+		Double excess = a.excessVsPace();
+		sb.append(t(lang, "; tiến độ: ", "; pace: "));
+		if (a.paceStatus() == null) {
+			sb.append(CmText.noData(lang));
+		} else if (CostMonitoringAssessment.ON_PACE.equals(a.paceStatus()) && excess != null && CmText.r1(excess) != 0) {
+			sb.append(excess > 0 ? t(lang, "sát tiến độ, hơi nhanh (", "close to pace, slightly faster (")
+							: t(lang, "sát tiến độ, hơi chậm (", "close to pace, slightly slower ("))
+					.append(CmText.signedK(excess)).append(')');
+		} else {
+			String pace = CmText.pace(a.paceStatus(), lang);
+			sb.append(Character.toLowerCase(pace.charAt(0))).append(pace.substring(1));
+			if (excess != null) {
+				sb.append(" (").append(t(lang, "so với tiến độ ", "vs pace ")).append(CmText.signedK(excess)).append(')');
+			}
 		}
 
 		if (a.estimateEom() == null) {
@@ -412,6 +529,10 @@ public class CostMonitoringAnswerGuide {
 					.append(base.isEmpty() ? "" : " (" + base + ")")
 					.append(" – ").append(CmText.versus("Fluct", a.estimateOver(), a.estimateOverPct(), lang))
 					.append(", ").append(CmText.versus("FC", a.estimateOverFc(), a.estimateOverFcPct(), lang));
+		}
+
+		if (!withRisk) {
+			return sb.toString();
 		}
 
 		return sb.append(t(lang, "; rủi ro: ", "; risk: "))
@@ -450,6 +571,57 @@ public class CostMonitoringAnswerGuide {
 		return label + best.name() + " (" + t(lang, "bằng ", "at ") + CmText.pct1(comparePct(best.a(), closed))
 				+ t(lang, " Fluct, thấp hơn ", " of Fluct, lower than ") + second.name() + " "
 				+ String.format(Locale.ROOT, "%.1f", diff) + t(lang, " điểm %)", " pts)");
+	}
+
+	private static final Pattern CLAIM_WORSE = CostMonitoringQuestion.word(
+			"te hon|kem hon|xau hon|toi hon|nguy hon|rui ro hon|worse|riskier");
+	private static final Pattern CLAIM_BETTER = CostMonitoringQuestion.word(
+			"tot hon|on hon|it rui ro hon|better|safer");
+
+	// Câu đầu cho "vì sao X tệ hơn / tốt hơn Y": đúng / sai theo % Fluct (cùng tiêu chí betterLine); kèm K$ vượt nếu
+	// 2 tiêu chí cho kết quả ngược nhau (target lớn thì K$ vượt lớn dù % thấp). null = thiếu số -> LLM.
+	private static String premiseLine(Frame x, Frame y, boolean claimWorse, boolean closed, String lang) {
+
+		Double px = comparePct(x.a(), closed);
+		Double py = comparePct(y.a(), closed);
+		if (px == null || py == null) {
+			return null;
+		}
+
+		String criterion = closed ? t(lang, "Actual / Fluct (tháng đã kết thúc)", "Actual / Fluct (month closed)")
+				: t(lang, "dự báo cuối tháng / Fluct", "month-end forecast / Fluct");
+		String pcts = " (" + CmText.pct1(px) + t(lang, " so với ", " vs ") + CmText.pct1(py) + t(lang, " Fluct)", " of Fluct)");
+		double diff = CmText.r1(Math.abs(px - py));
+
+		StringBuilder sb = new StringBuilder();
+
+		if (diff < COMPARE_EQUAL_POINTS) {
+			sb.append(t(lang, "**Theo " + criterion + ", " + x.name() + " và " + y.name() + " tương đương**",
+					"**By " + criterion + ", " + x.name() + " and " + y.name() + " are about the same**")).append(pcts).append('.');
+		} else {
+			boolean xWorse = px > py;
+			boolean holds = claimWorse == xWorse;
+			String verdict = xWorse ? t(lang, " tệ hơn ", " is worse than ") : t(lang, " tốt hơn ", " is better than ");
+			sb.append(holds ? "" : t(lang, "**Tiền đề chưa đúng:** ", "**The premise does not hold:** "))
+					.append(t(lang, "theo " + criterion + ", ", "by " + criterion + ", "))
+					.append("**").append(x.name()).append(verdict).append(y.name()).append("**").append(pcts).append('.');
+		}
+
+		// K$ vượt (dự báo / Actual so với Fluct) – ghi khi xếp ngược với % Fluct
+		Double ox = closed ? CmText.subR1(x.a().act(), x.a().fluct()) : CmText.r1(x.a().estimateOver());
+		Double oy = closed ? CmText.subR1(y.a().act(), y.a().fluct()) : CmText.r1(y.a().estimateOver());
+		if (ox != null && oy != null && diff >= COMPARE_EQUAL_POINTS && (ox > oy) != (px > py) && !ox.equals(oy)) {
+			Frame bigK = ox > oy ? x : y;
+			Frame smallK = bigK == x ? y : x;
+			sb.append(t(lang, " Nếu xét theo K$ vượt Fluct thì ", " By K$ above Fluct, "))
+					.append(bigK.name()).append(t(lang, " lớn hơn (", " is larger ("))
+					.append(CmText.signedK(bigK == x ? ox : oy)).append(t(lang, " so với ", " vs "))
+					.append(CmText.signedK(bigK == x ? oy : ox)).append(t(lang, ") vì target lớn hơn (Fluct ", ") because its target is larger (Fluct "))
+					.append(CmText.k1(bigK.a().fluct())).append(t(lang, " so với ", " vs ")).append(CmText.k1(smallK.a().fluct()))
+					.append(").");
+		}
+
+		return sb.toString();
 	}
 
 	// % Fluct dùng để so (làm tròn 1 chữ số): dự báo chính; tháng đã kết thúc: Actual / Fluct

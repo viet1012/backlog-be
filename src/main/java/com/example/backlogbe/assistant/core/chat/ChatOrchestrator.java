@@ -101,6 +101,7 @@ public class ChatOrchestrator {
 	private final AnswerPostProcessor answerPostProcessor;
 	private final LlmClient llmClient;
 	private final LlmConcurrencyLimiter concurrencyLimiter;
+	private final com.example.backlogbe.assistant.core.llm.LlmCircuitBreaker circuitBreaker;
 	private final ObjectMapper objectMapper;
 	private final Environment environment;
 	private final AssistantProperties assistantProperties;
@@ -239,6 +240,12 @@ public class ChatOrchestrator {
 			// Chỉ request gọi LLM mới tính vào hạn mức llm-per-minute
 			if (clientKey != null) {
 				rateLimiter.checkLlm(clientKey);
+			}
+
+			// LLM vừa lỗi liên tiếp (treo / mất kết nối): báo lỗi ngay thay vì chờ ~170 s (LlmCircuitBreaker)
+			if (!circuitBreaker.allow()) {
+				log.warn("Assistant: LLM circuit open, fail fast screenKey={}", screenKey);
+				throw new LlmUnavailableException("LLM circuit open");
 			}
 
 			// Giữ 1 suất đồng thời cho cả câu hỏi (context + mọi lần gọi LLM); đầy thì xếp hàng chờ (LlmConcurrencyLimiter)
@@ -418,9 +425,13 @@ public class ChatOrchestrator {
 						: llmClient.chat(messages, callTools, remaining, toolChoice);
 			} catch (RuntimeException e) {
 				trace.llmCall(elapsedMs(callStart), null, null, "error");
+				if (e instanceof LlmUnavailableException) {
+					circuitBreaker.recordFailure();
+				}
 				throw e;
 			}
 
+			circuitBreaker.recordSuccess();
 			trace.llmCall(elapsedMs(callStart), response.promptTokens(), response.completionTokens(),
 					response.finishReason());
 			llmCalls[0]++;
