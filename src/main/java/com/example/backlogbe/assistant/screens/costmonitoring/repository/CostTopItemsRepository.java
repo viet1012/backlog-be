@@ -114,6 +114,7 @@ public class CostTopItemsRepository {
 			CC_CODE_COL, CC_NAME_COL, MACHINE_COL, RM_UNIT_PRICE_COL, DATE_COL
 	);
 
+	// TotalK = tổng cả khung (mọi nhóm, tính trước TOP) -> nạp sẵn cache findTotal, không cần truy vấn TOTAL riêng
 	private static final String TOP_ITEMS = """
 			SELECT TOP (:limit)
 			       Code,
@@ -121,7 +122,8 @@ public class CostTopItemsRepository {
 			       MAX(Category)      AS Category,
 			       QtyUnit,
 			       SUM(Qty)           AS Qty,
-			       SUM(Amt) / 1000.0  AS AmtK
+			       SUM(Amt) / 1000.0  AS AmtK,
+			       SUM(SUM(Amt)) OVER () / 1000.0 AS TotalK
 			FROM B
 			WHERE CC IN (:costCenters)
 			GROUP BY Code, QtyUnit
@@ -132,7 +134,8 @@ public class CostTopItemsRepository {
 			SELECT TOP (:limit)
 			       CcName,
 			       MAX(CcCode)        AS CcCode,
-			       SUM(Amt) / 1000.0  AS AmtK
+			       SUM(Amt) / 1000.0  AS AmtK,
+			       SUM(SUM(Amt)) OVER () / 1000.0 AS TotalK
 			FROM B
 			WHERE CC IN (:costCenters)
 			GROUP BY CcName
@@ -276,8 +279,12 @@ public class CostTopItemsRepository {
 	// ---------- Cache ngắn hạn cho truy vấn tổng hợp (top / sum / total) ----------
 	// Test AI 2026-11-10: câu so cùng kỳ 6 khung (12 truy vấn RM / T&SL) mất 6–11 s lần đầu, 1–3 s lần sau.
 	// Dữ liệu actual cập nhật theo ngày -> TTL 5 phút đủ an toàn. Trả bản sao (caller có thể sửa list / map).
+	// Kỳ đã kết thúc hẳn (toDate trước đầu tháng hiện tại) gần như không đổi -> TTL dài hơn (test 0758: câu theo khoảng
+	// nhiều tháng 7–42 s mỗi lần vì cache 5 phút hết hạn giữa các lượt hỏi). Dữ liệu tháng cũ được sửa lại -> chậm tối đa
+	// CLOSED_TTL mới thấy (cần xác nhận mức chấp nhận được với nghiệp vụ).
 	private static final long CACHE_TTL_MS = 5 * 60 * 1000L;
-	private static final int CACHE_MAX = 500;
+	private static final long CLOSED_TTL_MS = 6 * 60 * 60 * 1000L;
+	private static final int CACHE_MAX = 800;
 
 	private record CacheEntry(long expiresAt, Object value) {
 	}
@@ -285,21 +292,35 @@ public class CostTopItemsRepository {
 	private final java.util.concurrent.ConcurrentHashMap<String, CacheEntry> cache = new java.util.concurrent.ConcurrentHashMap<>();
 
 	@SuppressWarnings("unchecked")
-	private <T> T cached(String key, java.util.function.Supplier<T> loader) {
+	private <T> T cached(String key, LocalDate to, java.util.function.Supplier<T> loader) {
 		long now = System.currentTimeMillis();
 		CacheEntry e = cache.get(key);
 		if (e != null && e.expiresAt() > now) {
 			return (T) e.value();
 		}
 		T value = loader.get();
+		put(key, to, value);
+		return value;
+	}
+
+	private void put(String key, LocalDate to, Object value) {
+		long now = System.currentTimeMillis();
 		if (cache.size() >= CACHE_MAX) {
 			cache.entrySet().removeIf(x -> x.getValue().expiresAt() <= now);
 			if (cache.size() >= CACHE_MAX) {
 				cache.clear();
 			}
 		}
-		cache.put(key, new CacheEntry(now + CACHE_TTL_MS, value));
-		return value;
+		cache.put(key, new CacheEntry(now + ttl(to), value));
+	}
+
+	private static long ttl(LocalDate to) {
+		return to != null && to.isBefore(LocalDate.now().withDayOfMonth(1)) ? CLOSED_TTL_MS : CACHE_TTL_MS;
+	}
+
+	// Tổng khung lấy kèm từ truy vấn top (cột TotalK) -> findTotal cùng kỳ không cần truy vấn lại
+	private void seedTotal(String cost, LocalDate from, LocalDate to, List<String> costCenters, Double totalK) {
+		put(key("total", cost, from, to, costCenters, 0), to, totalK == null ? List.of() : List.of(totalK));
 	}
 
 	private static String key(String kind, String cost, LocalDate from, LocalDate to, List<String> costCenters, int limit) {
@@ -413,18 +434,26 @@ public class CostTopItemsRepository {
 			int limit
 	) {
 
-		return new java.util.ArrayList<>(cached(key("topItems", cost, from, to, costCenters, limit), () -> jdbcTemplate.query(
-				base(cost) + TOP_ITEMS,
-				params(from, to, costCenters, limit),
-				(rs, rowNum) -> new CostTopItemDto(
-						rs.getString("Code"),
-						rs.getString("Name"),
-						rs.getString("Category"),
-						getDouble(rs, "Qty"),
-						rs.getString("QtyUnit"),
-						getDouble(rs, "AmtK")
-				)
-		)));
+		return new java.util.ArrayList<>(cached(key("topItems", cost, from, to, costCenters, limit), to, () -> {
+			Double[] total = {null};
+			List<CostTopItemDto> rows = jdbcTemplate.query(
+					base(cost) + TOP_ITEMS,
+					params(from, to, costCenters, limit),
+					(rs, rowNum) -> {
+						total[0] = getDouble(rs, "TotalK");
+						return new CostTopItemDto(
+								rs.getString("Code"),
+								rs.getString("Name"),
+								rs.getString("Category"),
+								getDouble(rs, "Qty"),
+								rs.getString("QtyUnit"),
+								getDouble(rs, "AmtK")
+						);
+					}
+			);
+			seedTotal(cost, from, to, costCenters, total[0]);
+			return rows;
+		}));
 	}
 
 	public List<CostTopCostCenterDto> findTopCostCenters(
@@ -435,15 +464,23 @@ public class CostTopItemsRepository {
 			int limit
 	) {
 
-		return new java.util.ArrayList<>(cached(key("topCostCenters", cost, from, to, costCenters, limit), () -> jdbcTemplate.query(
-				base(cost) + TOP_COST_CENTERS,
-				params(from, to, costCenters, limit),
-				(rs, rowNum) -> new CostTopCostCenterDto(
-						rs.getString("CcName"),
-						rs.getString("CcCode"),
-						getDouble(rs, "AmtK")
-				)
-		)));
+		return new java.util.ArrayList<>(cached(key("topCostCenters", cost, from, to, costCenters, limit), to, () -> {
+			Double[] total = {null};
+			List<CostTopCostCenterDto> rows = jdbcTemplate.query(
+					base(cost) + TOP_COST_CENTERS,
+					params(from, to, costCenters, limit),
+					(rs, rowNum) -> {
+						total[0] = getDouble(rs, "TotalK");
+						return new CostTopCostCenterDto(
+								rs.getString("CcName"),
+								rs.getString("CcCode"),
+								getDouble(rs, "AmtK")
+						);
+					}
+			);
+			seedTotal(cost, from, to, costCenters, total[0]);
+			return rows;
+		}));
 	}
 
 	public List<CostTopMachineDto> findTopMachines(
@@ -454,7 +491,7 @@ public class CostTopItemsRepository {
 			int limit
 	) {
 
-		return new java.util.ArrayList<>(cached(key("topMachines", cost, from, to, costCenters, limit), () -> jdbcTemplate.query(
+		return new java.util.ArrayList<>(cached(key("topMachines", cost, from, to, costCenters, limit), to, () -> jdbcTemplate.query(
 				base(cost) + TOP_MACHINES,
 				params(from, to, costCenters, limit),
 				(rs, rowNum) -> new CostTopMachineDto(
@@ -466,19 +503,19 @@ public class CostTopItemsRepository {
 
 	// Thống kê từng vật tư trong [from, to] (cả khoảng)
 	public List<CostItemStatDto> itemStats(String cost, LocalDate from, LocalDate to, List<String> costCenters) {
-		return new java.util.ArrayList<>(cached(key("itemStats", cost, from, to, costCenters, 0), () -> jdbcTemplate.query(
+		return new java.util.ArrayList<>(cached(key("itemStats", cost, from, to, costCenters, 0), to, () -> jdbcTemplate.query(
 				base(cost) + ITEM_STATS, params(from, to, costCenters, 1), (rs, rowNum) -> toItemStat(rs))));
 	}
 
 	// Thống kê từng vật tư theo tháng (period = yyyy-MM)
 	public List<CostItemStatDto> itemMonthly(String cost, LocalDate from, LocalDate to, List<String> costCenters) {
-		return new java.util.ArrayList<>(cached(key("itemMonthly", cost, from, to, costCenters, 0), () -> jdbcTemplate.query(
+		return new java.util.ArrayList<>(cached(key("itemMonthly", cost, from, to, costCenters, 0), to, () -> jdbcTemplate.query(
 				base(cost) + ITEM_MONTHLY, params(from, to, costCenters, 1), (rs, rowNum) -> toItemStat(rs))));
 	}
 
 	// 1 vật tư theo ngày (period = yyyy-MM-dd), tăng dần theo ngày
 	public List<CostItemStatDto> itemDaily(String cost, LocalDate from, LocalDate to, List<String> costCenters, String code) {
-		return new java.util.ArrayList<>(cached(key("itemDaily:" + code, cost, from, to, costCenters, 0), () -> jdbcTemplate.query(
+		return new java.util.ArrayList<>(cached(key("itemDaily:" + code, cost, from, to, costCenters, 0), to, () -> jdbcTemplate.query(
 				base(cost) + ITEM_DAILY,
 				params(from, to, costCenters, 1).addValue("code", code, Types.NVARCHAR),
 				(rs, rowNum) -> toItemStat(rs))));
@@ -514,7 +551,7 @@ public class CostTopItemsRepository {
 			List<String> costCenters
 	) {
 
-		List<Double> result = cached(key("total", cost, from, to, costCenters, 0), () -> jdbcTemplate.query(
+		List<Double> result = cached(key("total", cost, from, to, costCenters, 0), to, () -> jdbcTemplate.query(
 				base(cost) + TOTAL,
 				params(from, to, costCenters, 1),
 				(rs, rowNum) -> getDouble(rs, "AmtK")
@@ -546,8 +583,14 @@ public class CostTopItemsRepository {
 			LocalDate to,
 			List<String> costCenters
 	) {
-		return new LinkedHashMap<>(cached(key("sumByCategory", cost, from, to, costCenters, 0),
-				() -> sumByLabel(base(cost) + SUM_BY_CATEGORY, from, to, costCenters)));
+		return new LinkedHashMap<>(cached(key("sumByCategory", cost, from, to, costCenters, 0), to, () -> {
+			Map<String, Double> map = sumByLabel(base(cost) + SUM_BY_CATEGORY, from, to, costCenters);
+			// Mọi dòng đều thuộc 1 Category (kể cả "(trống)") -> tổng = tổng khung, nạp sẵn findTotal
+			if (!map.isEmpty()) {
+				seedTotal(cost, from, to, costCenters, map.values().stream().mapToDouble(Double::doubleValue).sum());
+			}
+			return map;
+		}));
 	}
 
 	// Tổng K$ theo vật tư (Code + Text, trả riêng từng cột để tool tự ghép nhãn)
@@ -558,7 +601,7 @@ public class CostTopItemsRepository {
 			List<String> costCenters
 	) {
 
-		return new java.util.ArrayList<>(cached(key("sumByItem", cost, from, to, costCenters, 0), () -> jdbcTemplate.query(
+		return new java.util.ArrayList<>(cached(key("sumByItem", cost, from, to, costCenters, 0), to, () -> jdbcTemplate.query(
 				base(cost) + SUM_BY_ITEM,
 				params(from, to, costCenters, 1),
 				(rs, rowNum) -> new CostItemAmountDto(

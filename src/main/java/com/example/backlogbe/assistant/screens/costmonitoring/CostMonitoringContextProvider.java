@@ -217,6 +217,15 @@ public class CostMonitoringContextProvider {
 				.append(t(lang, "|Đơn vị=K$", "|Unit=K$"))
 				.append('\n');
 
+		// Tháng chỉ có target, chưa khung nào có Actual (vd 2026-03): nói thẳng để model không trả "đã có dữ liệu"
+		// (test 2026-11-12 ext-254 "Tháng 3 năm nay có dữ liệu không?" -> "Có, tháng 3/2026 đã có dữ liệu")
+		if (snapshot.response().charts().stream().allMatch(c -> c.actMtdLatest() == null)) {
+			sb.append(t(lang, "Trạng thái dữ liệu=CHƯA CÓ số chi (Actual) ở mọi khung – chỉ có target (FC / PL / Fluct); "
+							+ "trả lời là tháng này chưa có số liệu chi phí thực tế.",
+					"Data status=NO Actual spending in any frame – targets only (FC / PL / Fluct); "
+							+ "answer that this month has no actual cost data yet.")).append('\n');
+		}
+
 		appendSummary(sb, snapshot, d, n, lang);
 
 		for (CostChartDto chart : snapshot.response().charts()) {

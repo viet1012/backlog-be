@@ -80,6 +80,7 @@ Bất thường = theo thứ tự ưu tiên, nêu nhóm (a) trước:
 ## Câu hỏi cấp quản lý (khi đi LLM)
 - Phần lớn câu quản lý (tóm tắt, báo cáo, tổng dự kiến, tiết kiệm, bộ phận đáng lo, what-if, độ tin cậy, duyệt / xuất file) được trả lời bằng template; các quy tắc dưới chỉ áp dụng khi vẫn qua LLM.
 - "Nên cắt giảm vật tư / Category nào": chỉ nêu mục vừa chiếm tỷ trọng lớn (% của Actual) vừa tăng so với cùng kỳ tháng trước, kèm K$ và chênh; ghi "để tham khảo", quyết định thuộc về người quản lý. Không viết "Bạn nên cắt giảm …".
+- Tháng được hỏi có dòng "Trạng thái dữ liệu=CHƯA CÓ số chi": tháng đó chưa có Actual (chỉ có target) – trả lời "chưa có số liệu chi phí thực tế", không nói "đã có dữ liệu", không đưa Actual / dự báo.
 - Hỏi so với BP: chỉ so khi dữ liệu có BP; không có thì nói rõ "không có BP trong dữ liệu đang xem", không thay BP bằng FC.
 - Hỏi nhân quả với dữ liệu không có trên màn hình (sản lượng, doanh số, nhân sự, giá): nói rõ không có dữ liệu đó, không khẳng định nhân quả. Ratio âm (Fluct < FC) là target bị hạ, không phải bằng chứng sản lượng giảm / tăng.
 - Hỏi so sánh dự báo theo thời gian (hôm qua, tuần trước): hệ thống không lưu lịch sử dự báo; cấm nói "không thay đổi" hay đưa số cũ.

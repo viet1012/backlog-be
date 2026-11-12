@@ -161,6 +161,36 @@ src/main/resources/assistant/
   - Tool có tham số tùy chọn `month`; `ToolMonthScope` chỉ cho phép tháng đang xem hoặc tháng đã dựng context,
     params đổi qua `ScreenModule.paramsForMonth`. Tháng khác → lỗi `invalid_argument` trả cho model.
   - Response có `answeredMonth` khi câu trả lời dùng dữ liệu tháng khác. Không dựng được (ngoài phạm vi) → câu nhắc người dùng đổi tháng.
+- **Hỏi khoảng nhiều tháng** (`QuestionMonthDetector.range` → `MonthRange`, 2–12 tháng, cắt tại tháng hiện tại):
+  - Nhận: "trong 3 tháng", "3 tháng gần nhất / qua / gần đây", "last / past 3 months" (gồm tháng đang xem);
+    "3 tháng trước", "previous 3 months" (3 tháng đủ trước tháng đang xem); "các / mấy tháng gần đây" (3), "nửa năm" (6),
+    "nửa năm đầu / cuối"; "từ tháng 8 đến tháng 10", "tháng 8 - 10", "từ tháng 8 (đến nay)", "2026-09 đến 2026-11";
+    "quý này / quý trước / quý 3", "Q3"; "từ đầu năm", "năm nay", "YTD". Không nhận: "3 tháng tới", "ngày 3 tháng 10",
+    "tháng 3 năm nay". Khoảng tương đối tính theo **tháng đang xem**; "trong 3 tháng" gồm tháng đang xem (cần xác nhận với nghiệp vụ).
+  - `MonthPlan.range` ≠ null: `mentioned` = các tháng trong khoảng; context phụ dựng từ tháng gần nhất trở về (tối đa 2).
+  - `ChatOrchestrator` gọi `ScreenModule.answerGuideForRange` (default null) và chỉ nhận `directAnswer`; không có → LLM,
+    câu hỏi kèm `rangeNote` (khoảng, tháng nào có dữ liệu, trả lời theo từng tháng). Không gán `answeredMonth`.
+  - Cost Monitoring (`CostMonitoringAnswerGuide.range`): `CostMonitoringItemAnswers` (xuất nhiều lần nhất trên cả khoảng;
+    1 vật tư / đơn giá khi khoảng ≤ 4 tháng) → `CostMonitoringRangeAnswers` (`range_top_item`, `range_top_detail`,
+    `range_summary` – từng tháng Actual / Fluct, tháng đang chạy kèm dự báo, Nhận định: vượt lặp lại, % Fluct tăng / giảm dần;
+    tháng không khung nào có Actual (chart chỉ có target, vd 2026-07) ghi "chưa có dữ liệu", không bỏ qua im lặng).
+    `range_why` – "vì sao … tăng / giảm / vượt" (≤ 2 khung, không hỏi vật tư / máy…): bảng từng tháng + "Yếu tố (hệ thống
+    tính)": Actual và Fluct đổi giữa tháng đã kết thúc đầu – cuối khoảng → chi tăng / target bị hạ / cả hai; vật tư tăng /
+    giảm nhiều nhất giữa 2 tháng đó (`sumByItem`); tháng đang chạy chỉ nêu dự báo. Bất thường vật tư theo khoảng → `item_anomaly`
+    của tháng đang xem (nếu nằm trong khoảng) hoặc tháng cuối khoảng, dòng đầu nói rõ "tính theo từng tháng".
+    "Vì sao" khác (Ratio, > 2 khung, vật tư…) / ngày / khác → LLM. Template 1 tháng (manager, lookup, tổng quan) không dùng cho câu hỏi khoảng.
+  - Hiệu năng câu hỏi theo khoảng: truy vấn các khung chạy song song trước khi dựng câu trả lời (warm); truy vấn top vật tư /
+    cost center lấy kèm tổng khung (`SUM(SUM(Amt)) OVER ()` → nạp sẵn cache `findTotal`, bớt 1 truy vấn / khung); cache
+    repository 6 giờ cho kỳ đã kết thúc hẳn (`toDate` trước đầu tháng hiện tại), 5 phút cho kỳ còn lại.
+    `CostMonitoringAnswerGuide.range` giới hạn 45 s (luồng `assistant-range`): quá hạn → trả `range_slow` "đang tổng hợp, hỏi lại
+    sau 1–2 phút" (gợi ý = chính câu hỏi), phần tính chạy nền tới hết để nạp cache. Test 0758: 3 tháng 30–42 s, 11 tháng
+    262–277 s (FE hết chờ ~190 s, báo LLM_ERROR dù template đúng).
+    Ngoại lệ: "N tháng gần đây / gần nhất / qua / trước", "các tháng gần đây" không hỏi vật tư / máy / cost center / Category
+    → giữ template `multi_month` (`CostMonitoringManagerAnswers.multiMonthGuide`: các tháng **đã kết thúc**, không dự báo),
+    xét sau item và trước `CostMonitoringRangeAnswers`. Vì vậy "Chi phí PRESS T&SL 3 tháng gần nhất?" = 08–10, còn
+    "Trong 3 tháng PRESS T&SL thế nào?" = `range_summary` 09–11 (cần xác nhận với nghiệp vụ có thống nhất hai cách hiểu không).
+  - Test case thủ công: [ai-test-cases-extra.json](ai-test-cases-extra.json) nhóm 42 (khoảng nhiều tháng) và 43 (sửa sau eval);
+    [ai-test-cases-item-detail.json](ai-test-cases-item-detail.json) có bản sao các case vật tư (cùng id).
 
 ## 5. Cost Monitoring
 
@@ -544,6 +574,8 @@ Body: `{ "status", "code", "message" }`.
 0. **Chuẩn hóa ký tự** (`normalizeTypography`): gạch nối Unicode U+2010 / U+2011 (gpt-oss hay sinh trong mã vật tư,
    vd `MDC‑25MX`) → `-`; khoảng trắng không ngắt U+00A0 / U+202F / U+2007 → dấu cách; `6.8 %` → `6.8%`.
    Giữ nguyên gạch ngang `–` (khoảng ngày) và dấu trừ `−` (công thức).
+   **Bỏ nhãn khối dữ liệu nội bộ** (`stripBlockLabels`): `[Dữ liệu tháng … (được hỏi trong câu hỏi)]`, `[Kết quả … đã tra sẵn]`
+   (kèm "trong phần / mục" và dấu ngoặc kép quanh nhãn) nếu model trích ra (test 2026-11-12 ext-254).
 1. **Thay mã nội bộ** còn sót theo `resources/assistant/screens/{screenKey}/codes.json`
    (`{ "MA": { "vi": "nhãn", "en": "label" } }`). Chỉ thay khi mã là từ đứng riêng; thứ tự trong file = thứ tự thay.
    Có thay thì log WARN kèm danh sách mã (dấu hiệu nên sửa `knowledge.md` / `rules.md`).
@@ -715,6 +747,13 @@ server hoặc ADMIN (qua API admin) đọc; không gửi ra ngoài.
     OVER/OK; chưa có nhóm `estimate*` – nên bổ sung để drawer khớp banner (chưa làm).
   - Tháng chưa có PL: dự báo chính = theo nhịp Fluct (Act + Fluct / N × (N − D)), luôn ≤ Fluct khi Act ≤ Fluct × D / N.
 - Dò tháng: "T2".."T7" không kèm năm bị bỏ qua (trùng thứ trong tuần); "may" chỉ nhận khi kèm năm.
+- Dữ liệu dòng xuất kho (CostTool / CostRm) có cả tháng trước 2026-08, còn chart chỉ có Actual từ 2026-08 (tháng 05–07 chỉ có
+  target hoặc không có chart). Câu hỏi vật tư theo khoảng vẫn tính được các tháng đó; câu hỏi theo chart ghi "chưa có dữ liệu".
+- Truy vấn dòng xuất kho lọc ngày qua `TRY_CONVERT(... UsedDate ...)` (không dùng được index) – khoảng dài vẫn chậm lần đầu;
+  cần xác nhận kiểu cột `UsedDate` trước khi thêm điều kiện lọc trực tiếp trên cột (hoặc bảng tổng hợp theo tháng).
+- Ngày actual mới nhất bằng 0 ở mọi khung T&SL (vd 11/11 lúc dữ liệu chưa nạp xong) vẫn được coi là "có số" → "chi ngày gần
+  nhất 11/11: 0.0 K$" (ext-111, 150). Chưa sửa – cần nghiệp vụ xác nhận ngày làm việc chi 0 là "chưa ghi nhận" hay "không phát sinh".
+- Câu ghép "máy nào tốn nhất? có bất thường không?" chỉ trả phần top máy (ext-105); chưa ghép với item_change / spike theo máy.
 - **TODO `div` / `cost` → `tags`**: `AssistantSource` (`sources` trong response), `SuggestionCondition` và placeholder
   `{div}` / `{cost}` trong `suggestions.json` vẫn mang khái niệm của Cost Monitoring. Đổi thành `tags` chung khi có màn hình thứ hai
   (ảnh hưởng hợp đồng API với FE).
@@ -773,3 +812,7 @@ server hoặc ADMIN (qua API admin) đọc; không gửi ra ngoài.
 | 2026-11-11 | Chi tiết vật tư theo tháng trong câu hỏi: "tháng trước", "tháng 9", "T10/2026"… (`QuestionMonthDetector`) → tính cho tháng đó (nền = 3 tháng trước tháng đó), dòng đầu ghi "Tháng yyyy-MM – theo tháng trong câu hỏi"; "so với tháng trước / cùng kỳ" vẫn là tháng đang xem; tháng tương lai → luồng cũ. Trước: luôn dùng tháng đang xem trên màn hình. Test ext-231…234. |
 | 2026-11-11 | item_price 1 mã đổi dạng theo phản hồi người dùng: "**Tên (Code)** (KHUNG): tháng 11 là **278.49 $/ST**, tăng +1.0% so với tháng 10 (275.72), tăng liên tục 4 tháng (+3.3% so với tháng 8)." + chuỗi giá 1 dòng "08: 269.61 (36 ST) · … · 11 đến 10/11: 278.49 (18 ST)". Không còn "ổn định ±x% so với TB 3 tháng" khi có xu hướng liên tục (≥ 3 tháng). Nghiệp vụ xác nhận: đơn giá = giá bình quân kho (đầu kỳ / cuối kỳ), không phải giá mua – ghi chú / knowledge.md bỏ "(cần xác nhận)". |
 | 2026-11-11 | Test 1643 + phản hồi "chưa thấy mục đích của 1 AI" (chỉ liệt kê số): mọi câu trả lời chi tiết vật tư thêm **Nhận định** tính bằng code – most_issued: nhóm xuất nhiều lần chiếm bao nhiêu % chi phí khung, tiền tập trung ở mã nào → nên xem nhóm nào trước; item_when: xuất nhanh / chậm / đúng nhịp 3 tháng (±30%), xuất dồn 1 ngày (≥ 40%); item_price 1 mã: tăng / giảm đều k tháng → lượng xuất tháng này tốn thêm bao nhiêu K$, có đáng lo không; price_changes: tác động ròng của giá so với phần vượt Fluct của khung → giá có phải nguyên nhân chính; anomaly: số mục, giá trị liên quan, loại nhiều nhất, khung tập trung, "Nên làm" theo loại. Sửa ext-232 / 233: câu có tên tháng ("tháng 9", "tháng 10") đi nhánh `answerGuideForOtherMonth` không gọi `CostMonitoringItemAnswers` → qua LLM sai ("275 đ/ST", "không có dữ liệu"); nay `otherMonth` gọi item trước. |
+| 2026-11-11 | **Câu hỏi theo khoảng nhiều tháng** (test: "tool nào xuất nhiều nhất trong 3 tháng" trả số 01/11–10/11 – mọi template chỉ tính tháng đang xem; "từ tháng 8 đến 10" / ≥ 2 tháng khác bỏ hết template → LLM). Lõi: `QuestionMonthDetector.range` / `MonthRange` (N tháng, N tháng trước, quý, từ tháng X đến Y, từ đầu năm…), `MonthPlan.range`, `ScreenModule.answerGuideForRange`, `ChatOrchestrator` gọi template theo khoảng trước LLM, `rangeNote` cho LLM; "N tháng trước" không còn bị hiểu là "tháng trước". Cost Monitoring: `item_most_issued` trên cả khoảng (dòng đầu "Khoảng yyyy-MM → yyyy-MM"), `CostMonitoringRangeAnswers` (`range_top_item`, `range_top_detail`, `range_summary` + Nhận định), audit `intentMatch` có `range=…`. `common.md`: quy tắc trả lời theo từng tháng. `eval.json`: 6 câu khoảng. |
+| 2026-11-11 | Eval cost-monitoring 75/75: "chi tiết những bất thường" (không nêu vật tư) → tổng quan khung rút gọn + vật tư cần kiểm tra (`CostMonitoringAnswerGuide.withOverview`, `CostMonitoringItemAnswers.mentionsItem`); chân trang item_anomaly đổi "không kết luận sai phạm" → "chưa khẳng định có sai phạm" (trùng từ khóa chặn "KẾT LUẬN"); frame_status ghi "yếu tố chính của dự báo" thay "nguyên nhân chính"; xuất nhiều lần nhất ở RM không gọi thép là "vật tư tiêu hao"; eval #22 (compare = template), #54 (không phụ thuộc số liệu tháng). |
+| 2026-11-12 | Hồi quy sau luồng khoảng: "3 tháng gần đây PRESS T&SL có tháng nào vượt?" (ext-113, 151–153) bị `range_summary` chặn trước template `multi_month` → `CostMonitoringAnswerGuide.range` gọi `CostMonitoringManagerAnswers.multiMonthGuide` (N tháng gần đây / qua / trước, không hỏi chi tiết) trước `CostMonitoringRangeAnswers`. Eval: case "3 tháng gần nhất" đổi sang `multi_month`, thêm "Trong 3 tháng PRESS T&SL…" (`range_summary`) và "3 tháng gần đây có khung nào vượt?" (77 case). Test case thủ công: thêm nhóm 42 (khoảng nhiều tháng, ext-235–255) và 43 (sửa sau eval, ext-256–259) vào `ai-test-cases-extra.json`; bản sao case vật tư vào `ai-test-cases-item-detail.json`; cập nhật ext-113, ext-225. |
+| 2026-11-12 | Sửa theo test FE 0758 (259 case) + 0804: (1) **Hiệu năng khoảng nhiều tháng**: truy vấn các khung song song (warm) ở `range_top_item` / `range_top_detail` / item_most_issued theo khoảng / multi_month; `findTopItems` / `findTopCostCenters` lấy kèm tổng khung (cột `TotalK` = `SUM(SUM(Amt)) OVER ()`) và `sumByCategory` nạp sẵn cache `findTotal`; cache repository 6 giờ cho kỳ đã kết thúc hẳn. `CostMonitoringAnswerGuide.range` giới hạn 45 s → `range_slow` "đang tổng hợp, hỏi lại sau 1–2 phút", tính tiếp ở nền (ext-244: 262–277 s → FE báo LLM_ERROR). (2) `range_summary` ghi "chưa có dữ liệu" cho tháng không có Actual (ext-243 bỏ qua 07), chú thích chỉ nhắc "tháng đang chạy" khi có, "Khung tỷ lệ cao nhất (Σ Actual / Σ Fluct các tháng đã kết thúc)". (3) Mới `range_why` (ext-250: LLM 141 s, số mâu thuẫn). (4) Bất thường vật tư theo khoảng → `item_anomaly` tháng đang xem / cuối khoảng kèm dòng giải thích (ext-251). (5) Mới `data_availability` "Tháng X có dữ liệu không?" + context tháng được hỏi ghi "Trạng thái dữ liệu=CHƯA CÓ số chi" + `AnswerPostProcessor.stripBlockLabels` (ext-254: bịa "có dữ liệu", lộ nhãn "[Dữ liệu tháng …]"). (6) Mới `item_cut_candidates` "nên cắt giảm vật tư / Category nào" (ext-104). (7) item_when: % nhận định = % dòng "Nếu giữ nhịp", SL dự phóng làm tròn (ext-218). (8) frame_status: Fluct > FC ở khung không dự báo vượt ghi "giúp khung còn trong Fluct" (ext-18 / 50 / 69). (9) "3 tháng tới / quý tới" thêm ghi chú không có dự báo các tháng sau (ext-255). (10) "Vì sao N tháng gần đây…" không còn vào multi_month. Đánh giá lại: ext-232 đúng (dòng xuất kho có dữ liệu 06–08). Eval 83 case (+6); test case thủ công: nhóm 44 (ext-260–264), cập nhật ext-50, 78, 104, 182–184, 218, 237, 239, 243, 244, 250, 251, 254, 255. Chưa làm: ngày actual = 0 (cần xác nhận), câu ghép ext-105, template cho ext-65 / 116 / 129 / 253. |

@@ -22,6 +22,10 @@ Chi tiết: [docs/assistant/README.md](docs/assistant/README.md).
   → phát hiện tháng trong câu hỏi (`core/month`) → pre-fetch tool (`PrefetchRule`)
   → `ScreenModule.answerGuide` (khối kết luận tính sẵn trước "Câu hỏi:", đủ dữ liệu thì `tool_choice: none`) → prompt (`core/prompt`)
   → LLM + tool calling (`core/llm`) → hậu xử lý (`core/postprocess/AnswerPostProcessor`: thay mã nội bộ, định dạng số).
+- Câu hỏi khoảng nhiều tháng ("trong 3 tháng", "quý này", "từ tháng 8 đến 10"…): `QuestionMonthDetector.range` → `ScreenModule.answerGuideForRange`
+  (chỉ nhận `directAnswer` tính theo cả khoảng) → không có thì LLM + `rangeNote`. Không trả template / kết luận 1 tháng cho câu hỏi khoảng.
+  Cost Monitoring: truy vấn các khung chạy song song, giới hạn 45 s (quá hạn → "đang tổng hợp, hỏi lại sau", tính tiếp ở nền);
+  tháng không có Actual phải ghi "chưa có dữ liệu", không bỏ qua im lặng.
 - `assistant/core/`: lõi dùng chung — api, chat, llm, prompt, month, prefetch, postprocess, suggestion, tool, eval.
 - `assistant/core/screen/`: `ScreenModule` (hợp đồng mỗi màn hình), `ScreenRegistry`, `ParamSpec`.
 - `assistant/screens/{screen}/`: module riêng từng màn hình (tool, context provider, Assessment, snapshot, repository).

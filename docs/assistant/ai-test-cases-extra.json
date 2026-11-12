@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "exportedAt": "2026-11-11T04:00:00.000Z",
+  "exportedAt": "2026-11-12T11:00:00.000Z",
   "cases": [
     {
       "id": "ext-01",
@@ -419,7 +419,7 @@
       "id": "ext-50",
       "group": "20. Tình hình 1 khung",
       "question": "còn RM thì sao?",
-      "expected": "Drawer PRESS T&SL -> trả lời PRESS RM (frame_status), không có MOLD / GUIDE.",
+      "expected": "Drawer PRESS T&SL -> trả lời PRESS RM (frame_status), không có MOLD / GUIDE. PRESS RM dự báo trong Fluct → dòng \"Fluct cao hơn FC … → giúp khung còn trong Fluct\" (KHÔNG \"không phải nguyên nhân vượt\" – test 0758).",
       "drawer": {
         "div": "PR",
         "cost": "T&SL"
@@ -649,7 +649,7 @@
       "id": "ext-78",
       "group": "24. Estimate (MTD) – ngày dự kiến vượt",
       "question": "Khi nào <khung đang có badge Vượt> vượt Fluct?",
-      "expected": "Chỉ test khi có khung badge \"Vượt\" (10/11: không có khung nào). Template when_exceed nói \"đã vượt Fluct thực tế\" kèm Actual, không nêu ngày dự kiến.",
+      "expected": "CHỈ CHẠY TAY: thay <…> bằng tên khung đang có badge \"Vượt\" (10/11–12/11: không có khung nào – bỏ qua). Template when_exceed nói \"đã vượt Fluct thực tế\" kèm Actual, không nêu ngày dự kiến.",
       "drawer": null,
       "maxSec": null
     },
@@ -863,7 +863,7 @@
       "id": "ext-104",
       "group": "31. Quản lý – Hành động / kiểm soát",
       "question": "Nên cắt giảm vật tư nào trước ở GUIDE T&SL?",
-      "expected": "Qua LLM (câu vật tư): top vật tư / Category vừa chiếm tỷ trọng lớn vừa tăng so với cùng kỳ, kèm K$; ghi \"tham khảo\", không viết \"Bạn nên cắt giảm …\" như quyết định.",
+      "expected": "Template item_cut_candidates (không qua LLM, trước 26 s LLM trả \"Nên cắt giảm … trước\"): câu đầu \"**Để tham khảo** – vật tư nên xem xét trước … Quyết định cắt giảm thuộc về người quản lý\"; GUIDE T&SL tối đa 5 mục ≥ 2% chi trực tiếp và tăng ≥ 0.1 K$ so với cùng kỳ: K$ (% chi trực tiếp); cùng kỳ → chênh. Không có mục nào tăng → mục lớn nhất, ghi rõ \"không mục lớn nào tăng\".",
       "drawer": null,
       "maxSec": null
     },
@@ -935,7 +935,7 @@
       "id": "ext-113",
       "group": "33. Quản lý – So sánh dài hạn / BP",
       "question": "3 tháng gần đây PRESS T&SL có tháng nào vượt không?",
-      "expected": "Template multi_month: PRESS T&SL 3 tháng đã kết thúc gần nhất (cũ → mới), mỗi tháng Actual so với Fluct / FC; câu đầu \"x/3 tháng có vượt Fluct\". Không trả dự báo tháng này. Không qua LLM.",
+      "expected": "Template multi_month: PRESS T&SL 3 tháng đã kết thúc gần nhất (cũ → mới), mỗi tháng Actual so với Fluct / FC; câu đầu \"x/3 tháng có vượt Fluct\". Không trả dự báo tháng này. Không qua LLM. Sau luồng khoảng nhiều tháng (12/11) vẫn phải là multi_month, KHÔNG thành range_summary 2026-09 → 2026-11.",
       "drawer": null,
       "maxSec": 3
     },
@@ -1505,7 +1505,7 @@
       "id": "ext-182",
       "group": "39. Tháng đã kết thúc (chọn tháng cũ trên màn hình)",
       "question": "Tóm tắt tình hình chi phí",
-      "expected": "Chọn tháng đã kết thúc: exec_summary không áp dụng (cần dự báo) → tổng quan kết quả tháng, không nói dự báo / ngày dự kiến vượt.",
+      "expected": "CẦN CHỌN THÁNG ĐÃ KẾT THÚC TRÊN MÀN HÌNH (bộ chạy test chưa có trường month – chạy ở tháng hiện tại sẽ ra exec_summary, không tính là lỗi). Tháng đã kết thúc: exec_summary không áp dụng (cần dự báo) → tổng quan kết quả tháng, không nói dự báo / ngày dự kiến vượt.",
       "drawer": null,
       "maxSec": null
     },
@@ -1513,7 +1513,7 @@
       "id": "ext-183",
       "group": "39. Tháng đã kết thúc (chọn tháng cũ trên màn hình)",
       "question": "Nếu giảm 10% thì PRESS T&SL có vượt không?",
-      "expected": "Tháng đã kết thúc: không what_if; nói tháng đã kết thúc, nêu kết quả tháng.",
+      "expected": "CẦN CHỌN THÁNG ĐÃ KẾT THÚC TRÊN MÀN HÌNH (như ext-182). Tháng đã kết thúc: không what_if; nói tháng đã kết thúc, nêu kết quả tháng.",
       "drawer": null,
       "maxSec": null
     },
@@ -1521,7 +1521,7 @@
       "id": "ext-184",
       "group": "39. Tháng đã kết thúc (chọn tháng cũ trên màn hình)",
       "question": "So sánh PRESS T&SL và MOLD T&SL",
-      "expected": "Template compare theo Actual / Fluct (tháng đã kết thúc), \"Khung tốt hơn theo Actual / Fluct (tháng đã kết thúc)\".",
+      "expected": "CẦN CHỌN THÁNG ĐÃ KẾT THÚC TRÊN MÀN HÌNH (như ext-182). Template compare theo Actual / Fluct (tháng đã kết thúc), \"Khung tốt hơn theo Actual / Fluct (tháng đã kết thúc)\".",
       "drawer": null,
       "maxSec": 3
     },
@@ -1805,7 +1805,7 @@
       "id": "ext-218",
       "group": "41. Chi tiết vật tư (xuất nhiều, lúc nào, đơn giá, bất thường)",
       "question": "Tool mua nhiều nhất vào lúc nào?",
-      "expected": "Drawer PRESS T&SL: câu đầu nêu vật tư xuất nhiều lần nhất; rồi template item_when: tổng lần / ngày / SL / K$, lần gần nhất, top 3 ngày xuất nhiều nhất (kèm thứ), thứ hay xuất (nếu ≥ 40%), các tháng trước, nhịp cả tháng.",
+      "expected": "Drawer PRESS T&SL: câu đầu nêu vật tư xuất nhiều lần nhất; rồi template item_when: tổng lần / ngày / SL / K$, lần gần nhất, top 3 ngày xuất nhiều nhất (kèm thứ), thứ hay xuất (nếu ≥ 40%), các tháng trước, nhịp cả tháng. % ở \"Nhận định\" và dòng \"Nếu giữ nhịp hiện tại\" PHẢI là cùng 1 số (test 0758: -12.6% / -12.7%); SL dự phóng / TB ≥ 10 ghi số nguyên (không \"327.27 BX\").",
       "drawer": {
         "div": "PR",
         "cost": "T&SL"
@@ -1864,7 +1864,7 @@
       "id": "ext-225",
       "group": "41. Chi tiết vật tư (xuất nhiều, lúc nào, đơn giá, bất thường)",
       "question": "Vật tư nào bất thường?",
-      "expected": "Template item_anomaly 6 khung, mỗi vật tư 1 dòng (gộp nhiều dấu hiệu): tăng giá ≥ 20%, xuất ≥ 2 lần nhịp TB 3 tháng (chỉ vật tư xuất đều, phần vượt ≥ 0.3 K$), mã mới ≥ 0.5 K$ (mã -RX ghi là biến thể của mã gốc), 1 dòng ≥ 1 K$ / bản quyền. Không còn \"1 ST gấp 9.0 lần\"; số điểm còn lại ít (trước 97). Lần đầu < 5 s.",
+      "expected": "Template item_anomaly 6 khung, mỗi vật tư 1 dòng (gộp nhiều dấu hiệu): tăng giá ≥ 20%, xuất ≥ 2 lần nhịp TB 3 tháng (chỉ vật tư xuất đều, phần vượt ≥ 0.3 K$), mã mới ≥ 0.5 K$ (mã -RX ghi là biến thể của mã gốc), 1 dòng ≥ 1 K$ / bản quyền. Không còn \"1 ST gấp 9.0 lần\"; số điểm còn lại ít (trước 97). Lần đầu < 5 s. Câu có nêu \"vật tư\" → chỉ item_anomaly (không gộp phần \"Tình hình các khung\" như ext-256); footer ghi \"chưa khẳng định có sai phạm\" (không dùng chữ \"kết luận\"); khung RM không gọi thép là \"vật tư tiêu hao\".",
       "drawer": null,
       "maxSec": 5
     },
@@ -1942,6 +1942,252 @@
       "expected": "\"so với tháng trước\" là so sánh → vẫn tháng đang xem (2026-11), KHÔNG đổi sang tháng 10. Dạng: \"**G.W./455*150*228.60MM… (T0026400)** (PRESS T&SL): tháng 11 là **278.49 $/ST**, tăng +1.0% so với tháng 10 (275.72), tăng liên tục 4 tháng (+3.3% so với tháng 8).\" rồi 1 dòng \"08: 269.61 (36 ST) · 09: 270.92 (32 ST) · 10: 275.72 (40 ST) · 11 đến 10/11: 278.49 (18 ST)\"; ghi chú \"Đơn giá là giá bình quân kho (đầu kỳ / cuối kỳ), không phải giá mua.\" (số theo dữ liệu 11/11).",
       "drawer": null,
       "maxSec": 3
+    },
+    {
+      "id": "ext-235",
+      "group": "42. Khoảng nhiều tháng (3 tháng, quý, từ tháng … đến …)",
+      "question": "tool nào xuất nhiều nhất trong 3 tháng ?",
+      "expected": "Lỗi gốc 12/11 (trước chỉ trả 01/11–10/11). Template item_most_issued 3 khung T&SL theo CẢ khoảng: dòng đầu \"**Khoảng 2026-09 → 2026-11 (3 tháng)** – tháng 2026-11 tính đến mốc actual, theo khoảng trong câu hỏi:\"; số lần / SL / K$ tính từ 01/09 đến mốc actual. KHÔNG có \"(01/11–\". Không qua LLM.",
+      "drawer": null,
+      "maxSec": 5
+    },
+    {
+      "id": "ext-236",
+      "group": "42. Khoảng nhiều tháng (3 tháng, quý, từ tháng … đến …)",
+      "question": "3 tháng trước vật tư nào xuất nhiều nhất?",
+      "expected": "\"3 tháng trước\" = 3 tháng đã kết thúc trước tháng đang xem → khoảng 2026-08 → 2026-10 (KHÔNG hiểu là \"tháng trước\"). item_most_issued 6 khung; khung RM nhận định \"xuất thường xuyên nhưng mỗi mã giá trị nhỏ so với cả khung\" (KHÔNG gọi thép là \"vật tư tiêu hao\"). Không qua LLM.",
+      "drawer": null,
+      "maxSec": 5
+    },
+    {
+      "id": "ext-237",
+      "group": "42. Khoảng nhiều tháng (3 tháng, quý, từ tháng … đến …)",
+      "question": "Vật tư nào chi nhiều nhất trong 3 tháng gần đây?",
+      "expected": "Template range_top_item: top vật tư theo K$ trong khoảng 2026-09 → 2026-11 (01/09/2026 → mốc actual), mỗi dòng kèm % trên tổng chi của khoảng. Không qua LLM. Thời gian: test 0758 30–42 s (6 khung × 2 truy vấn tuần tự) → nay truy vấn song song + tổng khung lấy kèm truy vấn top; lần hỏi lại trong 6 giờ (tháng đã kết thúc) / 5 phút phải < 2 s.",
+      "drawer": null,
+      "maxSec": 15
+    },
+    {
+      "id": "ext-238",
+      "group": "42. Khoảng nhiều tháng (3 tháng, quý, từ tháng … đến …)",
+      "question": "Trong 3 tháng PRESS T&SL chi phí thế nào?",
+      "expected": "Template range_summary 1 khung, khoảng 2026-09 → 2026-11: từng tháng Actual / Fluct (%), tháng 11 đang diễn ra có dự báo cuối tháng, dòng \"Cộng 2 tháng đã kết thúc\"; mục \"Nhận định\" (vượt Fluct lặp lại / % Fluct tăng dần / giảm dần / ổn định). Số % tính từ số đã làm tròn 1 chữ số. Không qua LLM.",
+      "drawer": null,
+      "maxSec": 5
+    },
+    {
+      "id": "ext-239",
+      "group": "42. Khoảng nhiều tháng (3 tháng, quý, từ tháng … đến …)",
+      "question": "Từ tháng 8 đến tháng 10 chi phí các bộ phận ra sao?",
+      "expected": "Template range_summary 6 khung, khoảng 2026-08 → 2026-10 (đều đã kết thúc → không có dự báo): mỗi khung 1 dòng dạng \"08 x% · 09 y% · 10 z% ⚠ – vượt Fluct a/3 tháng\"; \"Nhận định\" nêu khung vượt lặp lại / \"Khung tỷ lệ cao nhất (Σ Actual / Σ Fluct các tháng đã kết thúc)\". Chú thích cuối KHÔNG nhắc \"tháng đang chạy\" (khoảng không có tháng đang chạy). Không qua LLM.",
+      "drawer": null,
+      "maxSec": 8
+    },
+    {
+      "id": "ext-240",
+      "group": "42. Khoảng nhiều tháng (3 tháng, quý, từ tháng … đến …)",
+      "question": "Quý này máy nào chi nhiều nhất ở PRESS T&SL?",
+      "expected": "\"Quý này\" (Q4) → khoảng 2026-10 → 2026-11 (đến tháng đang xem). Template range_top_detail: top máy (MA-xxxx) PRESS T&SL theo K$ + % trên tổng khoảng. Không qua LLM.",
+      "drawer": null,
+      "maxSec": 5
+    },
+    {
+      "id": "ext-241",
+      "group": "42. Khoảng nhiều tháng (3 tháng, quý, từ tháng … đến …)",
+      "question": "Từ tháng 9 đến nay cost center nào chi nhiều nhất?",
+      "expected": "\"từ tháng 9 (đến nay)\" → khoảng 2026-09 → 2026-11. Template range_top_detail theo cost center (tên tiếng Việt, không lộ mã nội bộ). Không qua LLM.",
+      "drawer": null,
+      "maxSec": 5
+    },
+    {
+      "id": "ext-242",
+      "group": "42. Khoảng nhiều tháng (3 tháng, quý, từ tháng … đến …)",
+      "question": "Category nào chi nhiều nhất từ 2026-09 đến 2026-11?",
+      "expected": "Nhận dạng \"2026-09 đến 2026-11\" → range_top_detail theo Category, khoảng 2026-09 → 2026-11. Không qua LLM.",
+      "drawer": null,
+      "maxSec": 5
+    },
+    {
+      "id": "ext-243",
+      "group": "42. Khoảng nhiều tháng (3 tháng, quý, từ tháng … đến …)",
+      "question": "Quý 3 MOLD RM thế nào?",
+      "expected": "\"Quý 3\" → khoảng 2026-07 → 2026-09. range_summary MOLD RM có dòng \"- 2026-07: chưa có dữ liệu\" (chart tháng 07 chỉ có target, chưa có Actual; test 0758 bỏ qua im lặng) + chú thích \"Chưa có dữ liệu (không có Actual trên màn hình): 2026-07\"; không tự suy số. Không có dự báo (các tháng đã kết thúc).",
+      "drawer": null,
+      "maxSec": 5
+    },
+    {
+      "id": "ext-244",
+      "group": "42. Khoảng nhiều tháng (3 tháng, quý, từ tháng … đến …)",
+      "question": "Từ đầu năm đến nay vật tư nào chi nhiều nhất?",
+      "expected": "\"từ đầu năm\" → khoảng 2026-01 → 2026-11 (11 tháng, ≤ 12). range_top_item theo K$ trong khoảng (dòng xuất kho – có dữ liệu cả trước tháng 08). Test 0758: template đúng nhưng 262–277 s → FE báo LLM_ERROR. Nay: ≤ 45 s trả kết quả, quá 45 s trả \"**Khoảng 2026-01 → 2026-11 (11 tháng)** – số liệu nhiều tháng đang được tổng hợp… hỏi lại sau khoảng 1–2 phút\" (gợi ý = chính câu hỏi), phần tính chạy nền; hỏi lại sau 1–2 phút phải ra kết quả ngay. KHÔNG được LLM_ERROR.",
+      "drawer": null,
+      "maxSec": 50
+    },
+    {
+      "id": "ext-245",
+      "group": "42. Khoảng nhiều tháng (3 tháng, quý, từ tháng … đến …)",
+      "question": "Trong 3 tháng chi phí thế nào?",
+      "expected": "Drawer PRESS T&SL → range_summary CHỈ PRESS T&SL, khoảng 2026-09 → 2026-11 (giống ext-238).",
+      "drawer": {
+        "div": "PR",
+        "cost": "T&SL"
+      },
+      "maxSec": 5
+    },
+    {
+      "id": "ext-246",
+      "group": "42. Khoảng nhiều tháng (3 tháng, quý, từ tháng … đến …)",
+      "question": "T0026400 xuất những ngày nào trong 3 tháng?",
+      "expected": "item_when mã T0026400 có dòng đầu \"**Khoảng 2026-09 → 2026-11** – chi tiết tháng 2026-11, kèm các tháng trước:\" rồi nội dung item_when như ext-219. Không qua LLM.",
+      "drawer": null,
+      "maxSec": 3
+    },
+    {
+      "id": "ext-247",
+      "group": "42. Khoảng nhiều tháng (3 tháng, quý, từ tháng … đến …)",
+      "question": "Giá T0026400 từ tháng 8 đến tháng 10 thế nào?",
+      "expected": "Khoảng không gồm tháng đang xem → item_price với tháng đang xét = 2026-10 (tháng cuối khoảng), dòng đầu \"**Khoảng 2026-08 → 2026-10** – chi tiết tháng 2026-10, kèm các tháng trước:\". KHÔNG dùng giá tháng 11.",
+      "drawer": null,
+      "maxSec": 3
+    },
+    {
+      "id": "ext-248",
+      "group": "42. Khoảng nhiều tháng (3 tháng, quý, từ tháng … đến …)",
+      "question": "Which items were issued most often from 2026-09 to 2026-11?",
+      "expected": "item_most_issued tiếng Anh theo khoảng 2026-09 → 2026-11 (dòng đầu \"**Range 2026-09 → 2026-11 (3 months)** – 2026-11 up to the actual date, range from the question:\"). Không qua LLM.",
+      "drawer": null,
+      "maxSec": 5
+    },
+    {
+      "id": "ext-249",
+      "group": "42. Khoảng nhiều tháng (3 tháng, quý, từ tháng … đến …)",
+      "question": "Last 3 months which machine spent the most in MOLD T&SL?",
+      "expected": "\"last 3 months\" → khoảng 2026-09 → 2026-11; range_top_detail máy MOLD T&SL, tiếng Anh. Không qua LLM.",
+      "drawer": null,
+      "maxSec": 5
+    },
+    {
+      "id": "ext-250",
+      "group": "42. Khoảng nhiều tháng (3 tháng, quý, từ tháng … đến …)",
+      "question": "Vì sao từ tháng 9 đến tháng 11 MOLD RM tăng?",
+      "expected": "Template range_why (không qua LLM; test 0758: LLM 141 s, số mâu thuẫn \"89.4 K$ – vẫn dưới Fluct 83.1\"): \"**Phân tích theo tháng – khoảng 2026-09 → 2026-11**\", bảng MOLD RM từng tháng; \"→ **Yếu tố (hệ thống tính):**\" – 2026-09 → 2026-10: Actual … → … (±K$); Fluct … → … (±K$, target bị hạ / được nâng); % Fluct → yếu tố chính (chi tăng / target bị hạ / cả hai); vật tư tăng / giảm nhiều nhất 10 so với 09; tháng 11 chỉ nêu dự báo (Actual chưa đủ tháng). Không kết luận nguyên nhân sản xuất.",
+      "drawer": null,
+      "maxSec": 10
+    },
+    {
+      "id": "ext-251",
+      "group": "42. Khoảng nhiều tháng (3 tháng, quý, từ tháng … đến …)",
+      "question": "Từ đầu năm vật tư nào bất thường?",
+      "expected": "Template item_anomaly (không qua LLM; test 0758: LLM 41–49 s nói sai \"không có dữ liệu bất thường\"): dòng đầu \"**Khoảng 2026-01 → 2026-11** – vật tư bất thường được tính theo từng tháng (so với nhịp 3 tháng trước đó); dưới đây là tháng 2026-11. Hỏi \"Tháng MM vật tư nào bất thường?\" để xem tháng khác…\" rồi danh sách như ext-225.",
+      "drawer": null,
+      "maxSec": 5
+    },
+    {
+      "id": "ext-252",
+      "group": "42. Khoảng nhiều tháng (3 tháng, quý, từ tháng … đến …)",
+      "question": "Chi phí PRESS T&SL 3 tháng gần nhất thế nào?",
+      "expected": "\"N tháng gần đây / gần nhất / qua\" (không hỏi vật tư / máy…) vẫn là template multi_month như ext-113: \"**PRESS T&SL** – 3 tháng gần đây (đã kết thúc): …\", các dòng 2026-08, 2026-09, 2026-10; KHÔNG có dòng 2026-11, không có dự báo. (Cần xác nhận: \"gần đây\" = tháng đã kết thúc, còn \"trong 3 tháng\" = gồm tháng đang xem.)",
+      "drawer": null,
+      "maxSec": 5
+    },
+    {
+      "id": "ext-253",
+      "group": "42. Khoảng nhiều tháng (3 tháng, quý, từ tháng … đến …)",
+      "question": "Ngày 3 tháng 10 PRESS T&SL chi bao nhiêu?",
+      "expected": "KHÔNG bắt nhầm thành khoảng \"3 tháng\": tra 1 ngày 03/10/2026 (như nhóm 11).",
+      "drawer": null,
+      "maxSec": 5
+    },
+    {
+      "id": "ext-254",
+      "group": "42. Khoảng nhiều tháng (3 tháng, quý, từ tháng … đến …)",
+      "question": "Tháng 3 năm nay có dữ liệu không?",
+      "expected": "Template data_availability (không qua LLM; test 0758: LLM 53 s bịa \"Có, tháng 3/2026 đã có dữ liệu\" + trích nhãn nội bộ \"[Dữ liệu tháng 2026-03 (được hỏi trong câu hỏi)]\"): \"**Tháng 2026-03**: **chưa có số chi (Actual)** trên màn hình Cost Monitoring; chỉ có target (FC / Fluct).\" (hoặc \"cũng chưa có target\"). KHÔNG hiểu là \"từ đầu năm\". Không bao giờ hiện chữ \"[Dữ liệu tháng\".",
+      "drawer": null,
+      "maxSec": 5
+    },
+    {
+      "id": "ext-255",
+      "group": "42. Khoảng nhiều tháng (3 tháng, quý, từ tháng … đến …)",
+      "question": "3 tháng tới có vượt không?",
+      "expected": "Khoảng tương lai → KHÔNG xử lý như khoảng: template dự báo tháng đang xem (2026-11) + dòng cuối \"_Các tháng sau 2026-11 chưa có Actual hay dự báo trên màn hình – số trên chỉ là dự báo cuối tháng 2026-11…_\". Không bịa dự báo cho 12/2026 – 01/2027. Không qua LLM.",
+      "drawer": null,
+      "maxSec": 3
+    },
+    {
+      "id": "ext-256",
+      "group": "43. Sửa sau eval 12/11 (75/75)",
+      "question": "thông tin chi tiết những bất thường giúp toi?",
+      "expected": "Câu \"bất thường\" không nêu vật tư → gộp 2 phần: \"**Tình hình các khung:**\" (khung dự báo vượt Fluct, có \"vượt Fluct +…\", cuối tháng) rồi \"**Vật tư cần kiểm tra:**\" (danh sách item_anomaly). Không có \"KẾT LUẬN\", không bảng \"|---\". Không qua LLM.",
+      "drawer": null,
+      "maxSec": 5
+    },
+    {
+      "id": "ext-257",
+      "group": "43. Sửa sau eval 12/11 (75/75)",
+      "question": "so sánh giữa Press T&SL vs Mold T&SL ? chart nào đang làm tốt ?",
+      "expected": "Template compare (không qua LLM): chỉ PRESS và MOLD T&SL (không có GUIDE), có dòng \"Khung tốt hơn\". Không \"KẾT LUẬN\", không lộ WILL_EXCEED.",
+      "drawer": null,
+      "maxSec": 3
+    },
+    {
+      "id": "ext-258",
+      "group": "43. Sửa sau eval 12/11 (75/75)",
+      "question": "Vì sao MOLD RM vượt Fluct?",
+      "expected": "Template (không qua LLM), có \"MOLD RM\", \"Fluct\"; không có chữ \"KẾT LUẬN\".",
+      "drawer": null,
+      "maxSec": 3
+    },
+    {
+      "id": "ext-259",
+      "group": "43. Sửa sau eval 12/11 (75/75)",
+      "question": "MOLD RM thì sao?",
+      "expected": "Đang mở drawer PRESS T&SL nhưng hỏi khung khác → frame_status MOLD RM (không lẫn PRESS T&SL), có \"Dự báo\". Câu tình hình ghi \"chi nhanh hơn tiến độ – yếu tố chính của dự báo\" (KHÔNG dùng chữ \"Nguyên nhân\"; chỉ câu \"vì sao\" mới dùng \"nguyên nhân chính\").",
+      "drawer": {
+        "div": "PR",
+        "cost": "T&SL"
+      },
+      "maxSec": 3
+    },
+    {
+      "id": "ext-260",
+      "group": "44. Sửa sau test 12/11 lượt 0758",
+      "question": "Vì sao 3 tháng gần đây MOLD RM tăng?",
+      "expected": "Có \"vì sao\" → KHÔNG multi_month (chỉ liệt kê kết quả) mà range_why như ext-250 cho khoảng 2026-09 → 2026-11: bảng từng tháng + \"Yếu tố (hệ thống tính)\" (chi / target đổi giữa 09 và 10, vật tư tăng nhiều nhất), tháng 11 chỉ nêu dự báo. Không qua LLM.",
+      "drawer": null,
+      "maxSec": 10
+    },
+    {
+      "id": "ext-261",
+      "group": "44. Sửa sau test 12/11 lượt 0758",
+      "question": "Category nào nên cắt giảm ở PRESS T&SL?",
+      "expected": "Template item_cut_candidates theo Category (không phải vật tư): \"**Để tham khảo** – Category nên xem xét trước…\", mỗi dòng K$ (% chi trực tiếp); cùng kỳ → chênh; footer kỳ so sánh. Không viết \"Bạn nên cắt giảm\". Không qua LLM.",
+      "drawer": null,
+      "maxSec": 5
+    },
+    {
+      "id": "ext-262",
+      "group": "44. Sửa sau test 12/11 lượt 0758",
+      "question": "Tháng 9 đã có số chưa?",
+      "expected": "Template data_availability: \"**Tháng 2026-09**: **có dữ liệu** – Actual T&SL đến 30/09, RM đến 30/09 (tháng đã kết thúc); OT chưa có Actual (chỉ có FC / Fluct).\" Gợi ý \"Tháng 9 có gì bất thường?\". Không qua LLM.",
+      "drawer": null,
+      "maxSec": 3
+    },
+    {
+      "id": "ext-263",
+      "group": "44. Sửa sau test 12/11 lượt 0758",
+      "question": "Từ đầu năm đến nay vật tư nào chi nhiều nhất?",
+      "expected": "Chạy NGAY SAU ext-244 (hoặc 1–2 phút sau nếu ext-244 trả \"đang tổng hợp\"): ra kết quả range_top_item đầy đủ trong < 3 s nhờ cache (phần tính nền của ext-244 đã nạp).",
+      "drawer": null,
+      "maxSec": 3
+    },
+    {
+      "id": "ext-264",
+      "group": "44. Sửa sau test 12/11 lượt 0758",
+      "question": "Vật tư nào cần giảm bớt ở MOLD T&SL?",
+      "expected": "Cách hỏi khác của ext-104 → item_cut_candidates chỉ MOLD T&SL (không phải item_change / top_detail). Không qua LLM.",
+      "drawer": null,
+      "maxSec": 5
     }
   ],
   "runs": {}

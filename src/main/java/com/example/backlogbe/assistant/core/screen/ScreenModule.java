@@ -61,6 +61,15 @@ public interface ScreenModule {
 		return null;
 	}
 
+	// Câu hỏi về KHOẢNG nhiều tháng (QuestionMonthDetector.range: "trong 3 tháng", "quý này", "từ tháng 8 đến 10"…):
+	// màn hình tự trả lời bằng template tính theo cả khoảng (params = params tháng đang xem). Chỉ nhận AnswerGuide có
+	// directAnswer (kết luận tính theo 1 tháng không áp dụng). null = không (mặc định) -> LLM với context các tháng
+	// trong khoảng + rangeNote. Không trả template tính theo 1 tháng cho câu hỏi khoảng.
+	default AnswerGuide answerGuideForRange(String question, Map<String, String> params,
+											com.example.backlogbe.assistant.core.month.QuestionMonthDetector.MonthRange range, String lang) {
+		return null;
+	}
+
 	// Câu hỏi nhắc ĐÚNG 1 tháng khác tháng đang xem (vd "Tháng 9 có gì bất thường?"): màn hình tự trả lời bằng template
 	// cho tháng đó nếu được (params = params tháng đang xem). null = không (mặc định) -> LLM với context tháng được hỏi.
 	default AnswerGuide answerGuideForOtherMonth(String question, Map<String, String> params, String lang) {
