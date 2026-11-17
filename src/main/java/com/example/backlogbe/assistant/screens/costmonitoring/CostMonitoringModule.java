@@ -125,6 +125,12 @@ public class CostMonitoringModule implements ScreenModule {
 
 	// "Tháng 9 có gì bất thường?" -> template tổng quan / dự báo của tháng đó (test 2026-11-10 ext-17 / ext-68: 35–48 s qua LLM)
 	@Override
+	public AnswerGuide answerGuideForRange(String question, Map<String, String> params,
+										   com.example.backlogbe.assistant.core.month.QuestionMonthDetector.MonthRange range, String lang) {
+		return answerGuide.range(question, params, range, lang);
+	}
+
+	@Override
 	public AnswerGuide answerGuideForOtherMonth(String question, Map<String, String> params, String lang) {
 		return answerGuide.otherMonth(question, params, lang);
 	}

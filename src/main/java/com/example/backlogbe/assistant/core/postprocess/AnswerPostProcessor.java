@@ -29,6 +29,7 @@ import java.util.regex.Pattern;
 //      { "CODE": { "vi": "nhãn", "en": "label" }, ... }   (thứ tự trong file = thứ tự thay)
 //    Đọc khi khởi động cho các screenKey đã đăng ký; thiếu file thì bỏ qua.
 // 0. Chuẩn hoá gạch nối / khoảng trắng Unicode (normalizeTypography, mọi lang).
+// 0b. Bỏ nhãn khối dữ liệu nội bộ "[Dữ liệu tháng …]" / "[Kết quả … đã tra sẵn]" nếu model trích ra (stripBlockLabels).
 // 2. lang = vi: dấu phẩy thập phân -> dấu chấm (normalizeDecimalComma).
 // =========================================================
 @Slf4j
@@ -72,6 +73,8 @@ public class AnswerPostProcessor {
 
 		String result = normalizeTypography(answer);
 
+		result = stripBlockLabels(result);
+
 		result = replaceInternalCodes(result, labels(screenKey, lang), screenKey);
 
 		return PromptBuilder.LANG_VI.equals(lang) ? normalizeDecimalComma(result) : result;
@@ -103,6 +106,27 @@ public class AnswerPostProcessor {
 		result = UNICODE_SPACE.matcher(result).replaceAll(" ");
 
 		return SPACE_BEFORE_PERCENT.matcher(result).replaceAll("$1%");
+	}
+
+	// =========================================================
+	// NHÃN KHỐI DỮ LIỆU NỘI BỘ
+	//
+	// ChatOrchestrator nối context bằng nhãn "[Dữ liệu tháng YYYY-MM (được hỏi trong câu hỏi)]", "[Kết quả <tool> đã tra
+	// sẵn]". Model đôi khi trích nguyên nhãn cho người dùng (test 2026-11-12 ext-254: "…được gửi kèm trong phần
+	// “[Dữ liệu tháng 2026-03 (được hỏi trong câu hỏi)]”") -> bỏ nhãn (kèm "trong phần / mục" và dấu ngoặc kép bao quanh).
+	// Chỉ khớp nhãn do core tạo, không khớp ngoặc vuông khác.
+	// =========================================================
+
+	private static final Pattern BLOCK_LABEL = Pattern.compile(
+			"\\s*(?:(?:trong|ở|tại)\\s+(?:phần|mục|khối)\\s*)?[\"“‘']?\\[(?:Dữ liệu tháng|Kết quả)\\s[^\\]\\n]{0,120}\\][\"”’']?");
+
+	static String stripBlockLabels(String answer) {
+
+		if (answer == null || answer.indexOf('[') < 0) {
+			return answer;
+		}
+
+		return BLOCK_LABEL.matcher(answer).replaceAll("");
 	}
 
 	// Mã -> nhãn theo lang (en thiếu thì dùng vi); không có file -> rỗng

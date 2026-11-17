@@ -46,6 +46,7 @@ import static com.example.backlogbe.assistant.screens.costmonitoring.CmText.t;
 // Lý do: dù có khối KẾT LUẬN, gpt-oss-20b (low) vẫn trả lời "không có bất thường" khi có khung dự báo vượt.
 // Khối KẾT LUẬN vẫn được tính (dùng khi assistant.template-answers.enabled = false hoặc câu hỏi không đủ điều kiện).
 // =========================================================
+@lombok.extern.slf4j.Slf4j
 @Component
 @RequiredArgsConstructor
 public class CostMonitoringAnswerGuide {
@@ -69,8 +70,102 @@ public class CostMonitoringAnswerGuide {
 	private final CostMonitoringLookupAnswers lookupAnswers;
 	private final CostMonitoringManagerAnswers managerAnswers;
 	private final CostMonitoringItemAnswers itemAnswers;
+	private final CostMonitoringRangeAnswers rangeAnswers;
+
+	// Câu hỏi về khoảng nhiều tháng (ChatOrchestrator -> answerGuideForRange): chỉ template tính theo cả khoảng
+	// (vật tư xuất nhiều lần nhất / 1 vật tư; top vật tư / máy / cost center / Category; tổng hợp theo từng tháng).
+	// Ngoại lệ: "N tháng gần đây / qua / trước" không hỏi chi tiết -> multi_month của manager (các tháng đã kết thúc).
+	// Không dùng template / khối kết luận của 1 tháng (manager, lookup, tổng quan…) – không khớp -> null (LLM + rangeNote).
+	//
+	// Giới hạn thời gian (test 0758 ext-244 "từ đầu năm": template đúng nhưng 262–277 s, FE hết chờ ở ~190 s và báo lỗi):
+	// quá RANGE_TIMEOUT -> trả lời "đang tổng hợp, hỏi lại sau" (directAnswer, không gọi LLM); phần tính vẫn chạy nền
+	// đến hết và nạp cache repository (tháng đã kết thúc giữ 6 giờ) -> hỏi lại trả ngay.
+	public AnswerGuide range(String question, Map<String, String> params,
+							 com.example.backlogbe.assistant.core.month.QuestionMonthDetector.MonthRange range, String lang) {
+
+		java.util.concurrent.CompletableFuture<AnswerGuide> future =
+				java.util.concurrent.CompletableFuture.supplyAsync(() -> rangeNow(question, params, range, lang), rangeExecutor);
+
+		try {
+			return future.get(RANGE_TIMEOUT_SECONDS, java.util.concurrent.TimeUnit.SECONDS);
+		} catch (java.util.concurrent.TimeoutException e) {
+			log.warn("Assistant range answer slow, timeout={}s months={}", RANGE_TIMEOUT_SECONDS, range.months());
+			return slowRange(question, range, lang);
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			return null;
+		} catch (java.util.concurrent.ExecutionException e) {
+			log.warn("Assistant range answer failed error={}",
+					e.getCause() != null ? e.getCause().getClass().getSimpleName() : e.getClass().getSimpleName());
+			return null;
+		}
+	}
+
+	private static final long RANGE_TIMEOUT_SECONDS = 45;
+
+	// Luồng riêng cho câu hỏi theo khoảng (daemon; chạy tiếp sau khi request đã trả "đang tổng hợp")
+	private final java.util.concurrent.ExecutorService rangeExecutor = java.util.concurrent.Executors.newFixedThreadPool(4, r -> {
+		Thread th = new Thread(r, "assistant-range");
+		th.setDaemon(true);
+		return th;
+	});
+
+	// Quá thời gian: nói rõ đang tính, hỏi lại sau (gợi ý = đúng câu vừa hỏi để bấm gửi lại)
+	private static AnswerGuide slowRange(String question,
+										 com.example.backlogbe.assistant.core.month.QuestionMonthDetector.MonthRange range, String lang) {
+		String text = "**" + t(lang, "Khoảng ", "Range ") + range.label() + " (" + range.months() + t(lang, " tháng)**", " months)**")
+				+ t(lang, " – số liệu nhiều tháng đang được tổng hợp, mất hơn " + RANGE_TIMEOUT_SECONDS
+								+ " giây nên chưa trả kịp. Hệ thống vẫn tính tiếp ở nền: bạn hỏi lại câu này sau khoảng 1–2 phút sẽ có kết quả ngay, "
+								+ "hoặc thu hẹp khoảng (vd 3 tháng).",
+						" – the multi-month data is still being aggregated (over " + RANGE_TIMEOUT_SECONDS
+								+ " s). It keeps running in the background: ask again in 1–2 minutes for an instant answer, "
+								+ "or narrow the range (e.g. 3 months).");
+		return new AnswerGuide(null, false, "range_slow", text, List.of(question),
+				"range=" + range.from() + ".." + range.to() + "; kind=range_slow; template=yes");
+	}
+
+	private AnswerGuide rangeNow(String question, Map<String, String> params,
+								 com.example.backlogbe.assistant.core.month.QuestionMonthDetector.MonthRange range, String lang) {
+
+		AnswerGuide item = itemAnswers.guide(question, params, range, lang);
+		if (item != null) {
+			return item;
+		}
+
+		// "3 tháng gần đây PRESS T&SL có tháng nào vượt?" -> multi_month (tháng đã kết thúc), như trước khi có luồng khoảng
+		AnswerGuide multi = managerAnswers.multiMonthGuide(question, params, lang);
+		if (multi != null) {
+			return multi;
+		}
+
+		return rangeAnswers.guide(question, params, range, lang);
+	}
+
+	// "3 tháng tới / quý tới / các tháng tới": lõi không nhận khoảng tương lai, câu trả lời là dự báo tháng đang xem ->
+	// thêm ghi chú không có dự báo cho các tháng sau (test 0758 ext-255: chỉ trả dự báo tháng 11, không nói gì về 12–01)
+	private static final Pattern FUTURE_MONTHS = CostMonitoringQuestion.word(
+			"(?:\\d{1,2}|hai|ba|bon|nam|sau|cac|may|nhung) thang (?:toi|sap toi|tiep theo|ke tiep|sau)|quy toi|quy sau|nam sau"
+					+ "|next (?:\\d{1,2}|two|three|four|five|six) months|coming months|next quarter|next year");
 
 	public AnswerGuide guide(String question, Map<String, String> params, String lang) {
+
+		AnswerGuide g = guideCurrent(question, params, lang);
+
+		if (g == null || !g.hasDirectAnswer() || !FUTURE_MONTHS.matcher(CostMonitoringIntentClassifier.fold(question)).find()) {
+			return g;
+		}
+
+		java.time.YearMonth viewed = loader.month(params != null ? params : Map.of());
+		String note = t(lang, "_Các tháng sau " + viewed + " chưa có Actual hay dự báo trên màn hình – số trên chỉ là dự báo cuối tháng "
+						+ viewed + ". Muốn xem target tháng sau: chọn tháng đó trên màn hình._",
+				"_Months after " + viewed + " have no Actual or forecast on screen – the numbers above are the " + viewed
+						+ " month-end forecast only. For next month's targets, select that month on the screen._");
+
+		return new AnswerGuide(g.conclusion(), g.toolsSufficient(), g.intent(), g.directAnswer() + "\n\n" + note,
+				g.suggestions(), g.intentMatch() + "; futureNote=yes");
+	}
+
+	private AnswerGuide guideCurrent(String question, Map<String, String> params, String lang) {
 
 		// Câu hỏi cấp quản lý (tóm tắt, báo cáo, tổng dự kiến, what-if, bộ phận đáng lo, duyệt / xuất file…): template
 		// trước mọi luồng khác (test 2026-11-11 nhóm 30–34: qua LLM 12–70 s, nhiều câu sai)
@@ -82,6 +177,14 @@ public class CostMonitoringAnswerGuide {
 		// Chi tiết vật tư: xuất nhiều lần nhất, xuất vào lúc nào, đơn giá thay đổi, vật tư bất thường (template từ dòng xuất kho)
 		AnswerGuide item = itemAnswers.guide(question, params, lang);
 		if (item != null) {
+			// "Chi tiết những bất thường" (không nêu vật tư): khung nào dự báo vượt trước, rồi vật tư cần kiểm tra
+			// (eval #13: chỉ trả danh sách vật tư, thiếu khung dự báo vượt Fluct)
+			if (CostMonitoringItemAnswers.ITEM_ANOMALY.equals(item.intent()) && !CostMonitoringItemAnswers.mentionsItem(question)) {
+				AnswerGuide merged = withOverview(item, question, params, lang);
+				if (merged != null) {
+					return merged;
+				}
+			}
 			return item;
 		}
 
@@ -119,6 +222,30 @@ public class CostMonitoringAnswerGuide {
 				overview.intentMatch() + "; " + lookup.intentMatch());
 	}
 
+	// Tổng quan khung (template OVERVIEW, rút gọn) + câu trả lời chi tiết vật tư; tổng quan không có template -> null
+	private AnswerGuide withOverview(AnswerGuide item, String question, Map<String, String> params, String lang) {
+
+		AnswerGuide overview;
+		try {
+			overview = byIntent(question, params, lang);
+		} catch (RuntimeException e) {
+			return null;
+		}
+
+		if (overview == null || !overview.hasDirectAnswer()) {
+			return null;
+		}
+
+		List<String> suggestions = new ArrayList<>(overview.suggestions());
+		item.suggestions().stream().filter(s -> !suggestions.contains(s)).forEach(suggestions::add);
+
+		return new AnswerGuide(overview.conclusion(), overview.toolsSufficient(), overview.intent() + "+" + item.intent(),
+				t(lang, "**Tình hình các khung:**", "**Frames:**") + "\n" + compactOverview(overview.directAnswer(), lang)
+						+ "\n\n" + t(lang, "**Vật tư cần kiểm tra:**", "**Items to check:**") + "\n" + item.directAnswer(),
+				suggestions.stream().limit(3).toList(),
+				overview.intentMatch() + "; " + item.intentMatch());
+	}
+
 	// Audit 2026-11-10: "Tháng trước có gì bất thường?" qua LLM gọi tool lung tung, trả "commentary to=functions?".
 	// Chỉ khi hỏi tình hình chung của tháng trước (không so sánh với tháng này / cùng kỳ).
 	private static final Pattern PREVIOUS_MONTH = CostMonitoringQuestion.word("thang truoc|last month|previous month");
@@ -130,6 +257,10 @@ public class CostMonitoringAnswerGuide {
 
 	// ChatOrchestrator gọi khi câu hỏi nhắc 1 tháng khác (không đi qua guide()): chỉ template tổng quan tháng đó
 	public AnswerGuide otherMonth(String question, Map<String, String> params, String lang) {
+		AnswerGuide availability = dataAvailability(question, params, lang);
+		if (availability != null) {
+			return availability;
+		}
 		// Chi tiết vật tư tự dò tháng trong câu ("tháng 9", "T10"…) – test 1643 ext-232 / 233: nhánh tháng khác không
 		// gọi itemAnswers nên qua LLM 15–40 s, trả "không có dữ liệu" / "275 đ/ST"
 		AnswerGuide item = itemAnswers.guide(question, params, lang);
@@ -137,6 +268,79 @@ public class CostMonitoringAnswerGuide {
 			return item;
 		}
 		return previousMonthOverview(question, params, lang);
+	}
+
+	// "Tháng 3 năm nay có dữ liệu không?", "Tháng 9 đã có số chưa?" -> trả bằng code từ snapshot tháng đó
+	// (test 2026-11-12 ext-254: LLM 53 s bịa "Có, tháng 3/2026 đã có dữ liệu" và trích nhãn khối dữ liệu nội bộ)
+	private static final Pattern DATA_ASK = CostMonitoringQuestion.word(
+			"co du lieu|co so lieu|co data|co so chua|da co so|du lieu chua|so lieu chua|co so lieu chua|du lieu khong"
+					+ "|have data|any data|data available|is there data");
+
+	private AnswerGuide dataAvailability(String question, Map<String, String> params, String lang) {
+
+		String f = CostMonitoringIntentClassifier.fold(question);
+		if (!DATA_ASK.matcher(f).find()) {
+			return null;
+		}
+
+		Map<String, String> safe = params != null ? params : Map.of();
+		java.time.YearMonth viewed = loader.month(safe);
+		java.time.YearMonth month = CostMonitoringItemAnswers.askedMonth(question, f, viewed);
+		if (month == null || month.equals(viewed)) {
+			return null;
+		}
+
+		String label = "**" + t(lang, "Tháng ", "Month ") + month + "**: ";
+		String text;
+		boolean hasActual = false;
+
+		if (month.isAfter(java.time.YearMonth.from(loader.today()))) {
+			text = label + t(lang, "chưa tới nên chưa có số chi (Actual) – chỉ có target nếu kế hoạch đã nhập.",
+					"not reached yet, so no Actual spending – only targets if the plan has been entered.");
+		} else {
+			CostMonitoringSnapshot s = loader.load(month.toString(), null);
+			List<CostChartDto> charts = s.response() == null || s.response().charts() == null ? List.of() : s.response().charts();
+			boolean target = charts.stream().anyMatch(c -> c.fcTgt() != null);
+			int tsl = 0;
+			int rm = 0;
+			for (CostChartDto c : charts) {
+				if (c.actMtdLatest() == null) {
+					continue;
+				}
+				int day = s.lastActualDay(c);
+				if ("T&SL".equals(c.chart())) {
+					tsl = Math.max(tsl, day);
+				} else if ("RM".equals(c.chart())) {
+					rm = Math.max(rm, day);
+				}
+			}
+			hasActual = tsl > 0 || rm > 0;
+			if (!hasActual) {
+				text = label + t(lang, "**chưa có số chi (Actual)** trên màn hình Cost Monitoring",
+						"**no Actual spending** on the Cost Monitoring screen")
+						+ (target ? t(lang, "; chỉ có target (FC / Fluct).", "; targets only (FC / Fluct).")
+						: t(lang, "; cũng chưa có target.", "; no targets either."));
+			} else {
+				List<String> parts = new ArrayList<>();
+				if (tsl > 0) {
+					parts.add(t(lang, "Actual T&SL đến ", "Actual T&SL up to ") + CostMonitoringSnapshot.ddmm(month.atDay(tsl)));
+				}
+				if (rm > 0) {
+					parts.add(t(lang, "RM đến ", "RM up to ") + CostMonitoringSnapshot.ddmm(month.atDay(rm)));
+				}
+				text = label + t(lang, "**có dữ liệu** – ", "**data available** – ") + String.join(", ", parts)
+						+ (s.monthClosed() ? t(lang, " (tháng đã kết thúc)", " (closed month)") : "")
+						+ t(lang, "; OT chưa có Actual (chỉ có FC / Fluct).", "; OT has no Actual (FC / Fluct only).");
+			}
+		}
+
+		String mm = String.format(Locale.ROOT, "%d", month.getMonthValue());
+		List<String> suggestions = hasActual
+				? List.of(t(lang, "Tháng " + mm + " có gì bất thường?", "Anything unusual in month " + mm + "?"))
+				: List.of(t(lang, "Tháng này có khung nào vượt không?", "Is any frame above Fluct this month?"));
+
+		return new AnswerGuide(null, false, "data_availability", text, suggestions,
+				"dataAvailability=" + month + "; template=yes");
 	}
 
 	private AnswerGuide previousMonthOverview(String question, Map<String, String> params, String lang) {

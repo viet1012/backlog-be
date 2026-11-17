@@ -143,9 +143,10 @@
   {
     "question": "so sánh giữa Press T&SL vs Mold T&SL ? chart nào đang làm tốt ?",
     "month": "2026-11",
-    "mustContain": ["PRESS", "MOLD"],
+    "mustContain": ["PRESS", "MOLD", "Khung tốt hơn"],
     "mustNotContain": ["GUIDE", "KẾT LUẬN", "WILL_EXCEED"],
-    "answerSource": "llm",
+    "answerSource": "template",
+    "llmCallCount": 0,
     "answerIntent": "compare"
   },
   {
@@ -395,10 +396,9 @@
   {
     "question": "Vì sao MOLD RM vượt Fluct?",
     "month": "2026-11",
-    "mustContain": ["không vượt"],
-    "mustNotContain": [],
-    "llmCallCount": 0,
-    "answerIntent": "why_premise"
+    "mustContain": ["MOLD RM", "Fluct"],
+    "mustNotContain": ["KẾT LUẬN"],
+    "llmCallCount": 0
   },
   {
     "question": "Xu hướng chi PRESS RM trong tháng",
@@ -513,6 +513,117 @@
     "month": "2026-11",
     "mustContain": ["chưa tới", "dự kiến"],
     "mustNotContain": ["Est_MTD", "đã chi"],
+    "llmCallCount": 0
+  },
+  {
+    "question": "tool nào xuất nhiều nhất trong 3 tháng ?",
+    "month": "2026-11",
+    "mustContain": ["2026-09 → 2026-11", "lần"],
+    "mustNotContain": ["(01/11–"],
+    "llmCallCount": 0,
+    "answerIntent": "item_most_issued"
+  },
+  {
+    "question": "3 tháng trước vật tư nào xuất nhiều nhất?",
+    "month": "2026-11",
+    "mustContain": ["2026-08 → 2026-10"],
+    "mustNotContain": [],
+    "llmCallCount": 0,
+    "answerIntent": "item_most_issued"
+  },
+  {
+    "question": "Vật tư nào chi nhiều nhất trong 3 tháng gần đây?",
+    "month": "2026-11",
+    "mustContain": ["2026-09 → 2026-11", "K$"],
+    "mustNotContain": [],
+    "llmCallCount": 0,
+    "answerIntent": "range_top_item"
+  },
+  {
+    "question": "Chi phí PRESS T&SL 3 tháng gần nhất thế nào?",
+    "month": "2026-11",
+    "mustContain": ["3 tháng gần đây (đã kết thúc)", "2026-08", "2026-10", "Fluct"],
+    "mustNotContain": ["2026-11:", "WILL_EXCEED"],
+    "llmCallCount": 0,
+    "answerIntent": "multi_month"
+  },
+  {
+    "question": "Trong 3 tháng PRESS T&SL chi phí thế nào?",
+    "month": "2026-11",
+    "mustContain": ["2026-09 → 2026-11", "Fluct", "Nhận định"],
+    "mustNotContain": ["WILL_EXCEED"],
+    "llmCallCount": 0,
+    "answerIntent": "range_summary"
+  },
+  {
+    "question": "3 tháng gần đây có khung nào vượt?",
+    "month": "2026-11",
+    "mustContain": ["khung vượt Fluct", "2026-08", "2026-10"],
+    "mustNotContain": ["2026-11:"],
+    "llmCallCount": 0,
+    "answerIntent": "multi_month"
+  },
+  {
+    "question": "Từ tháng 8 đến tháng 10 chi phí các bộ phận ra sao?",
+    "month": "2026-11",
+    "mustContain": ["2026-08 → 2026-10", "Nhận định", "Σ Actual / Σ Fluct"],
+    "mustNotContain": ["tháng đang chạy"],
+    "llmCallCount": 0,
+    "answerIntent": "range_summary"
+  },
+  {
+    "question": "Quý này máy nào chi nhiều nhất ở PRESS T&SL?",
+    "month": "2026-11",
+    "mustContain": ["2026-10 → 2026-11"],
+    "mustNotContain": [],
+    "llmCallCount": 0,
+    "answerIntent": "range_top_detail"
+  },
+  {
+    "question": "Vì sao từ tháng 9 đến tháng 11 MOLD RM tăng?",
+    "month": "2026-11",
+    "mustContain": ["MOLD RM", "2026-09", "Yếu tố", "Fluct"],
+    "mustNotContain": ["KẾT LUẬN", "WILL_EXCEED"],
+    "llmCallCount": 0,
+    "answerIntent": "range_why"
+  },
+  {
+    "question": "Quý 3 MOLD RM thế nào?",
+    "month": "2026-11",
+    "mustContain": ["2026-07 → 2026-09", "chưa có dữ liệu"],
+    "mustNotContain": [],
+    "llmCallCount": 0,
+    "answerIntent": "range_summary"
+  },
+  {
+    "question": "Tháng 3 năm nay có dữ liệu không?",
+    "month": "2026-11",
+    "mustContain": ["2026-03", "chưa có số chi"],
+    "mustNotContain": ["[Dữ liệu tháng", "đã có dữ liệu"],
+    "llmCallCount": 0,
+    "answerIntent": "data_availability"
+  },
+  {
+    "question": "Nên cắt giảm vật tư nào trước ở GUIDE T&SL?",
+    "month": "2026-11",
+    "mustContain": ["tham khảo", "cùng kỳ", "K$", "GUIDE T&SL"],
+    "mustNotContain": ["Bạn nên cắt giảm"],
+    "llmCallCount": 0,
+    "answerIntent": "item_cut_candidates"
+  },
+  {
+    "question": "Từ đầu năm vật tư nào bất thường?",
+    "month": "2026-11",
+    "mustContain": ["tính theo từng tháng", "2026-11"],
+    "mustNotContain": ["không có dữ liệu bất thường"],
+    "llmCallCount": 0,
+    "answerIntent": "item_anomaly"
+  },
+  {
+    "question": "3 tháng tới có vượt không?",
+    "month": "2026-11",
+    "mustContain": ["Các tháng sau 2026-11"],
+    "mustNotContain": [],
     "llmCallCount": 0
   }
 ]

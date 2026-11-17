@@ -288,7 +288,8 @@ public class ChatOrchestrator {
 				String annotated = annotateQuestion(question, plan, builtMonths, noDataMonths, lang);
 
 				// Trả lời theo tháng khác tháng đang xem (không nhắc tháng đang xem) -> answeredMonth
-				if (plan != null && !builtMonths.isEmpty() && !plan.viewedMentioned()) {
+				// (khoảng nhiều tháng: không gán – câu trả lời không thuộc 1 tháng)
+				if (plan != null && plan.range() == null && !builtMonths.isEmpty() && !plan.viewedMentioned()) {
 					answeredMonth[0] = builtMonths.get(0).toString();
 				}
 
@@ -627,6 +628,19 @@ public class ChatOrchestrator {
 			return null;
 		}
 
+		// Khoảng nhiều tháng ("trong 3 tháng", "quý này"…): chỉ template của màn hình tính theo cả khoảng; không có ->
+		// LLM với context các tháng trong khoảng (trước: câu hỏi khoảng rơi vào template / kết luận 1 tháng đang xem)
+		if (plan != null && plan.range() != null) {
+			try {
+				AnswerGuide ranged = module.answerGuideForRange(question, params, plan.range(), lang);
+				return ranged != null && ranged.hasDirectAnswer() ? ranged : null;
+			} catch (RuntimeException e) {
+				log.warn("Assistant: cannot build range answer guide screenKey={} error={}",
+						screenKey, e.getClass().getSimpleName());
+				return null;
+			}
+		}
+
 		// Xét tháng khác TRƯỚC mismatch: câu chỉ nhắc 1 tháng khác (vd "Tháng 9 có gì bất thường?") luôn mismatch,
 		// kiểm tra mismatch trước làm nhánh template tháng khác không bao giờ chạy (test 2026-11-10 ext-17 / ext-68).
 		if (plan != null && !plan.extra().isEmpty()) {
@@ -749,6 +763,15 @@ public class ChatOrchestrator {
 		}
 
 		StringBuilder sb = new StringBuilder(question);
+
+		// Khoảng nhiều tháng: 1 lưu ý gộp (tháng nào có dữ liệu gửi kèm, trả lời theo từng tháng)
+		if (plan.range() != null) {
+			sb.append('\n').append(QuestionMonthDetector.rangeNote(plan.range(), plan.viewed(), builtMonths, noDataMonths, lang));
+			for (YearMonth month : noDataMonths) {
+				sb.append('\n').append(QuestionMonthDetector.noDataNote(month, lang));
+			}
+			return sb.toString();
+		}
 
 		if (!builtMonths.isEmpty()) {
 			sb.append('\n')

@@ -1,5 +1,6 @@
 package com.example.backlogbe.assistant.screens.costmonitoring;
 
+import com.example.backlogbe.assistant.core.month.QuestionMonthDetector.MonthRange;
 import com.example.backlogbe.assistant.core.screen.AnswerGuide;
 import com.example.backlogbe.assistant.screens.costmonitoring.dto.CostItemStatDto;
 import com.example.backlogbe.assistant.screens.costmonitoring.dto.CostLineDto;
@@ -51,6 +52,11 @@ public class CostMonitoringItemAnswers {
 	static final String ITEM_WHEN = "item_when";
 	static final String ITEM_PRICE = "item_price";
 	static final String ITEM_ANOMALY = "item_anomaly";
+	static final String CUT_CANDIDATES = "item_cut_candidates";
+
+	// Ứng viên cắt giảm: tỷ trọng tối thiểu (% chi trực tiếp của khung), tăng tối thiểu so với cùng kỳ (K$)
+	static final double CUT_MIN_SHARE_PCT = 2.0;
+	static final double CUT_MIN_INCREASE_K = 0.1;
 
 	static final int BASELINE_MONTHS = 3;
 	static final double PRICE_STABLE_PCT = 3.0;
@@ -93,6 +99,10 @@ public class CostMonitoringItemAnswers {
 			"chi tiet|giao dich|dong xuat|xuat kho|detail|details|transaction|transactions");
 	private static final Pattern PROFILE_ASK = CostMonitoringQuestion.word(
 			"chi tiet|thong tin|the nao|ra sao|bao nhieu|la gi|tinh hinh|detail|info|how much|how many|xuat|dung|mua");
+	// "Nên cắt giảm vật tư / Category nào trước" (test 0758 ext-104: LLM 26 s, "Nên cắt giảm … trước", không số / cùng kỳ)
+	private static final Pattern CUT = CostMonitoringQuestion.word(
+			"cat giam|cat bot|nen giam|can giam|giam bot|tiet kiem|cut|cut back|reduce|trim");
+	private static final Pattern CATEGORY_WORD = CostMonitoringQuestion.word("category|categories|loai vat tu|nhom vat tu");
 	// Mã vật tư: T0026400, M0012637-RX, MG001780, T9321247
 	private static final Pattern CODE = Pattern.compile("(?<![A-Z0-9])((?:T|M|MG)\\d{5,8}(?:-[A-Z0-9]{1,4})?)(?![A-Z0-9])");
 
@@ -125,6 +135,19 @@ public class CostMonitoringItemAnswers {
 	 * @return AnswerGuide có directAnswer hoặc null (không phải câu chi tiết vật tư / không đủ dữ liệu -> luồng cũ)
 	 */
 	public AnswerGuide guide(String question, Map<String, String> params, String lang) {
+		return guide(question, params, null, lang);
+	}
+
+	/**
+	 * Câu hỏi về khoảng nhiều tháng (range != null, ChatOrchestrator -> answerGuideForRange):
+	 *   item_most_issued      : tính trên CẢ khoảng (test 2026-11-11: "tool nào xuất nhiều nhất trong 3 tháng" trả 01/11–10/11)
+	 *   item_when / item_price: khoảng ≤ BASELINE_MONTHS + 1 tháng -> tháng cuối khoảng + các tháng trước (đã có trong
+	 *                           câu trả lời); dài hơn -> null (LLM)
+	 *   item_anomaly          : tính theo 1 tháng (so với nhịp 3 tháng trước) -> tháng đang xem nếu nằm trong khoảng, không
+	 *                           thì tháng cuối khoảng; dòng đầu nói rõ cách tính + cách hỏi tháng khác (test 0758 ext-251:
+	 *                           trước trả null -> LLM 41–49 s, nói sai "không có dữ liệu bất thường")
+	 */
+	public AnswerGuide guide(String question, Map<String, String> params, MonthRange range, String lang) {
 
 		if (question == null || question.isBlank()) {
 			return null;
@@ -145,12 +168,18 @@ public class CostMonitoringItemAnswers {
 			return null;
 		}
 
+		if (range != null && (CUT_CANDIDATES.equals(kind)
+				|| (!MOST_ISSUED.equals(kind) && !ITEM_ANOMALY.equals(kind) && range.months() > BASELINE_MONTHS + 1))) {
+			return null;
+		}
+
 		Map<String, String> safe = params != null ? params : Map.of();
 
 		// Tháng hỏi trong câu ("tháng trước", "tháng 9", "T10/2026"…) khác tháng đang xem -> tính theo tháng đó
-		// (trước: luôn lấy tháng đang xem trên màn hình, "Tháng trước tool nào mua nhiều nhất" trả số tháng này)
+		// (trước: luôn lấy tháng đang xem trên màn hình, "Tháng trước tool nào mua nhiều nhất" trả số tháng này).
+		// Khoảng: mốc = tháng đang xem nếu nằm trong khoảng, không thì tháng cuối khoảng ("3 tháng trước" không phải "tháng trước")
 		YearMonth viewed = loader.month(safe);
-		YearMonth asked = askedMonth(question, f, viewed);
+		YearMonth asked = range != null ? (range.contains(viewed) ? null : range.to()) : askedMonth(question, f, viewed);
 		if (asked != null && asked.isAfter(YearMonth.from(loader.today()))) {
 			return null;
 		}
@@ -172,7 +201,7 @@ public class CostMonitoringItemAnswers {
 
 		String text;
 		try {
-			text = answer(kind, question, f, frames, safe, lang);
+			text = answer(kind, question, f, frames, safe, MOST_ISSUED.equals(kind) ? range : null, lang);
 		} catch (RuntimeException e) {
 			log.warn("Assistant item answer failed kind={} error={}", kind, e.getClass().getSimpleName());
 			return null;
@@ -183,14 +212,29 @@ public class CostMonitoringItemAnswers {
 		}
 
 		boolean otherMonth = asked != null && !asked.equals(viewed);
-		if (otherMonth) {
+		if (range != null && ITEM_ANOMALY.equals(kind)) {
+			YearMonth detail = asked != null ? asked : viewed;
+			text = "**" + t(lang, "Khoảng ", "Range ") + range.label() + "**"
+					+ t(lang, " – vật tư bất thường được tính theo từng tháng (so với nhịp " + BASELINE_MONTHS + " tháng trước đó); dưới đây là tháng "
+									+ detail + ". Hỏi \"Tháng MM vật tư nào bất thường?\" để xem tháng khác trong khoảng:",
+							" – item anomalies are computed per month (vs the previous " + BASELINE_MONTHS + "-month pace); below is "
+									+ detail + ". Ask \"Which items were unusual in month MM?\" for another month:") + "\n\n" + text;
+		} else if (range != null && !MOST_ISSUED.equals(kind)) {
+			// item_when / item_price theo khoảng: nói rõ tháng chi tiết + các tháng trước nằm trong câu trả lời
+			YearMonth detail = asked != null ? asked : viewed;
+			text = "**" + t(lang, "Khoảng ", "Range ") + range.label() + "**"
+					+ t(lang, " – chi tiết tháng " + detail + ", kèm các tháng trước:",
+					" – details for " + detail + ", with previous months:") + "\n\n" + text;
+		} else if (otherMonth && range == null) {
+			// Có khoảng (mostIssued): dòng đầu đã ghi rõ các tháng
 			text = "**" + t(lang, "Tháng ", "Month ") + asked + "**"
 					+ (asked.isBefore(YearMonth.from(loader.today())) ? t(lang, " (đã kết thúc)", " (closed)") : "")
 					+ t(lang, " – theo tháng trong câu hỏi:", " – month from the question:") + "\n\n" + text;
 		}
 
 		return new AnswerGuide(null, false, kind, text, suggestions(kind, lang),
-				"item=" + kind + (otherMonth ? "; month=" + asked : "") + "; template=yes");
+				"item=" + kind + (otherMonth ? "; month=" + asked : "")
+						+ (range != null ? "; range=" + range.from() + ".." + range.to() : "") + "; template=yes");
 	}
 
 	// "So với tháng trước" là so sánh (giữ tháng đang xem – đơn giá / các tháng trước đã có trong câu trả lời),
@@ -214,12 +258,21 @@ public class CostMonitoringItemAnswers {
 		return months.isEmpty() ? null : months.get(0);
 	}
 
+	// Câu hỏi có nêu vật tư (từ vật tư / tool / mã vật tư)? Dùng khi ghép "bất thường" chung với tổng quan khung
+	static boolean mentionsItem(String question) {
+		return question != null && (ITEM_WORD.matcher(CostMonitoringIntentClassifier.fold(question)).find()
+				|| CODE.matcher(question.toUpperCase(Locale.ROOT)).find());
+	}
+
 	static String kind(String question, String f, String raw) {
 
 		boolean price = PRICE_WORD.matcher(f).find() || RAW_PRICE.matcher(raw).find();
 		boolean item = ITEM_WORD.matcher(f).find();
 		boolean code = CODE.matcher(question.toUpperCase(Locale.ROOT)).find();
 
+		if (CUT.matcher(f).find() && (item || CATEGORY_WORD.matcher(f).find()) && !price) {
+			return CUT_CANDIDATES;
+		}
 		if (price) {
 			return ITEM_PRICE;
 		}
@@ -241,12 +294,12 @@ public class CostMonitoringItemAnswers {
 	}
 
 	private String answer(String kind, String question, String f, List<CostMonitoringFocus> frames,
-						  Map<String, String> params, String lang) {
+						  Map<String, String> params, MonthRange span, String lang) {
 
 		boolean allowTop = ISSUE_MOST.matcher(f).find() || (MOST.matcher(f).find() && ITEM_WORD.matcher(f).find());
 
 		return switch (kind) {
-			case MOST_ISSUED -> mostIssued(frames, params, lang);
+			case MOST_ISSUED -> mostIssued(frames, params, span, lang);
 			case ITEM_WHEN -> {
 				Found found = resolve(question, frames, params, allowTop);
 				yield found == null ? null : itemWhen(found, params, lang);
@@ -256,8 +309,116 @@ public class CostMonitoringItemAnswers {
 				yield found != null ? itemPrice(found, params, lang) : priceChanges(frames, params, lang);
 			}
 			case ITEM_ANOMALY -> anomalies(frames, params, lang);
+			case CUT_CANDIDATES -> cutCandidates(frames, params, CATEGORY_WORD.matcher(f).find(), lang);
 			default -> null;
 		};
+	}
+
+
+	// =========================================================
+	// ỨNG VIÊN CẮT GIẢM (tham khảo, không quyết định thay người dùng)
+	//
+	// Mục vừa chiếm tỷ trọng ≥ CUT_MIN_SHARE_PCT chi trực tiếp của khung vừa tăng ≥ CUT_MIN_INCREASE_K so với cùng kỳ
+	// tháng trước (cùng số ngày), xếp theo K$ tháng này. Không có mục nào tăng -> mục lớn nhất, ghi rõ "không tăng".
+	// =========================================================
+
+	String cutCandidates(List<CostMonitoringFocus> frames, Map<String, String> params, boolean byCategory, String lang) {
+
+		int limit = frames.size() == 1 ? 5 : 3;
+
+		if (frames.size() > 1) {
+			try {
+				frames.parallelStream().forEach(fr -> {
+					Period p = period(params, fr.cost());
+					if (!p.empty()) {
+						amounts(fr, p.from(), p.to(), byCategory, lang);
+						amounts(fr, p.from().minusMonths(1), p.to().minusMonths(1), byCategory, lang);
+					}
+				});
+			} catch (RuntimeException e) {
+				log.warn("Assistant cut-candidates warm-up failed error={}", e.getClass().getSimpleName());
+			}
+		}
+
+		record Row(String label, double now, double before, double diff, double share) {
+		}
+
+		StringBuilder body = new StringBuilder();
+		Period shown = null;
+
+		for (CostMonitoringFocus frame : frames) {
+
+			Period p = period(params, frame.cost());
+			if (p.empty()) {
+				continue;
+			}
+			shown = shown == null ? p : shown;
+			Map<String, Object[]> now = amounts(frame, p.from(), p.to(), byCategory, lang);
+			Map<String, Object[]> before = amounts(frame, p.from().minusMonths(1), p.to().minusMonths(1), byCategory, lang);
+			double total = CmText.r2(now.values().stream().mapToDouble(v -> (double) v[1]).sum());
+			if (total <= 0) {
+				continue;
+			}
+
+			List<Row> rows = now.entrySet().stream().map(e -> {
+				double a = CmText.r2((double) e.getValue()[1]);
+				Object[] b = before.get(e.getKey());
+				double prev = b == null ? 0 : CmText.r2((double) b[1]);
+				return new Row((String) e.getValue()[0], a, prev, CmText.r2(a - prev), CmText.r1(a / total * 100));
+			}).toList();
+
+			List<Row> picks = rows.stream()
+					.filter(r -> r.share() >= CUT_MIN_SHARE_PCT && r.diff() >= CUT_MIN_INCREASE_K)
+					.sorted(Comparator.comparingDouble(Row::now).reversed()).limit(limit).toList();
+			boolean fallback = picks.isEmpty();
+			if (fallback) {
+				picks = rows.stream().sorted(Comparator.comparingDouble(Row::now).reversed()).limit(Math.min(limit, 3)).toList();
+			}
+
+			body.append("\n**").append(frame.div()).append(' ').append(frame.cost()).append("**")
+					.append(t(lang, " (chi trực tiếp ", " (direct cost ")).append(k2(total)).append(")")
+					.append(fallback ? t(lang, " – không mục lớn nào tăng so với cùng kỳ; các mục lớn nhất:",
+							" – no large item rose vs the same period; largest items:") : ":").append('\n');
+			int i = 0;
+			for (Row r : picks) {
+				body.append(++i).append(". **").append(r.label()).append("**: ").append(k2(r.now()))
+						.append(" (").append(CmText.pct1(r.share())).append(t(lang, " chi trực tiếp", " of direct cost")).append(")")
+						.append(t(lang, "; cùng kỳ ", "; same period ")).append(k2(r.before()))
+						.append(" → ").append(String.format(Locale.ROOT, "%+.2f K$", r.diff())).append('\n');
+			}
+		}
+
+		if (shown == null || body.isEmpty()) {
+			return null;
+		}
+
+		return t(lang, "**Để tham khảo** – " + (byCategory ? "Category" : "vật tư")
+								+ " nên xem xét trước (vừa chiếm tỷ trọng lớn vừa tăng so với cùng kỳ tháng trước). Quyết định cắt giảm thuộc về người quản lý.\n",
+						"**For reference** – " + (byCategory ? "categories" : "items")
+								+ " to review first (large share and rising vs the same period last month). The decision belongs to the manager.\n")
+				+ body
+				+ "\n_" + t(lang, "Kỳ " + shown.range() + " so với cùng kỳ tháng trước; tỷ trọng = % chi phí trực tiếp của khung "
+						+ "(chưa gồm phân bổ F2/HT2/HT-G); chọn mục ≥ " + CUT_MIN_SHARE_PCT + "% và tăng ≥ " + CUT_MIN_INCREASE_K + " K$.",
+				"Period " + shown.range() + " vs the same period last month; share = % of the frame's direct cost "
+						+ "(excl. F2/HT2/HT-G allocation); items ≥ " + CUT_MIN_SHARE_PCT + "% and up ≥ " + CUT_MIN_INCREASE_K + " K$.") + "_";
+	}
+
+	// key -> {nhãn, K$}: vật tư (Code; nhãn "Tên (Code)") hoặc Category
+	private Map<String, Object[]> amounts(CostMonitoringFocus frame, LocalDate from, LocalDate to, boolean byCategory, String lang) {
+
+		Map<String, Object[]> map = new LinkedHashMap<>();
+		if (byCategory) {
+			repository.sumByCategory(frame.cost(), from, to, costCenters(frame)).forEach((label, amount) ->
+					map.put(label, new Object[]{CmText.clean(label), amount != null ? amount : 0.0}));
+			return map;
+		}
+		for (com.example.backlogbe.assistant.screens.costmonitoring.dto.CostItemAmountDto i
+				: repository.sumByItem(frame.cost(), from, to, costCenters(frame))) {
+			String key = i.code() != null && !i.code().isBlank() ? i.code().trim() : String.valueOf(i.name());
+			Object[] v = map.computeIfAbsent(key, k -> new Object[]{CmText.itemLabel(i.code(), i.name(), lang), 0.0});
+			v[1] = (double) v[1] + (i.amountK() != null ? i.amountK() : 0);
+		}
+		return map;
 	}
 
 
@@ -275,6 +436,18 @@ public class CostMonitoringItemAnswers {
 
 		return new Period(month, month.atDay(1), to, month.minusMonths(BASELINE_MONTHS).atDay(1),
 				month.minusMonths(1).atEndOfMonth(), fraction);
+	}
+
+	// Kỳ của khoảng nhiều tháng: đầu tháng đầu khoảng -> min(cuối tháng cuối khoảng, mốc actual: T&SL hôm qua, RM hôm kia).
+	// baseFrom / baseTo giữ như period() (không dùng cho mostIssued).
+	Period spanPeriod(Map<String, String> params, String cost, MonthRange range) {
+
+		Period cur = period(params, cost);
+		LocalDate cutoff = loader.today().minusDays("RM".equals(cost) ? 2 : 1);
+		LocalDate end = range.to().atEndOfMonth();
+		LocalDate to = cutoff.isBefore(end) ? cutoff : end;
+
+		return new Period(range.to(), range.from().atDay(1), to, cur.baseFrom(), cur.baseTo(), 1);
 	}
 
 	// Nạp trước (song song) thống kê tháng này + tháng nền của các khung vào cache repository (5 phút).
@@ -398,15 +571,40 @@ public class CostMonitoringItemAnswers {
 	// XUẤT NHIỀU LẦN NHẤT
 	// =========================================================
 
+	// Tháng đang xem (ItemInsightTool)
 	String mostIssued(List<CostMonitoringFocus> frames, Map<String, String> params, String lang) {
+		return mostIssued(frames, params, null, lang);
+	}
+
+	// span != null: cả khoảng nhiều tháng (dòng đầu ghi rõ các tháng); null: tháng đang xem tới mốc actual
+	String mostIssued(List<CostMonitoringFocus> frames, Map<String, String> params, MonthRange span, String lang) {
 
 		StringBuilder sb = new StringBuilder();
 		int limit = frames.size() == 1 ? 5 : 3;
 		int blocks = 0;
 
+		if (span != null) {
+			Period first = spanPeriod(params, frames.get(0).cost(), span);
+			boolean partial = first.to().isBefore(span.to().atEndOfMonth());
+			sb.append("**").append(t(lang, "Khoảng ", "Range ")).append(span.label())
+					.append(" (").append(span.months()).append(t(lang, " tháng)**", " months)**"))
+					.append(partial ? t(lang, " – tháng " + span.to() + " tính đến mốc actual", " – " + span.to() + " up to the actual date") : "")
+					.append(t(lang, ", theo khoảng trong câu hỏi:", ", range from the question:")).append("\n\n");
+		}
+
+		// Nạp trước (song song) thống kê các khung vào cache (test 0758: 6 khung × khoảng 3 tháng tuần tự 5.5–20 s)
+		if (frames.size() > 1) {
+			try {
+				frames.parallelStream().forEach(fr ->
+						stats(fr, span != null ? spanPeriod(params, fr.cost(), span) : period(params, fr.cost())));
+			} catch (RuntimeException e) {
+				log.warn("Assistant most-issued warm-up failed error={}", e.getClass().getSimpleName());
+			}
+		}
+
 		for (CostMonitoringFocus frame : frames) {
 
-			Period p = period(params, frame.cost());
+			Period p = span != null ? spanPeriod(params, frame.cost(), span) : period(params, frame.cost());
 			List<CostItemStatDto> list = stats(frame, p).stream()
 					.filter(s -> s.lines() > 0)
 					.sorted(Comparator.comparingInt(CostItemStatDto::lines).reversed()
@@ -444,8 +642,12 @@ public class CostMonitoringItemAnswers {
 				sb.append(t(lang, "→ **Nhận định:** ", "→ **Assessment:** ")).append(list.size())
 						.append(t(lang, " mã xuất nhiều lần nhất chiếm ", " most frequently issued codes are "))
 						.append(String.format(Locale.ROOT, "%.0f%%", listShare))
-						.append(t(lang, " chi phí khung", " of the frame's cost"))
-						.append(listShare < 10 ? t(lang, " (vật tư tiêu hao giá trị nhỏ)", " (low-value consumables)") : "")
+						.append(t(lang, span != null ? " chi phí khung trong khoảng" : " chi phí khung",
+								span != null ? " of the frame's cost in the range" : " of the frame's cost"))
+						// RM là thép / phôi (không phải vật tư tiêu hao) – eval 2026-11-11 #71
+						.append(listShare < 10 ? "RM".equals(frame.cost())
+								? t(lang, " (xuất thường xuyên nhưng mỗi mã giá trị nhỏ so với cả khung)", " (frequent issues, each code small vs the frame)")
+								: t(lang, " (vật tư tiêu hao giá trị nhỏ)", " (low-value consumables)") : "")
 						.append(t(lang, "; tiền tập trung ở **", "; money is concentrated in **"))
 						.append(CmText.itemLabel(topAmt.code(), topAmt.name(), lang)).append("** ").append(k2(topAmt.amountK()))
 						.append(" (").append(String.format(Locale.ROOT, "%.0f%%", nz(topAmt.amountK()) / frameTotal * 100))
@@ -552,13 +754,12 @@ public class CostMonitoringItemAnswers {
 			sb.append(t(lang, "Các tháng trước: ", "Previous months: "))
 					.append(String.join("; ", months.stream().map(mo -> mo.period() + " " + qty(mo.qty(), mo.qtyUnit())
 							+ " (" + k2(mo.amountK()) + ")").toList())).append('\n');
-			double baseQty = Math.round(months.stream().mapToDouble(mo -> nz(mo.qty())).sum() / BASELINE_MONTHS * 10) / 10.0;
-			if (p.fraction() > 0 && p.fraction() < 1 && s.qty() != null && baseQty > 0) {
-				double projected = s.qty() / p.fraction();
+			Pace pace = pace(nz(s.qty()), p.fraction(), months);
+			if (p.fraction() > 0 && p.fraction() < 1 && s.qty() != null && pace != null) {
 				sb.append(t(lang, "Nếu giữ nhịp hiện tại: cả tháng khoảng ", "At the current pace: full month about "))
-						.append(qty(projected, s.qtyUnit())).append(t(lang, " so với TB ", " vs average "))
-						.append(qty(baseQty, s.qtyUnit())).append(t(lang, "/tháng (", "/month ("))
-						.append(signedPct((projected / baseQty - 1) * 100)).append(").\n");
+						.append(qty(pace.projected(), s.qtyUnit())).append(t(lang, " so với TB ", " vs average "))
+						.append(qty(pace.base(), s.qtyUnit())).append(t(lang, "/tháng (", "/month ("))
+						.append(signedPct(pace.pct())).append(").\n");
 			}
 		}
 
@@ -580,10 +781,9 @@ public class CostMonitoringItemAnswers {
 			points.add(t(lang, "mã mới – " + BASELINE_MONTHS + " tháng trước không xuất, nên xác nhận có trong kế hoạch",
 					"new code – not issued in the previous " + BASELINE_MONTHS + " months; confirm it is planned"));
 		} else {
-			double baseQty = months.stream().mapToDouble(mo -> nz(mo.qty())).sum() / BASELINE_MONTHS;
-			double full = p.fraction() > 0 && p.fraction() < 1 ? now / p.fraction() : now;
-			if (baseQty > 0 && p.fraction() > 0) {
-				double pct = (full / baseQty - 1) * 100;
+			Pace pace = pace(now, p.fraction(), months);
+			if (pace != null && p.fraction() > 0) {
+				double pct = pace.pct();
 				String scope = p.fraction() < 1 ? t(lang, "đang xuất ", "issuing ") : t(lang, "cả tháng xuất ", "the month issued ");
 				points.add(pct >= 30
 						? scope + t(lang, "**nhanh hơn** nhịp " + BASELINE_MONTHS + " tháng (", "**faster** than the " + BASELINE_MONTHS + "-month pace (")
@@ -608,6 +808,22 @@ public class CostMonitoringItemAnswers {
 
 		return points.isEmpty() ? ""
 				: "\n" + t(lang, "**Nhận định:** ", "**Assessment:** ") + String.join("; ", points) + ".\n";
+	}
+
+	// Nhịp cả tháng của 1 vật tư: số dự phóng và TB/tháng làm tròn như hiển thị (≥ 10: số nguyên, < 10: 1 chữ số),
+	// % tính từ 2 số đã làm tròn – nhận định và dòng "Nếu giữ nhịp" cùng 1 số (test 0758 ext-218: "-12.6%" và "-12.7%",
+	// "327.27 BX"). TB = Σ các tháng nền / BASELINE_MONTHS; TB = 0 -> null.
+	record Pace(double projected, double base, double pct) {
+	}
+
+	static Pace pace(double now, double fraction, List<CostItemStatDto> months) {
+		double base = roundQty(months.stream().mapToDouble(mo -> nz(mo.qty())).sum() / BASELINE_MONTHS);
+		double full = roundQty(fraction > 0 && fraction < 1 ? now / fraction : now);
+		return base > 0 ? new Pace(full, base, (full / base - 1) * 100) : null;
+	}
+
+	static double roundQty(double value) {
+		return Math.abs(value) >= 10 ? Math.round(value) : Math.round(value * 10) / 10.0;
 	}
 
 	private List<CostItemStatDto> monthlyOf(CostMonitoringFocus frame, Period p, CostItemStatDto s) {
@@ -972,7 +1188,7 @@ public class CostMonitoringItemAnswers {
 		sb.append('\n').append('_').append(t(lang,
 				"Tiêu chí: đơn giá tăng ≥ " + (int) PRICE_JUMP_PCT + "% (ảnh hưởng ≥ " + JUMP_MIN_IMPACT_K + " K$); xuất ≥ " + SURGE_RATIO
 						+ " lần nhịp TB " + BASELINE_MONTHS + " tháng (≥ " + SURGE_MIN_K + " K$); mã mới ≥ " + NEW_ITEM_MIN_K + " K$; 1 dòng ≥ "
-						+ BIG_LINE_K + " K$ hoặc bản quyền / phần mềm. Xếp theo K$ ảnh hưởng. Đây là gợi ý để kiểm tra, không kết luận sai phạm. ",
+						+ BIG_LINE_K + " K$ hoặc bản quyền / phần mềm. Xếp theo K$ ảnh hưởng. Đây là gợi ý để kiểm tra, chưa khẳng định có sai phạm. ",
 				"Criteria: unit price up ≥ " + (int) PRICE_JUMP_PCT + "% (impact ≥ " + JUMP_MIN_IMPACT_K + " K$); issued ≥ " + SURGE_RATIO
 						+ "× the " + BASELINE_MONTHS + "-month pace (≥ " + SURGE_MIN_K + " K$); new code ≥ " + NEW_ITEM_MIN_K + " K$; single line ≥ "
 						+ BIG_LINE_K + " K$ or license / software. Sorted by impact. These are pointers to check, not findings of wrongdoing. "))
@@ -1097,6 +1313,8 @@ public class CostMonitoringItemAnswers {
 					t(lang, "Vật tư nào bất thường?", "Which items look unusual?"));
 			case ITEM_PRICE -> List.of(t(lang, "Vật tư nào bất thường?", "Which items look unusual?"),
 					t(lang, "Tool nào được mua nhiều nhất?", "Which tools are issued most often?"));
+			case CUT_CANDIDATES -> List.of(t(lang, "Vật tư nào tăng so với tháng trước?", "Which items increased vs last month?"),
+					t(lang, "Vật tư nào bất thường?", "Which items look unusual?"));
 			default -> List.of(t(lang, "Giá vật tư thay đổi thế nào?", "How have item prices changed?"),
 					t(lang, "Tool nào được mua nhiều nhất?", "Which tools are issued most often?"));
 		};

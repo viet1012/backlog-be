@@ -2933,7 +2933,9 @@ public class CostMonitoringLookupAnswers {
 		} else if (a.excessVsPace() != null) {
 			sb.append(t(lang, "- Chi so với tiến độ (Actual − Fluct × D/N): ", "- Spending vs pace (Actual − Fluct × D/N): "))
 					.append(CmText.signedK(a.excessVsPace(),
-							t(lang, "chi nhanh hơn tiến độ – nguyên nhân chính", "ahead of pace – main cause"),
+							// "X thì sao" (status): không gọi là nguyên nhân – người dùng không hỏi vì sao (eval #60)
+							status ? t(lang, "chi nhanh hơn tiến độ – yếu tố chính của dự báo", "ahead of pace – main driver of the forecast")
+									: t(lang, "chi nhanh hơn tiến độ – nguyên nhân chính", "ahead of pace – main cause"),
 							t(lang, "chi trong tiến độ", "within pace")));
 			if (a.currentRate() != null && a.targetRate() != null) {
 				sb.append(t(lang, "; tốc độ ", "; rate ")).append(CmText.rate(a.currentRate(), lang))
@@ -2947,8 +2949,12 @@ public class CostMonitoringLookupAnswers {
 					.append(t(lang, " (Ratio âm, target bị hạ) → góp phần làm dễ vượt Fluct", " (negative Ratio, target cut) → makes exceeding Fluct easier"))
 					.append('\n');
 		} else if (fluctVsFc != null && Math.round(fluctVsFc * 10) > 0) {
+			// Khung không vượt / không dự báo vượt (vd PRESS RM 99.2% Fluct): không nói "nguyên nhân vượt" (test 0758 ext-18 / 50 / 69)
+			boolean exceeding = over || (a.estimateOver() != null && a.estimateOver() > 0);
 			sb.append(t(lang, "- Fluct cao hơn FC ", "- Fluct above FC ")).append(CmText.signedK(fluctVsFc))
-					.append(t(lang, " (Ratio dương, target được nâng) → không phải nguyên nhân vượt", " (positive Ratio, target raised) → not a cause"))
+					.append(exceeding
+							? t(lang, " (Ratio dương, target được nâng) → không phải nguyên nhân vượt", " (positive Ratio, target raised) → not a cause")
+							: t(lang, " (Ratio dương, target được nâng) → giúp khung còn trong Fluct", " (positive Ratio, target raised) → helps keep the frame within Fluct"))
 					.append('\n');
 		}
 

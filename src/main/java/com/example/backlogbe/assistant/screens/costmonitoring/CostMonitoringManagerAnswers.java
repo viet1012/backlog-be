@@ -279,6 +279,28 @@ public class CostMonitoringManagerAnswers {
 				"manager=" + kind + "; template=yes");
 	}
 
+	// "Vì sao 3 tháng gần đây … tăng" -> không multi_month (chỉ liệt kê kết quả), để CostMonitoringRangeAnswers (range_why)
+	private static final Pattern MULTI_MONTH_WHY = CostMonitoringQuestion.word("vi sao|tai sao|nguyen nhan|ly do|why|cause|reason");
+
+	// Luồng khoảng nhiều tháng (CostMonitoringAnswerGuide.range): "N tháng gần đây / qua / trước", "các tháng gần đây"
+	// không hỏi vật tư / máy / cost center / Category -> giữ template multi_month (các tháng đã kết thúc, cũ -> mới).
+	// Khác -> null (template khoảng / LLM).
+	public AnswerGuide multiMonthGuide(String question, Map<String, String> params, String lang) {
+
+		if (question == null || question.isBlank()) {
+			return null;
+		}
+
+		String f = CostMonitoringIntentClassifier.fold(question);
+		if (monthsBack(f) == 0 || DETAIL.matcher(f).find() || CostMonitoringLookupAnswers.dimension(question, f) != null
+				|| MULTI_MONTH_WHY.matcher(f).find()) {
+			return null;
+		}
+
+		AnswerGuide g = guide(question, params, lang);
+		return g != null && MULTI_MONTH.equals(g.intent()) ? g : null;
+	}
+
 	// Loại câu hỏi; null = không khớp (thứ tự = ưu tiên)
 	static String kind(String question, String f) {
 
@@ -1512,6 +1534,15 @@ public class CostMonitoringManagerAnswers {
 		int months = 0;
 		boolean single = frames.size() == 1;
 		List<String> lines = new ArrayList<>();
+
+		// Nạp trước (song song) snapshot các tháng vào cache loader; vòng dưới đọc cache (test 0758 ext-151: 6 tháng tuần tự 16 s)
+		java.util.stream.IntStream.rangeClosed(1, back).parallel().forEach(i -> {
+			try {
+				loader.load(viewed.minusMonths(i).toString(), null);
+			} catch (RuntimeException e) {
+				// Tháng lỗi: vòng dưới ghi "không đọc được dữ liệu"
+			}
+		});
 
 		for (int i = back; i >= 1; i--) {
 
