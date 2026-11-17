@@ -515,6 +515,14 @@
     "answerIntent": "ot_value"
   },
   {
+    "question": "press ngày mấy có ot cao nhất ?",
+    "month": "2026-11",
+    "mustContain": ["PRESS OT"],
+    "mustNotContain": ["30/11"],
+    "llmCallCount": 0,
+    "answerIntent": "top_day"
+  },
+  {
     "question": "Đến ngày 28 MOLD RM dự kiến chi bao nhiêu?",
     "month": "2026-11",
     "mustContain": ["chưa tới", "dự kiến"],

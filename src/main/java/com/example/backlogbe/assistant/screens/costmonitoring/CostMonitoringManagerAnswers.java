@@ -178,7 +178,7 @@ public class CostMonitoringManagerAnswers {
 			"tieu hoang|dot tien|chi nhieu qua|chi nhieu vay|chi qua tay|chi manh tay|xai nhieu qua|xai qua tay|xai nhieu vay"
 					+ "|ton qua|ton kem qua|ton vay|cao vay|cao qua|cao the|nhieu vay|nhieu qua vay|ghe vay|ghe qua"
 					+ "|overspending|spending too much|so high|too high");
-	private static final Pattern DAY_WHICH = CostMonitoringQuestion.word("ngay nao|hom nao|which day|what day");
+	private static final Pattern DAY_WHICH = CostMonitoringQuestion.word("ngay nao|hom nao|ngay may|hom may|which day|what day");
 	private static final Pattern RED_WORD = CostMonitoringQuestion.word(
 			"dang do|mau do|bao do|badge do|bi do|len do|hien do|red|in the red");
 	private static final Pattern STATUS_PREV_WORD = CostMonitoringQuestion.word(

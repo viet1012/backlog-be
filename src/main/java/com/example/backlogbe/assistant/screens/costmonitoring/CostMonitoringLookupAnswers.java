@@ -200,7 +200,9 @@ public class CostMonitoringLookupAnswers {
 	private static final int TOP_DETAIL_FEW = 3;
 	private static final int TOP_DETAIL_FEW_FRAMES = 3;
 
-	private static final Pattern WHICH_DAY =CostMonitoringQuestion.word("ngay nao|hom nao|which day|what day");
+	// "ngày mấy / hôm mấy" (audit 2026-11-17 "press ngày mấy có ot cao nhất": qua LLM, trả 30/11 28.4 K$ – ngày chưa tới,
+	// đọc nhầm cột Estimate). "mấy" bỏ dấu = "may" nhưng chỉ khớp cụm "ngay may" / "hom may", không trùng MACHINE_FOLDED.
+	private static final Pattern WHICH_DAY = CostMonitoringQuestion.word("ngay nao|hom nao|ngay may|hom may|which day|what day");
 	private static final Pattern MOST = CostMonitoringQuestion.word(
 			"nhieu nhat|cao nhat|lon nhat|ton nhat|most|highest|largest|biggest");
 
@@ -1542,12 +1544,27 @@ public class CostMonitoringLookupAnswers {
 			return null;
 		}
 
+		// Khung có Actual dừng sớm hơn ngày D chung (vd OT nạp theo đợt): nói rõ chỉ xét đến ngày đó
+		for (CostMonitoringFocus fr : frames) {
+			CostChartDto chart = snapshot.find(fr.div(), fr.cost());
+			int last = chart == null ? 0 : snapshot.lastActualDay(chart);
+			if (last > 0 && last < snapshot.d()) {
+				sb.append(t(lang, "_" + fr.div() + " " + fr.cost() + " mới có số đến " + ddmm(snapshot.month().atDay(last))
+								+ " – các ngày sau chưa có số, chưa xét._",
+						"_" + fr.div() + " " + fr.cost() + " only has data up to " + ddmm(snapshot.month().atDay(last))
+								+ " – later days not included._")).append('\n');
+			}
+		}
+
 		sb.append('\n').append(footer(snapshot, lang));
 
 		List<String> suggestions = new ArrayList<>();
 		if (single) {
 			String name = frames.get(0).div() + " " + frames.get(0).cost();
-			suggestions.add(t(lang, "Vật tư nào chi nhiều nhất ở " + name + "?", "Which items cost the most in " + name + "?"));
+			// OT không có vật tư
+			suggestions.add(COSTS.contains(frames.get(0).cost())
+					? t(lang, "Vật tư nào chi nhiều nhất ở " + name + "?", "Which items cost the most in " + name + "?")
+					: t(lang, "Ngân sách còn lại mỗi ngày của " + name, "Remaining daily budget of " + name));
 			suggestions.add(t(lang, "Vì sao " + name + " dự báo vượt?", "Why is " + name + " forecast to exceed?"));
 		}
 

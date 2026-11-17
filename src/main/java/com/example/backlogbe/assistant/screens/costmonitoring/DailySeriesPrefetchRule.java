@@ -32,6 +32,8 @@ public class DailySeriesPrefetchRule implements PrefetchRule {
 
 	private static final List<String> DAILY_KEYWORDS = List.of(
 			"ngày nào", "ngay nao", "hôm nào", "hom nao", "theo ngày", "theo ngay", "từng ngày", "tung ngay",
+			// "ngày mấy" (audit 2026-11-17: "press ngày mấy có ot cao nhất" không pre-fetch -> LLM đọc nhầm cột Estimate)
+			"ngày mấy", "ngay may", "hôm mấy", "hom may",
 			"đột biến", "dot bien", "xu hướng chi", "xu huong chi", "diễn biến", "dien bien",
 			// 1 ngày gọi theo tên (audit 2026-11-10: "Chủ nhật vừa rồi…" bị hiểu là xếp hạng)
 			"hôm qua", "hom qua", "hôm kia", "hom kia", "chủ nhật", "chu nhat",
