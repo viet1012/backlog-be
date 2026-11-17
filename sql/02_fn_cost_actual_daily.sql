@@ -1,6 +1,7 @@
 /* =====================================================================
-   Actual theo ngày (K$) cho T&SL và RM — theo logic file Excel
-   Kết quả: (D, Div, Chart, Amt)   Div = PR / MO / Guide, Chart = T&SL / RM
+   Actual theo ngày (K$) cho T&SL, RM và OT — theo logic file Excel
+   Kết quả: (D, Div, Chart, Amt)   Div = PR / MO / Guide, Chart = T&SL / RM / OT
+   Cần chạy trước: 07_cost_ot_daily.sql (bảng dbo.CostOtDaily)
    ===================================================================== */
 USE [KVH];
 GO
@@ -104,10 +105,23 @@ RmDiv AS (
     FROM Rm
     WHERE CC IN (N'614100', N'614200', N'614600', N'614700')
     GROUP BY D, CASE CC WHEN N'614100' THEN N'PR' WHEN N'614200' THEN N'MO' ELSE N'Guide' END
+),
+/* ---------- OT  (file FY26 Daily Cost monitoring, nạp vào dbo.CostOtDaily – sql/07_cost_ot_daily.sql) ----------
+   Đã là K$ (không chia 1000). Guide = PG + MG (Excel Guide_OT!P = AB + AC).
+   Số âm tính 0 giống Excel: IF(K>0, K, 0) (cần xác nhận với người giữ file). */
+OtDiv AS (
+    SELECT o.D,
+           CASE o.SubDiv WHEN N'PR' THEN N'PR' WHEN N'MO' THEN N'MO' ELSE N'Guide' END AS Div,
+           SUM(CASE WHEN o.AmtKUsd > 0 THEN CAST(o.AmtKUsd AS FLOAT) ELSE 0 END) AS Amt
+    FROM dbo.CostOtDaily o
+    WHERE o.D BETWEEN @From AND @To
+    GROUP BY o.D, CASE o.SubDiv WHEN N'PR' THEN N'PR' WHEN N'MO' THEN N'MO' ELSE N'Guide' END
 )
 SELECT D, Div, CAST(N'T&SL' AS NVARCHAR(10)) AS Chart, Amt FROM TslDiv
 UNION ALL
-SELECT D, Div, CAST(N'RM'   AS NVARCHAR(10)) AS Chart, Amt FROM RmDiv;
+SELECT D, Div, CAST(N'RM'   AS NVARCHAR(10)) AS Chart, Amt FROM RmDiv
+UNION ALL
+SELECT D, Div, CAST(N'OT'   AS NVARCHAR(10)) AS Chart, Amt FROM OtDiv;
 GO
 
 /* ---- Test nhanh: actual theo ngày + MTD của tháng hiện tại ---- */

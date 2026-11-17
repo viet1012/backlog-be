@@ -98,14 +98,11 @@ public class DailySeriesTool implements AssistantTool {
 			return header + "|" + t(lang, "Không có dữ liệu", "No data");
 		}
 
-		// OT: không có Actual theo ngày / Estimate – không trả chuỗi chỉ có Fluct (test 2026-11-10 ext-82: model đọc
-		// Fluct 53.2 K$ thành "chi phí ngày 28")
-		if ("OT".equals(cost)) {
-			return header + "|" + t(lang,
-					"OT chưa có Actual theo ngày (không có chi trong ngày, Estimate hay ngày dự kiến vượt); chỉ có FC / Fluct. "
-							+ "Không nêu số theo ngày cho OT.",
-					"OT has no daily Actual (no daily spending, Estimate or expected exceed day); FC / Fluct only. "
-							+ "Do not give daily figures for OT.");
+		// Khung chưa có Actual cả tháng (vd OT chưa nạp file): không trả chuỗi chỉ có Fluct
+		// (test 2026-11-10 ext-82: model đọc Fluct 53.2 K$ thành "chi phí ngày 28")
+		if (chart.actMtdLatest() == null) {
+			return header + "|" + CmText.noActualNote(cost, lang)
+					+ t(lang, " Không nêu số theo ngày cho khung này.", " Do not give daily figures for this chart.");
 		}
 
 		int n = snapshot.n();
@@ -216,8 +213,14 @@ public class DailySeriesTool implements AssistantTool {
 					.append('\n');
 		}
 
-		if (chart.actMtdLatest() == null) {
-			sb.append(t(lang, "Khung này chưa có actual trong tháng.", "This chart has no actual this month."));
+		// Actual khung này dừng sớm hơn ngày D chung (vd OT nạp từ file trễ hơn T&SL): ngày sau là chưa có số, không phải 0
+		int lastActDay = snapshot.lastActualDay(chart);
+		if (lastActDay > 0 && lastActDay < snapshot.d()) {
+			sb.append(t(lang, "Actual khung này mới có đến ngày ", "Actual of this chart is only available up to day "))
+					.append(lastActDay)
+					.append(t(lang, "; các ngày sau chưa có số (không phải chi 0).",
+							"; later days have no figure yet (not zero spending)."))
+					.append('\n');
 		}
 
 		return sb.toString().trim();

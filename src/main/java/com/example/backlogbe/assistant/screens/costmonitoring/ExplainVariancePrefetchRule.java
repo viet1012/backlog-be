@@ -22,6 +22,8 @@ import java.util.regex.Pattern;
 //   RANKING  : div=ALL tóm tắt, cost: từ câu hỏi; thiếu -> T&SL và RM.
 //   FORECAST : div: từ câu hỏi; thiếu -> ô đang xem; vẫn thiếu hoặc ≥ 2 bộ phận -> ALL (tóm tắt);
 //              cost: từ câu hỏi; thiếu -> ô đang xem; vẫn thiếu -> T&SL và RM -> mỗi cost 1 lần gọi.
+//   "T&SL và RM" mặc định: thêm OT khi tháng đang xem đã nạp Actual OT (plan(…, otActual); snapshot từ cache loader).
+//   Câu nêu rõ OT (hoặc ô drawer OT) luôn pre-fetch OT – tháng chưa nạp thì tool trả FC / Fluct, "chưa có Actual".
 //   OVERVIEW : như RANKING.
 //   Không khớp intent nào (KHÔNG mặc định overview):
 //     phân tích đúng 1 khung (đánh giá, phân tích, rủi ro, tình hình, thế nào, ổn không…) hoặc câu hỏi từ drawer
@@ -33,8 +35,29 @@ public class ExplainVariancePrefetchRule implements PrefetchRule {
 
 	public static final String TOOL = "explain_variance";
 
-	// Không nêu loại chi phí -> 2 loại có actual
+	// Không nêu loại chi phí -> loại có actual: T&SL, RM; thêm OT khi tháng đang xem đã nạp Actual OT
+	// (OT xếp cuối: phần tóm tắt cũ giữ nguyên thứ tự, prompt chỉ thêm ~1 khối tóm tắt)
 	private static final List<String> DEFAULT_COSTS = List.of("T&SL", "RM");
+	private static final List<String> DEFAULT_COSTS_WITH_OT = List.of("T&SL", "RM", "OT");
+
+	private final CostMonitoringSnapshotLoader loader;
+
+	public ExplainVariancePrefetchRule(CostMonitoringSnapshotLoader loader) {
+		this.loader = loader;
+	}
+
+	private static List<String> defaultCosts(boolean otActual) {
+		return otActual ? DEFAULT_COSTS_WITH_OT : DEFAULT_COSTS;
+	}
+
+	// Tháng đang xem (params) có Actual OT; lỗi đọc snapshot -> false (giữ T&SL, RM như cũ)
+	static boolean otActual(CostMonitoringSnapshotLoader loader, Map<String, String> params) {
+		try {
+			return CostMonitoringLookupAnswers.otHasActual(loader.load(params != null ? params : Map.of()));
+		} catch (RuntimeException e) {
+			return false;
+		}
+	}
 
 	// Nhãn tín hiệu COMPARE khi chỉ do nêu ≥ 2 khung (CostMonitoringIntentClassifier)
 	private static final String COMPARE_BY_FRAMES = ">=2 khung";
@@ -71,7 +94,12 @@ public class ExplainVariancePrefetchRule implements PrefetchRule {
 	@Override
 	public List<ToolCall> calls(String question, Map<String, String> params) {
 
-		Plan plan = plan(question, params);
+		// Phân loại trước (rẻ); chỉ đọc snapshot (cache) khi có kế hoạch pre-fetch
+		if (plan(question, params) == null) {
+			return List.of();
+		}
+
+		Plan plan = plan(question, params, otActual(loader, params));
 
 		if (plan == null) {
 			return List.of();
@@ -149,9 +177,15 @@ public class ExplainVariancePrefetchRule implements PrefetchRule {
 		return CostMonitoringIntentClassifier.classify(question, CostMonitoringFocus.from(params != null ? params : Map.of()));
 	}
 
-	// null = không pre-fetch
+	// null = không pre-fetch. Mặc định loại chi phí T&SL, RM (không cần dữ liệu – dùng để biết có kế hoạch hay không)
 	static Plan plan(String question, Map<String, String> params) {
+		return plan(question, params, false);
+	}
 
+	// otActual = tháng đang xem đã có Actual OT -> câu không nêu loại chi phí gồm cả OT
+	static Plan plan(String question, Map<String, String> params, boolean otActual) {
+
+		List<String> defaults = defaultCosts(otActual);
 		Result r = classify(question, params);
 
 		if (r == null) {
@@ -185,7 +219,7 @@ public class ExplainVariancePrefetchRule implements PrefetchRule {
 							&& DailySeriesPrefetchRule.isDailyQuestion(question)) {
 						return null;
 					}
-					List<CostMonitoringFocus> frames = compareFrames(r, focus);
+					List<CostMonitoringFocus> frames = compareFrames(r, focus, defaults);
 					List<String> costs = frames.stream().map(CostMonitoringFocus::cost).distinct().toList();
 					return new Plan(Intent.COMPARE, CostMonitoringToolArgs.ALL, costs, true, false, frames, r);
 				}
@@ -193,7 +227,7 @@ public class ExplainVariancePrefetchRule implements PrefetchRule {
 				case RANKING, OVERVIEW -> {
 					// Chế độ tóm tắt: mỗi khung 1 dòng + xếp hạng, ≤ 1200 ký tự / loại chi phí (tổng ≈ 1.5k token)
 					return new Plan(signal == Signal.RANKING ? Intent.RANKING : Intent.OVERVIEW,
-							CostMonitoringToolArgs.ALL, r.costs().isEmpty() ? DEFAULT_COSTS : r.costs(), true, false, r);
+							CostMonitoringToolArgs.ALL, r.costs().isEmpty() ? defaults : r.costs(), true, false, r);
 				}
 
 				case FORECAST -> {
@@ -204,7 +238,7 @@ public class ExplainVariancePrefetchRule implements PrefetchRule {
 						divs = List.of(focus.div());
 					}
 					if (costs.isEmpty()) {
-						costs = focus != null ? List.of(focus.cost()) : DEFAULT_COSTS;
+						costs = focus != null ? List.of(focus.cost()) : defaults;
 					}
 
 					// Không nêu / nêu ≥ 2 bộ phận -> div=ALL chế độ tóm tắt
@@ -247,15 +281,15 @@ public class ExplainVariancePrefetchRule implements PrefetchRule {
 				&& PREV_WORD.matcher(folded).find();
 	}
 
-	// Khung được so: bộ phận (câu hỏi -> ô đang xem -> cả 3) × loại chi phí (câu hỏi -> ô đang xem -> T&SL, RM)
-	private static List<CostMonitoringFocus> compareFrames(Result r, CostMonitoringFocus focus) {
+	// Khung được so: bộ phận (câu hỏi -> ô đang xem -> cả 3) × loại chi phí (câu hỏi -> ô đang xem -> T&SL, RM [+ OT])
+	private static List<CostMonitoringFocus> compareFrames(Result r, CostMonitoringFocus focus, List<String> defaults) {
 
 		List<String> divs = !r.divs().isEmpty() ? r.divs()
 				: focus != null && r.costs().size() >= 2 ? List.of(focus.div())
 				: CostMonitoringSnapshot.DIVS;
 		List<String> costs = !r.costs().isEmpty() ? r.costs()
 				: focus != null ? List.of(focus.cost())
-				: DEFAULT_COSTS;
+				: defaults;
 
 		List<CostMonitoringFocus> frames = new ArrayList<>();
 

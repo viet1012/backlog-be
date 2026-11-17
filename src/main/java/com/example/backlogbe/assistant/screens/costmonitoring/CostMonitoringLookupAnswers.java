@@ -52,16 +52,17 @@ import static com.example.backlogbe.assistant.screens.costmonitoring.CmText.t;
 //                      (khung dự báo vượt) – giữ hành vi cũ "hôm nay = tháng tính đến ngày có actual mới nhất".
 //   when_exceed      : (khi nào / bao giờ / lúc nào / when) + (vượt / over / exceed), không hỏi riêng FC / PL ->
 //                      ngày dự kiến vượt Fluct theo Estimate (CostMonitoringSnapshot.estimateCrossDay) từng khung.
-//   data_update      : (cập nhật / update) + (khi nào / chưa / mới nhất …) -> ngày có Actual T&SL / RM, OT không có.
+//   data_update      : (cập nhật / update) + (khi nào / chưa / mới nhất …) -> ngày có Actual T&SL / RM / OT.
 //   estimate_concept : "Estimate là gì / cách tính" -> định nghĩa cố định.
-//   ot_no_data       : when_exceed / day_spend chỉ về OT -> OT không có Actual theo ngày / Estimate.
+//   ot_no_data       : when_exceed / day_spend chỉ về OT, tháng chưa nạp Actual OT -> nói rõ chưa có số.
 //   when_exceed_fc   : (khi nào) + (vượt) + FC (không Fluct / PL / BP) -> ngày đầu tiên Estimate (MTD) > FC tháng.
 //   week_compare     : "tuần trước" + (so với / tốc độ / nhanh / chậm) -> K$ / ngày làm việc tuần này so với tuần trước.
 //   remaining_budget : thêm "phải giảm chi bao nhiêu" (REDUCE); dòng ghi cả K$/ngày cần giảm và %.
 //   trend            : 1–3 khung (nhiều khung ghép template từng khung).
 // Bỏ qua: câu hỏi nguyên nhân, so sánh, tháng trước / cùng kỳ; tháng đã kết thúc (trừ top_item / top_day).
 // Khung: CostMonitoringQuestion.frame (câu hỏi + ô drawer); không xác định được -> bộ phận nêu trong câu (hoặc cả 3)
-//   × loại chi phí nêu trong câu (hoặc T&SL, RM). OT không có actual -> bỏ.
+//   × loại chi phí nêu trong câu (hoặc T&SL, RM; thêm OT khi tháng có Actual OT và câu hỏi không về vật tư –
+//   OT nạp từ file Daily Cost monitoring vào dbo.CostOtDaily, không có vật tư / dòng xuất kho).
 // =========================================================
 @Slf4j
 @Component
@@ -151,7 +152,11 @@ public class CostMonitoringLookupAnswers {
 		MACHINE, COST_CENTER, CATEGORY
 	}
 
+	// Loại chi phí có dòng xuất kho / vật tư (CostTool, CostRm). OT (dbo.CostOtDaily) chỉ có số theo ngày.
 	private static final List<String> COSTS = List.of("T&SL", "RM");
+
+	// Lookup dựa trên vật tư / dòng xuất kho -> không áp dụng cho OT
+	private static final Set<String> ITEM_KINDS = Set.of(TOP_ITEM, TOP_DETAIL, COMMON_ITEM, ITEM_CHANGE);
 
 	private static final int TOP_ITEMS_ONE = 5;
 	// "top 10 vật tư", "10 máy …": số dòng người dùng yêu cầu (1 khung), tối đa MAX_TOP
@@ -195,7 +200,9 @@ public class CostMonitoringLookupAnswers {
 	private static final int TOP_DETAIL_FEW = 3;
 	private static final int TOP_DETAIL_FEW_FRAMES = 3;
 
-	private static final Pattern WHICH_DAY =CostMonitoringQuestion.word("ngay nao|hom nao|which day|what day");
+	// "ngày mấy / hôm mấy" (audit 2026-11-17 "press ngày mấy có ot cao nhất": qua LLM, trả 30/11 28.4 K$ – ngày chưa tới,
+	// đọc nhầm cột Estimate). "mấy" bỏ dấu = "may" nhưng chỉ khớp cụm "ngay may" / "hom may", không trùng MACHINE_FOLDED.
+	private static final Pattern WHICH_DAY = CostMonitoringQuestion.word("ngay nao|hom nao|ngay may|hom may|which day|what day");
 	private static final Pattern MOST = CostMonitoringQuestion.word(
 			"nhieu nhat|cao nhat|lon nhat|ton nhat|most|highest|largest|biggest");
 
@@ -352,15 +359,18 @@ public class CostMonitoringLookupAnswers {
 					"lookup=" + kind + "; template=yes");
 		}
 
-		// Chỉ hỏi OT: không có Actual theo ngày / Estimate / ngày dự kiến vượt -> nói rõ, không qua LLM
+		boolean otActual = otHasActual(snapshot);
+
+		// Chỉ hỏi OT mà tháng chưa nạp Actual OT: không có số theo ngày / Estimate / ngày dự kiến vượt -> nói rõ
 		if ((WHEN_EXCEED.equals(kind) || WHEN_EXCEED_FC.equals(kind) || DAY_SPEND.equals(kind))
-				&& otOnly(question, safeParams)) {
+				&& !otActual && otOnly(question, safeParams)) {
 			Answer ot = otNoData(lang);
 			return new AnswerGuide(null, false, OT_NO_DATA, ot.text(), ot.suggestions(),
 					"lookup=" + kind + "; cost=OT; template=yes");
 		}
 
-		List<CostMonitoringFocus> frames = frames(question, safeParams);
+		// OT không có vật tư / dòng xuất kho: câu hỏi vật tư chỉ T&SL, RM
+		List<CostMonitoringFocus> frames = frames(question, safeParams, otActual && !ITEM_KINDS.contains(kind));
 
 		if (frames.isEmpty() || snapshot.d() < 1) {
 			return null;
@@ -729,6 +739,7 @@ public class CostMonitoringLookupAnswers {
 
 		int tsl = 0;
 		int rm = 0;
+		int ot = 0;
 
 		for (CostChartDto chart : snapshot.response().charts()) {
 			int day = snapshot.lastActualDay(chart);
@@ -736,6 +747,8 @@ public class CostMonitoringLookupAnswers {
 				tsl = Math.max(tsl, day);
 			} else if ("RM".equals(chart.chart())) {
 				rm = Math.max(rm, day);
+			} else if ("OT".equals(chart.chart())) {
+				ot = Math.max(ot, day);
 			}
 		}
 
@@ -749,7 +762,16 @@ public class CostMonitoringLookupAnswers {
 				.append(rm > 0 ? dayLabel(snapshot.month().atDay(rm), lang) : none).append("**")
 				.append(t(lang, " (RM ghi nhận chậm hơn T&SL khoảng 1 ngày)", " (RM is recorded about 1 day later than T&SL)"))
 				.append('\n');
-		sb.append(t(lang, "- OT: chưa có Actual (chỉ có FC / Fluct)", "- OT: no Actual (FC / Fluct only)")).append("\n\n");
+		if (ot > 0) {
+			sb.append(t(lang, "- OT: Actual đến **", "- OT: Actual up to **"))
+					.append(dayLabel(snapshot.month().atDay(ot), lang)).append("**")
+					.append(t(lang, " (nạp từ file Daily Cost monitoring, có thể trễ hơn T&SL)",
+							" (loaded from the Daily Cost monitoring file, may lag T&SL)"))
+					.append("\n\n");
+		} else {
+			sb.append(t(lang, "- OT: chưa có Actual (chưa nạp số OT, chỉ có FC / Fluct)",
+					"- OT: no Actual (OT figures not loaded yet, FC / Fluct only)")).append("\n\n");
+		}
 		sb.append(t(lang, "_Màn hình không có thông tin giờ cập nhật cụ thể._", "_The screen has no exact update time._"));
 
 		return new Answer(sb.toString(),
@@ -765,24 +787,31 @@ public class CostMonitoringLookupAnswers {
 						+ "- Các ngày sau cộng thêm PL TGT phân bổ theo ngày làm việc của nhà máy (ngày nghỉ không cộng); "
 						+ "chưa có PL thì dùng FC TGT (ghi \"theo FC\").\n"
 						+ "- Estimate ngày cuối tháng là dự báo cuối tháng chính, so với Fluct để biết dự báo vượt / trong Fluct.\n"
-						+ "- Khung chưa có Actual (vd OT) thì không có Estimate.",
+						+ "- Khung chưa có Actual (vd OT tháng chưa nạp số) thì không có Estimate.",
 				"**Estimate (MTD)** (dashed line on the chart) is the **expected** cumulative cost up to each day:\n"
 						+ "- It starts from the Actual of the latest day with data (on that day Estimate = Actual).\n"
 						+ "- Later days add PL TGT spread over factory working days (holidays add nothing); "
 						+ "without PL it uses FC TGT (\"based on FC\").\n"
 						+ "- The month-end Estimate is the main month-end forecast, compared with Fluct to tell over / within.\n"
-						+ "- Frames without Actual (e.g. OT) have no Estimate."),
+						+ "- Frames without Actual (e.g. OT before its figures are loaded) have no Estimate."),
 				List.of(t(lang, "Khi nào có khung vượt Fluct?", "When will any frame exceed Fluct?"),
 						t(lang, "Fluct là gì?", "What is Fluct?")));
 	}
 
-	// OT: chỉ có FC / Fluct
+	// Tháng đang xem có Actual OT ở ít nhất 1 bộ phận (đã nạp file Daily Cost monitoring)
+	static boolean otHasActual(CostMonitoringSnapshot snapshot) {
+		return snapshot.response() != null && snapshot.response().charts() != null
+				&& snapshot.response().charts().stream()
+				.anyMatch(c -> "OT".equals(c.chart()) && c.actMtdLatest() != null);
+	}
+
+	// OT tháng này chưa nạp: chỉ có FC / Fluct
 	private static Answer otNoData(String lang) {
 		return new Answer(t(lang,
-				"Khung **OT** chưa có Actual trên màn hình này (chỉ có FC / Fluct), nên không có số chi theo ngày, "
+				"Khung **OT** tháng này chưa có Actual (chưa nạp số OT, chỉ có FC / Fluct), nên chưa có số chi theo ngày, "
 						+ "đường Estimate hay ngày dự kiến vượt.",
-				"**OT** frames have no Actual on this screen (FC / Fluct only), so there is no daily spending, "
-						+ "Estimate line or expected day to exceed."),
+				"**OT** frames have no Actual this month (OT figures not loaded yet, FC / Fluct only), so there is no daily "
+						+ "spending, Estimate line or expected day to exceed yet."),
 				List.of(t(lang, "Tháng này có khung nào dự báo vượt Fluct?", "Which frames are forecast to exceed Fluct?")));
 	}
 
@@ -897,13 +926,20 @@ public class CostMonitoringLookupAnswers {
 	}
 
 	// Đúng 1 khung (câu hỏi + drawer) -> [khung]; không -> bộ phận nêu trong câu (hoặc ô drawer, hoặc cả 3)
-	// × loại chi phí nêu trong câu (hoặc T&SL, RM). OT bỏ.
+	// × loại chi phí nêu trong câu (hoặc T&SL, RM). OT bỏ (dùng cho câu hỏi vật tư / dòng xuất kho: OT không có).
 	static List<CostMonitoringFocus> frames(String question, Map<String, String> params) {
+		return frames(question, params, false);
+	}
+
+	// withOt = true: câu hỏi về số chi / dự báo (không về vật tư) và tháng đã có Actual OT -> OT như T&SL / RM
+	static List<CostMonitoringFocus> frames(String question, Map<String, String> params, boolean withOt) {
+
+		List<String> allowed = withOt ? CostMonitoringSnapshot.COSTS : COSTS;
 
 		CostMonitoringFocus one = CostMonitoringQuestion.frame(question, params);
 
 		if (one != null) {
-			return COSTS.contains(one.cost()) ? List.of(one) : List.of();
+			return allowed.contains(one.cost()) ? List.of(one) : List.of();
 		}
 
 		String q = CostMonitoringQuestion.normalize(question);
@@ -913,9 +949,9 @@ public class CostMonitoringLookupAnswers {
 			divs = CostMonitoringSnapshot.DIVS;
 		}
 
-		List<String> costs = CostMonitoringQuestion.costs(q).stream().filter(COSTS::contains).toList();
+		List<String> costs = CostMonitoringQuestion.costs(q).stream().filter(allowed::contains).toList();
 		if (costs.isEmpty()) {
-			costs = CostMonitoringQuestion.costs(q).isEmpty() ? COSTS : List.of();
+			costs = CostMonitoringQuestion.costs(q).isEmpty() ? allowed : List.of();
 		}
 
 		List<CostMonitoringFocus> frames = new ArrayList<>();
@@ -1508,12 +1544,27 @@ public class CostMonitoringLookupAnswers {
 			return null;
 		}
 
+		// Khung có Actual dừng sớm hơn ngày D chung (vd OT nạp theo đợt): nói rõ chỉ xét đến ngày đó
+		for (CostMonitoringFocus fr : frames) {
+			CostChartDto chart = snapshot.find(fr.div(), fr.cost());
+			int last = chart == null ? 0 : snapshot.lastActualDay(chart);
+			if (last > 0 && last < snapshot.d()) {
+				sb.append(t(lang, "_" + fr.div() + " " + fr.cost() + " mới có số đến " + ddmm(snapshot.month().atDay(last))
+								+ " – các ngày sau chưa có số, chưa xét._",
+						"_" + fr.div() + " " + fr.cost() + " only has data up to " + ddmm(snapshot.month().atDay(last))
+								+ " – later days not included._")).append('\n');
+			}
+		}
+
 		sb.append('\n').append(footer(snapshot, lang));
 
 		List<String> suggestions = new ArrayList<>();
 		if (single) {
 			String name = frames.get(0).div() + " " + frames.get(0).cost();
-			suggestions.add(t(lang, "Vật tư nào chi nhiều nhất ở " + name + "?", "Which items cost the most in " + name + "?"));
+			// OT không có vật tư
+			suggestions.add(COSTS.contains(frames.get(0).cost())
+					? t(lang, "Vật tư nào chi nhiều nhất ở " + name + "?", "Which items cost the most in " + name + "?")
+					: t(lang, "Ngân sách còn lại mỗi ngày của " + name, "Remaining daily budget of " + name));
 			suggestions.add(t(lang, "Vì sao " + name + " dự báo vượt?", "Why is " + name + " forecast to exceed?"));
 		}
 
@@ -3008,9 +3059,15 @@ public class CostMonitoringLookupAnswers {
 		sb.append('\n').append(t(lang, "**Dự báo:** ", "**Forecast:** ")).append(CmText.estimateBrief(a, lang)).append('\n');
 		sb.append('\n').append(footer(snapshot, lang));
 
-		List<String> suggestions = List.of(
+		// OT không có vật tư: gợi ý theo ngày / dự báo
+		List<String> suggestions = COSTS.contains(fr.cost())
+				? List.of(
 				t(lang, "Vật tư nào chi nhiều nhất ở " + name + "?", "Which items cost the most in " + name + "?"),
 				t(lang, "Vật tư nào làm " + name + " tăng so với tháng trước?", "Which items drove " + name + " up vs last month?"),
+				t(lang, "Cứ chi như vậy thì " + name + " cuối tháng bao nhiêu?", "At this rate, where will " + name + " end the month?"))
+				: List.of(
+				t(lang, "Ngày nào " + name + " chi nhiều nhất?", "Which day did " + name + " spend the most?"),
+				t(lang, "Ngân sách còn lại mỗi ngày của " + name, "Remaining daily budget of " + name),
 				t(lang, "Cứ chi như vậy thì " + name + " cuối tháng bao nhiêu?", "At this rate, where will " + name + " end the month?"));
 
 		String kind = status ? FRAME_STATUS : WHY_FRAME;
@@ -3021,7 +3078,8 @@ public class CostMonitoringLookupAnswers {
 	// Khoản lớn ≥ 10% Actual trong khoảng ngày (tối đa MAX_UNUSUAL)
 	private List<CostLineDto> unusualLines(CostMonitoringFocus fr, LocalDate from, LocalDate to, Double act) {
 
-		if (act == null || act <= 0 || to.isBefore(from)) {
+		// OT không có dòng xuất kho
+		if (act == null || act <= 0 || to.isBefore(from) || !COSTS.contains(fr.cost())) {
 			return List.of();
 		}
 

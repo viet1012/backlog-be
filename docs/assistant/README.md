@@ -212,6 +212,7 @@ bỏ trống `div` / `cost` thì lấy theo ô này (`CostMonitoringToolArgs`). 
 | `F2_Working_Date` | Lịch làm việc (`WD_All`, `WD_Office`), Ratio theo ngày (`Adj_Ratio_PR/_MO/_GU`, `Adj_Ratio_KVH`) |
 | `CostTool` | Chi tiết xuất vật tư T&SL (vật tư, cost center, máy) |
 | `CostRm` | Chi tiết xuất vật tư RM |
+| `CostOtDaily` | Actual OT theo ngày × PR / MO / PG / MG (K$), nạp từ file "FY.. Daily Cost monitoning.xlsx" qua `POST /api/cost-monitoring/ot/import` (`sql/07_cost_ot_daily.sql`). Không có vật tư / dòng xuất kho |
 
 **Cache snapshot** (`CostMonitoringSnapshotLoader`): kết quả `sp_CostMonitoringChart` (snapshot) được cache trong bộ nhớ theo
 (month, simuWeek, ngày hôm nay), dùng chung cho context / tool trợ lý, `GET /api/cost-monitoring/chart` và `/detail`
@@ -238,7 +239,9 @@ D = ngày dữ liệu hiện tại, N = số ngày trong tháng.
   Sale&Inven +/- = (Doanh số thực tế MTD − Doanh số FC MTD) + (Tồn kho hiện tại − Tồn kho đầu tháng).
   Cùng một Ratio cho OT, T&SL, RM của một bộ phận. Ngày chưa tới dùng Ratio của hôm qua.
 - **Estimate** (`Est_MTD`) = Actual cuối + phần COALESCE(PL, FC) các ngày còn lại, phân bổ theo `WD_All` (ngày nghỉ nhà máy không cộng);
-  bắt đầu từ ngày có Actual cuối (= Actual ngày đó). Chưa có Actual (vd OT) thì không có Estimate (hiển thị "-").
+  bắt đầu từ ngày có Actual cuối (= Actual ngày đó). Chưa có Actual (vd OT tháng chưa nạp) thì không có Estimate (hiển thị "-").
+- **Actual OT**: Guide = PG + MG; số âm tính 0 (giống Excel `IF(K>0,K,0)`); Actual chỉ tới ngày cuối có dòng trong `CostOtDaily`
+  (≤ hôm qua) – ngày chưa nạp không tính là 0, nên OT có thể dừng sớm hơn T&SL (trợ lý ghi "OT đến ngày X").
   PL trống mà có Estimate → ghi chú "(theo FC)".
 - **Badge** = Actual / Fluct × 100 ("OK x%" / "Vượt x%"). **Tiến độ chuẩn** = D / N × 100.
 - **Dự báo cuối tháng**: có Estimate → Estimate ngày cuối tháng (cơ sở "theo PL" hoặc "theo FC");
@@ -463,7 +466,17 @@ Sai / thiếu → 400 `{status, message}`, vd "div must be one of PR, MO, Guide.
   kỳ = ngày 1 → `asOfDate` (hoặc đúng `date`); sort thành tiền giảm dần; `totalElements`, `totalPages`, `totalAmountK`,
   `allocationK` (= Actual − tổng trực tiếp: phân bổ F2 / HT2 / HT-G + điều chỉnh). Mỗi dòng: `date`, `code`, `name`, `category`,
   `qty`, `qtyUnit`, `unitPrice`, `amount` ($), `amountK`, `costCenter`, `costCenterName`, `machine`.
-- OT: chỉ KPI FC / Fluct / Ratio; `daily`, `transactions` rỗng.
+- OT: KPI / `daily` như T&SL, RM khi tháng đã nạp Actual OT (chưa nạp → chỉ FC / Fluct / Ratio); `transactions` luôn rỗng.
+
+### Nạp Actual OT (`/api/cost-monitoring/ot/*`)
+
+- `POST /ot/import` (multipart `file` .xlsx/.xlsm, `month?` yyyy-MM, `dryRun?`) – đọc sheet PressCOGS / MoldCOGS / PG+DP-COGS /
+  MG-COGS, cột ngày B và cột "Actual / OT" (dò theo tiêu đề), thay toàn bộ dòng của (tháng, SubDiv) có trong file, xóa cache snapshot.
+- `POST /ot/import-from-share` – BE đọc `cost-monitoring.ot.share-path` (tài khoản chạy BE phải đọc được share);
+  job tự động `cost-monitoring.ot.share-cron` (mặc định `-` = tắt, file không đổi thì bỏ qua).
+- `GET /ot/status?month=` – 4 dòng PR / MO / PG / MG: số ngày, ngày cuối, tổng K$, lúc nạp, nguồn.
+- Ghi cần header `X-Employee-Id` có role trong `cost-monitoring.ot.import-roles` (mặc định `ADMIN`); 401 / 403 / 503 dạng `{status, message}`.
+- Upload cần `spring.servlet.multipart.max-file-size` / `max-request-size` ≥ 20MB (mặc định Spring 1MB).
 
 ### `GET /api/cost-monitoring/detail/transactions` (nhẹ, không chạy snapshot / SP)
 
@@ -729,7 +742,8 @@ server hoặc ADMIN (qua API admin) đọc; không gửi ra ngoài.
 
 ## 11. Giới hạn hiện tại
 
-- **OT chưa có actual**: chỉ có FC, PL, Fluct, Estimate; không có chi tiết vật tư.
+- **OT**: Actual chỉ có khi đã nạp file Daily Cost monitoring (theo đợt, có thể trễ hơn T&SL); không có chi tiết vật tư /
+  máy / cost center, nên câu hỏi vật tư, "vì sao" theo khoảng nhiều tháng, so cùng kỳ theo vật tư chỉ tính T&SL, RM.
 - **Chưa có doanh số / tồn kho chi tiết**: chỉ có Ratio; không giải thích được Ratio đổi do doanh số hay tồn kho.
 - **Endpoint public**: `/api/assistant/*` không yêu cầu token, `@CrossOrigin(*)`; chỉ có rate limit theo IP (trong bộ nhớ, mỗi instance tính riêng).
 - **Model 20B yếu suy luận nhiều bước**: vì vậy kết luận được tính sẵn bằng code; câu hỏi cần kết hợp nhiều tool / nhiều tháng dễ sai hơn.
@@ -817,3 +831,5 @@ server hoặc ADMIN (qua API admin) đọc; không gửi ra ngoài.
 | 2026-11-12 | Hồi quy sau luồng khoảng: "3 tháng gần đây PRESS T&SL có tháng nào vượt?" (ext-113, 151–153) bị `range_summary` chặn trước template `multi_month` → `CostMonitoringAnswerGuide.range` gọi `CostMonitoringManagerAnswers.multiMonthGuide` (N tháng gần đây / qua / trước, không hỏi chi tiết) trước `CostMonitoringRangeAnswers`. Eval: case "3 tháng gần nhất" đổi sang `multi_month`, thêm "Trong 3 tháng PRESS T&SL…" (`range_summary`) và "3 tháng gần đây có khung nào vượt?" (77 case). Test case thủ công: thêm nhóm 42 (khoảng nhiều tháng, ext-235–255) và 43 (sửa sau eval, ext-256–259) vào `ai-test-cases-extra.json`; bản sao case vật tư vào `ai-test-cases-item-detail.json`; cập nhật ext-113, ext-225. |
 | 2026-11-12 | Sửa theo test FE 0758 (259 case) + 0804: (1) **Hiệu năng khoảng nhiều tháng**: truy vấn các khung song song (warm) ở `range_top_item` / `range_top_detail` / item_most_issued theo khoảng / multi_month; `findTopItems` / `findTopCostCenters` lấy kèm tổng khung (cột `TotalK` = `SUM(SUM(Amt)) OVER ()`) và `sumByCategory` nạp sẵn cache `findTotal`; cache repository 6 giờ cho kỳ đã kết thúc hẳn. `CostMonitoringAnswerGuide.range` giới hạn 45 s → `range_slow` "đang tổng hợp, hỏi lại sau 1–2 phút", tính tiếp ở nền (ext-244: 262–277 s → FE báo LLM_ERROR). (2) `range_summary` ghi "chưa có dữ liệu" cho tháng không có Actual (ext-243 bỏ qua 07), chú thích chỉ nhắc "tháng đang chạy" khi có, "Khung tỷ lệ cao nhất (Σ Actual / Σ Fluct các tháng đã kết thúc)". (3) Mới `range_why` (ext-250: LLM 141 s, số mâu thuẫn). (4) Bất thường vật tư theo khoảng → `item_anomaly` tháng đang xem / cuối khoảng kèm dòng giải thích (ext-251). (5) Mới `data_availability` "Tháng X có dữ liệu không?" + context tháng được hỏi ghi "Trạng thái dữ liệu=CHƯA CÓ số chi" + `AnswerPostProcessor.stripBlockLabels` (ext-254: bịa "có dữ liệu", lộ nhãn "[Dữ liệu tháng …]"). (6) Mới `item_cut_candidates` "nên cắt giảm vật tư / Category nào" (ext-104). (7) item_when: % nhận định = % dòng "Nếu giữ nhịp", SL dự phóng làm tròn (ext-218). (8) frame_status: Fluct > FC ở khung không dự báo vượt ghi "giúp khung còn trong Fluct" (ext-18 / 50 / 69). (9) "3 tháng tới / quý tới" thêm ghi chú không có dự báo các tháng sau (ext-255). (10) "Vì sao N tháng gần đây…" không còn vào multi_month. Đánh giá lại: ext-232 đúng (dòng xuất kho có dữ liệu 06–08). Eval 83 case (+6); test case thủ công: nhóm 44 (ext-260–264), cập nhật ext-50, 78, 104, 182–184, 218, 237, 239, 243, 244, 250, 251, 254, 255. Chưa làm: ngày actual = 0 (cần xác nhận), câu ghép ext-105, template cho ext-65 / 116 / 129 / 253. |
 | 2026-11-17 | Hiệu năng API Cost Monitoring: `sp_CostMonitoringChart` ghi bước trung gian ra bảng tạm (#WDay, #Tgt, #Act, #Base) – trước đây CTE `Base` dùng 2 lần nên `fn_CostActualDaily` (quét `CostTool` / `CostRm`) chạy 2 lần; kết quả không đổi. `fn_CostActualDaily` + `CostTopItemsRepository` thêm khoảng thô trên cột gốc `UsedDate` (yyyyMMdd) và `Factory LIKE '612%'` để seek index (điều kiện `TRY_CONVERT` cũ giữ nguyên). Thêm `sql/05_cost_monitoring_indexes.sql` (index `UsedDate` cho `CostTool` / `CostRm`, `[Month]` cho `F2_PL_TGT`, `[Date]` cho `F2_Working_Date`). `CostMonitoringSnapshotLoader`: single-flight theo key – request đồng thời khi cache hết hạn chỉ chạy SP 1 lần. Đo lần 1 (SP ~0.96 s, 0.86 s ở `fn_CostActualDaily`: `CostCenterMaster` 41k logical reads do tra từng dòng, `CostTool` scan 3 lần do `UNION ALL`): function gom theo (ngày, tên cost center[, mã]) trước rồi mới join master; T&SL tách PR / MO / Guide bằng `CROSS APPLY (VALUES …)` trên 1 lần đọc. Log đo trong BE: `RequestTimingFilter` thêm `/api/cost-monitoring/chart`, `/detail/transactions`; `CostMonitoringSnapshotLoader` log INFO `cache=MISS|REFRESH spMs= waitMs=` khi chạy SP và `cache=WAIT` khi chờ request khác (cache HIT không log). |
+| 2026-11-17 | **Actual OT**: bảng `CostOtDaily` (`sql/07_cost_ot_daily.sql`) nạp từ file "FY26 Daily Cost monitoning" (sheet PressCOGS / MoldCOGS / PG+DP-COGS / MG-COGS, cột Labor Cost – Actual – OT, K$) qua `POST /api/cost-monitoring/ot/import` (upload), `/ot/import-from-share` (+ cron tùy chọn), `GET /ot/status`; nạp xong `CostMonitoringSnapshotLoader.invalidateAll()`. `fn_CostActualDaily` thêm OT (Guide = PG + MG, số âm = 0 như Excel); `sp_CostMonitoringChart` bỏ chặn OT, cutoff OT = ngày cuối có dòng OT. Excel Cost Monitoring.xlsb có lỗi `PR_OT!P` dùng `$K$625` (PR OT tháng 11: Excel 22.6 vs file nguồn 27.2 K$) – số API đúng theo file nguồn. Trợ lý: bỏ ghi cứng "OT chưa có Actual" – kiểm tra theo dữ liệu (`actMtdLatest`, `CostMonitoringLookupAnswers.otHasActual`): get_daily_series / pre-fetch nhận OT (tối đa 9 khung) + ghi "Actual khung này mới có đến ngày X"; `data_update` / `data_availability` nêu "OT đến dd/MM"; `ot_no_data` chỉ khi tháng chưa nạp; `ot_value` nêu Actual / Fluct / dự báo; lookup (khi nào vượt, theo ngày, ngân sách còn lại…), manager (tổng quan, tổng dự báo, bộ phận chi nhiều, báo cáo…), `range_summary` tính cả OT khi có Actual; câu vật tư / dòng xuất kho / `range_why` / so cùng kỳ theo vật tư giữ T&SL, RM; `status_vs_prev` chỉ so khung có số ở cả 2 tháng. knowledge.md / rules.md cập nhật nguồn OT, trễ nạp, không đoán nguyên nhân tăng ca. `ExplainVariancePrefetchRule.plan(…, otActual)`: câu không nêu loại chi phí (ranking / overview / forecast / compare) mặc định T&SL, RM, OT khi tháng đang xem có Actual OT (snapshot cache) – pre-fetch và template `precomputed` của `CostMonitoringAnswerGuide` dùng cùng kế hoạch; `plan(question, params)` (không đọc dữ liệu) giữ T&SL, RM cho `TopItemsPrefetchRule`. |
+| 2026-11-17 | Audit 17:13 "press ngày mấy có ot cao nhất ?" qua LLM (38 s) trả "30/11 – 28.4 K$" (ngày chưa tới, đọc nhầm cột Estimate; đúng: 06/11 3.18 K$). "ngày mấy / hôm mấy" thêm vào `WHICH_DAY` (lookup → `top_day`), `DAY_WHICH` (manager) và từ khóa `DailySeriesPrefetchRule`. `top_day`: khung có Actual dừng sớm hơn D (OT) ghi "mới có số đến dd/MM"; gợi ý OT không hỏi vật tư. Eval +1. |

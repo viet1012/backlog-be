@@ -392,6 +392,16 @@ public final class CmText {
 		return t(lang, "Chưa đủ dữ liệu", "Not enough data");
 	}
 
+	// Khung chưa có Actual trong tháng (actMtdLatest null). OT: số nạp từ file Daily Cost monitoring,
+	// tháng chưa nạp thì chưa có – nói rõ, không coi là chi 0.
+	public static String noActualNote(String cost, String lang) {
+		return "OT".equals(cost)
+				? t(lang, "OT tháng này chưa có Actual (chưa nạp số OT); chỉ có FC / Fluct.",
+						"OT has no Actual this month (OT figures not loaded yet); FC / Fluct only.")
+				: t(lang, "Khung này chưa có Actual trong tháng; chỉ có FC / Fluct.",
+						"This chart has no Actual this month; FC / Fluct only.");
+	}
+
 	public static String none(String lang) {
 		return t(lang, "(không có)", "(none)");
 	}

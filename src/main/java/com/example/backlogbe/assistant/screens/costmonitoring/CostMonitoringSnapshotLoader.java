@@ -121,6 +121,11 @@ public class CostMonitoringSnapshotLoader {
 		}
 	}
 
+	// Dữ liệu nguồn vừa đổi (vd nạp OT – CostOtImportService): bỏ toàn bộ cache, request sau chạy lại SP
+	public void invalidateAll() {
+		cache.clear();
+	}
+
 	private boolean isFresh(CacheEntry entry) {
 		return entry != null && System.nanoTime() - entry.loadedAtNanos() < ttlNanos;
 	}
