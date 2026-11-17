@@ -53,7 +53,8 @@ public class BacklogColumnMetadataProvider {
 								normalize(name),
 								new ColumnMeta(
 										name,
-										resolveType(sqlType)
+										resolveType(sqlType),
+										isNonUnicodeText(sqlType)
 								)
 						);
 					}
@@ -156,9 +157,45 @@ public class BacklogColumnMetadataProvider {
 	}
 
 
+	// char / varchar: tham số chuỗi phải ép về VARCHAR (xem ColumnMeta.textParam).
+	private boolean isNonUnicodeText(
+			String sqlType
+	) {
+
+		if (sqlType == null) {
+			return false;
+		}
+
+		String type =
+				sqlType.toLowerCase(
+						Locale.ROOT
+				);
+
+		return "varchar".equals(type)
+				|| "char".equals(type);
+	}
+
+
 	public record ColumnMeta(
 			String name,
-			ColumnType type
+			ColumnType type,
+			boolean nonUnicodeText
 	) {
+
+		// =========================================================
+		// PLACEHOLDER CHO THAM SỐ CHUỖI
+		//
+		// mssql-jdbc mặc định gửi String dạng NVARCHAR.
+		// So sánh cột VARCHAR với tham số NVARCHAR làm SQL Server
+		// CONVERT_IMPLICIT cả cột -> index scan thay vì seek
+		// (và LIKE chậm hơn do so sánh Unicode).
+		// Ép tham số (không ép cột) về VARCHAR để giữ seek.
+		// =========================================================
+		public String textParam() {
+
+			return nonUnicodeText
+					? "CAST(? AS VARCHAR(8000))"
+					: "?";
+		}
 	}
 }

@@ -1,5 +1,6 @@
 package com.example.backlogbe.assistant.screens.costmonitoring;
 
+import com.example.backlogbe.logging.RequestTiming;
 import com.example.backlogbe.service.CostMonitoringService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -93,11 +94,20 @@ public class CostMonitoringSnapshotLoader {
 
 			// refresh: chỉ dùng lại kết quả được load SAU khi request này bắt đầu (do request khác vừa refresh)
 			if (isFresh(entry) && (!refresh || entry.loadedAtNanos() >= requestedAt)) {
+				log.info("Cost monitoring snapshot: rid={} month={} cache=WAIT waitMs={}",
+						RequestTiming.rid(), key.month(), RequestTiming.elapsedMs(requestedAt));
 				return entry.snapshot();
 			}
 
+			long spStart = System.nanoTime();
+
 			CostMonitoringSnapshot snapshot =
 					CostMonitoringSnapshot.of(costMonitoringService.getChart(month, simuWeek), today);
+
+			// Thời gian chạy sp_CostMonitoringChart + map (đối chiếu với SET STATISTICS TIME trên DB)
+			log.info("Cost monitoring snapshot: rid={} month={} simuWeek={} cache={} spMs={} waitMs={}",
+					RequestTiming.rid(), key.month(), key.simuWeek(), refresh ? "REFRESH" : "MISS",
+					RequestTiming.elapsedMs(spStart), (spStart - requestedAt) / 1_000_000L);
 
 			cache.put(key, new CacheEntry(snapshot, System.nanoTime()));
 

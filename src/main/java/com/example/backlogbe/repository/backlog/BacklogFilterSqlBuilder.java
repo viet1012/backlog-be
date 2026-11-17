@@ -70,6 +70,7 @@ public class BacklogFilterSqlBuilder {
 
 						case TEXT -> buildText(
 								quote(column.name()),
+								column.textParam(),
 								filter,
 								params
 						);
@@ -138,6 +139,7 @@ public class BacklogFilterSqlBuilder {
 
 	private String buildText(
 			String column,
+			String p,
 			BacklogFilterItem filter,
 			List<Object> params
 	) {
@@ -207,7 +209,7 @@ public class BacklogFilterSqlBuilder {
 									",",
 									java.util.Collections.nCopies(
 											nonBlankValues.size(),
-											"?"
+											p
 									)
 							);
 
@@ -255,7 +257,7 @@ public class BacklogFilterSqlBuilder {
 			case "contains" -> {
 				params.add("%" + value + "%");
 
-				yield column + " LIKE ?";
+				yield column + " LIKE " + p;
 			}
 
 
@@ -264,7 +266,7 @@ public class BacklogFilterSqlBuilder {
 
 				yield "("
 						+ column
-						+ " NOT LIKE ? OR "
+						+ " NOT LIKE " + p + " OR "
 						+ column
 						+ " IS NULL)";
 			}
@@ -273,7 +275,7 @@ public class BacklogFilterSqlBuilder {
 			case "equals", "is", "=" -> {
 				params.add(value);
 
-				yield column + " = ?";
+				yield column + " = " + p;
 			}
 
 
@@ -282,7 +284,7 @@ public class BacklogFilterSqlBuilder {
 
 				yield "("
 						+ column
-						+ " <> ? OR "
+						+ " <> " + p + " OR "
 						+ column
 						+ " IS NULL)";
 			}
@@ -291,14 +293,14 @@ public class BacklogFilterSqlBuilder {
 			case "startswith" -> {
 				params.add(value + "%");
 
-				yield column + " LIKE ?";
+				yield column + " LIKE " + p;
 			}
 
 
 			case "endswith" -> {
 				params.add("%" + value);
 
-				yield column + " LIKE ?";
+				yield column + " LIKE " + p;
 			}
 
 

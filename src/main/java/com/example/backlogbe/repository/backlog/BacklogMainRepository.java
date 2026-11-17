@@ -72,6 +72,20 @@ public class BacklogMainRepository {
 			    UpdatedAt
 			FROM F2_Backlog_Main
 			""";
+
+	private static final List<String> GLOBAL_SEARCH_FIELDS =
+			List.of(
+					"VBELN",
+					"ZGLOBAL_CODE",
+					"PIER_AUFNR",
+					"AUFNR",
+					"PNAME",
+					"RRONYU1",
+					"MTO_ID",
+					"CurrentProcess",
+					"ShipBy"
+			);
+
 	private final JdbcTemplate jdbcTemplate;
 
 	private final BacklogFilterSqlBuilder filterBuilder;
@@ -102,29 +116,68 @@ public class BacklogMainRepository {
 						+ search.trim()
 						+ "%";
 
-		conditions.add(
-				"""
-						(
-							CAST(VBELN AS NVARCHAR(500)) LIKE ?
-							OR CAST(ZGLOBAL_CODE AS NVARCHAR(500)) LIKE ?
-							OR CAST(PIER_AUFNR AS NVARCHAR(500)) LIKE ?
-							OR CAST(AUFNR AS NVARCHAR(500)) LIKE ?
-							OR CAST(PNAME AS NVARCHAR(500)) LIKE ?
-							OR CAST(RRONYU1 AS NVARCHAR(500)) LIKE ?
-							OR CAST(MTO_ID AS NVARCHAR(500)) LIKE ?
-							OR CAST(CurrentProcess AS NVARCHAR(500)) LIKE ?
-							OR CAST(ShipBy AS NVARCHAR(500)) LIKE ?
-						)
-						"""
-		);
+		List<String> parts =
+				new ArrayList<>(
+						GLOBAL_SEARCH_FIELDS.size()
+				);
 
 		for (
-				int i = 0;
-				i < 9;
-				i++
+				String field :
+				GLOBAL_SEARCH_FIELDS
 		) {
+
+			parts.add(
+					likeCondition(
+							field
+					)
+			);
+
 			params.add(keyword);
 		}
+
+		conditions.add(
+				"("
+						+ String.join(
+						" OR ",
+						parts
+				)
+						+ ")"
+		);
+	}
+
+
+	// =========================================================
+	// LIKE THEO KIỂU CỘT
+	//
+	// Cột text: không CAST cột (CAST sang NVARCHAR buộc chuyển đổi
+	// từng dòng + so sánh Unicode, chậm hơn nhiều với LIKE '%kw%').
+	// Cột VARCHAR: ép tham số về VARCHAR (ColumnMeta.textParam).
+	// Cột số / ngày: giữ CAST như cũ.
+	// =========================================================
+	private String likeCondition(
+			String field
+	) {
+
+		BacklogColumnMetadataProvider.ColumnMeta meta =
+				metadataProvider.get(
+						field
+				);
+
+		String column =
+				"[" + meta.name() + "]";
+
+		if (
+				meta.type()
+						== BacklogColumnMetadataProvider.ColumnType.TEXT
+		) {
+			return column
+					+ " LIKE "
+					+ meta.textParam();
+		}
+
+		return "CAST("
+				+ column
+				+ " AS NVARCHAR(500)) LIKE ?";
 	}
 
 	public List<BacklogMainDto> findFiltered(
@@ -459,9 +512,9 @@ public class BacklogMainRepository {
 			} else {
 
 				conditions.add(
-						"CAST("
-								+ column
-								+ " AS NVARCHAR(500)) LIKE ?"
+						likeCondition(
+								field
+						)
 				);
 			}
 
@@ -492,10 +545,14 @@ public class BacklogMainRepository {
 		// HIGH CARDINALITY
 		// =========================================================
 
+		// Cột không phải ngày (text tự do như PRT_ADDCMT1/2, Heat_Note,
+		// cột số...) cũng giới hạn TOP(limit) để không trả hàng chục nghìn
+		// giá trị distinct. Cột ngày giữ nguyên trả đủ (cây ngày ở FE).
 		if (
 				isHighCardinalityField(
 						field
 				)
+						|| !dateField
 		) {
 
 			String sql = """
@@ -953,64 +1010,18 @@ public class BacklogMainRepository {
 	) {
 
 		// =====================================================
-		// TOTAL
-		//
-		// Giữ nguyên business hiện tại:
-		// - COUNT_BIG(*)
-		// - SUM(FinalQty)
-		// - cùng filter với matrix
-		// =====================================================
-
-		String totalSql = """
-				SELECT
-				    COUNT_BIG(*) AS TotalPoCount,
-				
-				    COALESCE(
-				        SUM(
-				            CAST(
-				                COALESCE(FinalQty, 0)
-				                AS DECIMAL(38, 4)
-				            )
-				        ),
-				        0
-				    ) AS TotalQty
-				
-				FROM F2_Backlog_Main
-				"""
-				+ whereSql;
-
-		record TotalResult(
-				long totalPoCount,
-				BigDecimal totalQty
-		) {
-		}
-
-		TotalResult total =
-				jdbcTemplate.queryForObject(
-						totalSql,
-
-						(rs, rowNum) ->
-								new TotalResult(
-										rs.getLong(
-												"TotalPoCount"
-										),
-
-										rs.getBigDecimal(
-												"TotalQty"
-										)
-								),
-
-						params.toArray()
-				);
-
-		// =====================================================
-		// STATUS + DATE MATRIX
+		// STATUS + DATE MATRIX + TOTAL (1 QUERY)
 		//
 		// Status:
 		// lấy trực tiếp từ DB.
 		//
 		// Date:
 		// ExportD -> yyyy-MM-dd
+		//
+		// Trước đây TOTAL là query riêng (quét bảng 2 lần).
+		// Nay nhóm cả dòng ExportD NULL; TOTAL = cộng mọi nhóm
+		// (= COUNT_BIG(*) / SUM(FinalQty) trên cùng filter),
+		// ma trận chỉ lấy nhóm có ngày -> kết quả không đổi.
 		// =====================================================
 
 		String matrixSql = """
@@ -1055,9 +1066,7 @@ public class BacklogMainRepository {
 				    ) AS TotalQty
 				
 				FROM SummarySource
-				
-				WHERE SummaryDate IS NOT NULL
-				
+
 				GROUP BY
 				    SummaryDate,
 				    SummaryStatus
@@ -1121,6 +1130,33 @@ public class BacklogMainRepository {
 
 						params.toArray()
 				);
+
+		// =====================================================
+		// TOTAL (gồm cả nhóm ExportD NULL)
+		// =====================================================
+
+		long totalPoCount =
+				0L;
+
+		BigDecimal totalQty =
+				BigDecimal.ZERO;
+
+		for (
+				MatrixResult result :
+				results
+		) {
+
+			totalPoCount +=
+					result.poCount();
+
+			if (result.qty() != null) {
+
+				totalQty =
+						totalQty.add(
+								result.qty()
+						);
+			}
+		}
 
 		// =====================================================
 		// UNIQUE DATES
@@ -1260,23 +1296,9 @@ public class BacklogMainRepository {
 		// RESPONSE
 		// =====================================================
 
-		if (total == null) {
-
-			return new BacklogStatusSummaryDto(
-					0L,
-					BigDecimal.ZERO,
-					dates,
-					rows
-			);
-		}
-
 		return new BacklogStatusSummaryDto(
-				total.totalPoCount(),
-
-				total.totalQty() == null
-						? BigDecimal.ZERO
-						: total.totalQty(),
-
+				totalPoCount,
+				totalQty,
 				dates,
 				rows
 		);

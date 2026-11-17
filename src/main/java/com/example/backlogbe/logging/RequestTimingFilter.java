@@ -30,7 +30,12 @@ public class RequestTimingFilter extends OncePerRequestFilter {
 
 	private static final Set<String> TIMED_PATHS = Set.of(
 			"/api/assistant/chat",
-			"/api/cost-monitoring/detail"
+			"/api/backlogs/search",
+			"/api/backlogs/filter-options",
+			"/api/backlogs/summary/status",
+			"/api/cost-monitoring/chart",
+			"/api/cost-monitoring/detail",
+			"/api/cost-monitoring/detail/transactions"
 	);
 
 	@Override
