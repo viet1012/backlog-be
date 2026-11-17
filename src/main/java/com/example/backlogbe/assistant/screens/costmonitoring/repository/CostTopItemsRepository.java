@@ -83,8 +83,10 @@ public class CostTopItemsRepository {
 			    CROSS APPLY (SELECT TRY_CONVERT(DATE, CONVERT(VARCHAR(8), x.%11$s), 112) AS UD) u
 			    LEFT JOIN [KVH].[dbo].[CostCenterMaster] m
 			           ON m.PLCostCenterName = LTRIM(RTRIM(x.%8$s))
-			    WHERE LEFT(x.Factory, 3) = '612'
+			    WHERE x.Factory LIKE '612%%'
 			      AND TRY_CONVERT(INT, x.GLAccount) IN (570300, 570400)
+			      AND x.%11$s >= CONVERT(CHAR(8), CAST(:fromDate AS DATE), 112)
+			      AND x.%11$s <  CONVERT(CHAR(8), DATEADD(DAY, 1, CAST(:toDate AS DATE)), 112)
 			      AND u.UD BETWEEN :fromDate AND :toDate
 			)
 			""").formatted(
@@ -105,6 +107,8 @@ public class CostTopItemsRepository {
 			    LEFT JOIN [KVH].[dbo].[CostCodeMaster] c
 			           ON c.Code = LTRIM(RTRIM(x.%1$s))
 			    WHERE x.Factory = '612K'
+			      AND x.%11$s >= CONVERT(CHAR(8), CAST(:fromDate AS DATE), 112)
+			      AND x.%11$s <  CONVERT(CHAR(8), DATEADD(DAY, 1, CAST(:toDate AS DATE)), 112)
 			      AND u.UD BETWEEN :fromDate AND :toDate
 			      AND ISNULL(TRY_CONVERT(INT, x.GLAccount), 0) <> 580000
 			      AND ISNULL(TRY_CONVERT(INT, x.Movingtype), 0) NOT IN (551, 552)

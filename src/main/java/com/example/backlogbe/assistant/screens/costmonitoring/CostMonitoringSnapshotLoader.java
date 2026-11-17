@@ -24,7 +24,7 @@ import java.util.concurrent.ConcurrentHashMap;
 //   Lỗi (vd month / simuWeek sai -> IllegalArgumentException) không được cache.
 //   refresh = true: luôn load lại và ghi đè entry (kể cả khi TTL chưa hết).
 //   Snapshot / response chỉ đọc, dùng chung giữa các request.
-//   Request đồng thời cùng key khi cache trống có thể cùng load (không khóa) – chấp nhận để đơn giản.
+//   Request đồng thời cùng key khi cache trống / hết hạn: chỉ 1 request chạy SP, các request khác chờ và dùng chung kết quả.
 // =========================================================
 @Slf4j
 @Component
@@ -37,6 +37,9 @@ public class CostMonitoringSnapshotLoader {
 	private final long ttlNanos;
 
 	private final Map<CacheKey, CacheEntry> cache = new ConcurrentHashMap<>();
+
+	// Khóa theo key cho single-flight (xem load)
+	private final Map<CacheKey, Object> locks = new ConcurrentHashMap<>();
 
 	public CostMonitoringSnapshotLoader(
 			CostMonitoringService costMonitoringService,
@@ -75,24 +78,41 @@ public class CostMonitoringSnapshotLoader {
 				today
 		);
 
-		long now = System.nanoTime();
 		CacheEntry entry = cache.get(key);
 
-		if (!refresh && entry != null && now - entry.loadedAtNanos() < ttlNanos) {
+		if (!refresh && isFresh(entry)) {
 			return entry.snapshot();
 		}
 
-		CostMonitoringSnapshot snapshot =
-				CostMonitoringSnapshot.of(costMonitoringService.getChart(month, simuWeek), today);
+		// Single-flight theo key: request đồng thời cùng key chờ 1 lần chạy SP thay vì cùng chạy
+		long requestedAt = System.nanoTime();
 
-		cache.put(key, new CacheEntry(snapshot, System.nanoTime()));
+		synchronized (locks.computeIfAbsent(key, k -> new Object())) {
 
-		if (cache.size() > CLEANUP_THRESHOLD) {
-			long cutoff = System.nanoTime();
-			cache.entrySet().removeIf(e -> cutoff - e.getValue().loadedAtNanos() >= ttlNanos);
+			entry = cache.get(key);
+
+			// refresh: chỉ dùng lại kết quả được load SAU khi request này bắt đầu (do request khác vừa refresh)
+			if (isFresh(entry) && (!refresh || entry.loadedAtNanos() >= requestedAt)) {
+				return entry.snapshot();
+			}
+
+			CostMonitoringSnapshot snapshot =
+					CostMonitoringSnapshot.of(costMonitoringService.getChart(month, simuWeek), today);
+
+			cache.put(key, new CacheEntry(snapshot, System.nanoTime()));
+
+			if (cache.size() > CLEANUP_THRESHOLD) {
+				long cutoff = System.nanoTime();
+				cache.entrySet().removeIf(e -> cutoff - e.getValue().loadedAtNanos() >= ttlNanos);
+				locks.keySet().retainAll(cache.keySet());
+			}
+
+			return snapshot;
 		}
+	}
 
-		return snapshot;
+	private boolean isFresh(CacheEntry entry) {
+		return entry != null && System.nanoTime() - entry.loadedAtNanos() < ttlNanos;
 	}
 
 	private record CacheKey(String month, String simuWeek, LocalDate today) {
