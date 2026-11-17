@@ -303,6 +303,7 @@ public class CostMonitoringAnswerGuide {
 			boolean target = charts.stream().anyMatch(c -> c.fcTgt() != null);
 			int tsl = 0;
 			int rm = 0;
+			int ot = 0;
 			for (CostChartDto c : charts) {
 				if (c.actMtdLatest() == null) {
 					continue;
@@ -312,9 +313,11 @@ public class CostMonitoringAnswerGuide {
 					tsl = Math.max(tsl, day);
 				} else if ("RM".equals(c.chart())) {
 					rm = Math.max(rm, day);
+				} else if ("OT".equals(c.chart())) {
+					ot = Math.max(ot, day);
 				}
 			}
-			hasActual = tsl > 0 || rm > 0;
+			hasActual = tsl > 0 || rm > 0 || ot > 0;
 			if (!hasActual) {
 				text = label + t(lang, "**chưa có số chi (Actual)** trên màn hình Cost Monitoring",
 						"**no Actual spending** on the Cost Monitoring screen")
@@ -328,9 +331,13 @@ public class CostMonitoringAnswerGuide {
 				if (rm > 0) {
 					parts.add(t(lang, "RM đến ", "RM up to ") + CostMonitoringSnapshot.ddmm(month.atDay(rm)));
 				}
+				if (ot > 0) {
+					parts.add(t(lang, "OT đến ", "OT up to ") + CostMonitoringSnapshot.ddmm(month.atDay(ot)));
+				}
 				text = label + t(lang, "**có dữ liệu** – ", "**data available** – ") + String.join(", ", parts)
 						+ (s.monthClosed() ? t(lang, " (tháng đã kết thúc)", " (closed month)") : "")
-						+ t(lang, "; OT chưa có Actual (chỉ có FC / Fluct).", "; OT has no Actual (FC / Fluct only).");
+						+ (ot > 0 ? "" : t(lang, "; OT chưa có Actual (chưa nạp số OT, chỉ có FC / Fluct).",
+								"; OT has no Actual (OT figures not loaded yet, FC / Fluct only)."));
 			}
 		}
 
@@ -429,7 +436,9 @@ public class CostMonitoringAnswerGuide {
 	// Phân loại intent (luồng trước khi có câu tra cứu)
 	private AnswerGuide byIntent(String question, Map<String, String> params, String lang) {
 
-		Plan plan = ExplainVariancePrefetchRule.plan(question, params);
+		// Cùng kế hoạch với ExplainVariancePrefetchRule.calls (mặc định có OT khi tháng đã nạp Actual OT)
+		Plan plan = ExplainVariancePrefetchRule.plan(question, params) == null ? null
+				: ExplainVariancePrefetchRule.plan(question, params, ExplainVariancePrefetchRule.otActual(loader, params));
 
 		if (plan == null) {
 			// Không có kế hoạch: vẫn ghi cách phân loại cho audit (câu khái niệm / xu hướng Fluct -> null)

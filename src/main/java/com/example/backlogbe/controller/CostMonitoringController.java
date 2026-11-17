@@ -5,21 +5,28 @@ import com.example.backlogbe.assistant.screens.costmonitoring.CostMonitoringSnap
 import com.example.backlogbe.dto.costmonitoring.CostDetailResponse;
 import com.example.backlogbe.dto.costmonitoring.CostDetailResponse.TransactionPage;
 import com.example.backlogbe.dto.costmonitoring.CostMonitoringChartResponse;
+import com.example.backlogbe.dto.costmonitoring.CostOtImportResult;
+import com.example.backlogbe.dto.costmonitoring.CostOtStatusResponse;
 import com.example.backlogbe.dto.costmonitoring.CostPlWeeksResponse;
 import com.example.backlogbe.service.CostMonitoringDetailService;
 import com.example.backlogbe.service.CostMonitoringDetailService.TransactionExport;
 import com.example.backlogbe.service.CostMonitoringDetailService.TransactionScope;
 import com.example.backlogbe.service.CostMonitoringService;
 import com.example.backlogbe.service.CostMonitoringTransactionExcelService;
+import com.example.backlogbe.service.costot.CostOtImportService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
 
 import java.net.URLEncoder;
@@ -27,7 +34,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 
-// Chỉ đọc, không cần đăng nhập.
+// Đọc: không cần đăng nhập. Ghi (/ot/import*): cần X-Employee-Id có quyền (CostOtImportService).
 @CrossOrigin(origins = "*")
 @RestController
 @RequestMapping("/api/cost-monitoring")
@@ -38,6 +45,10 @@ public class CostMonitoringController {
 	private final CostMonitoringDetailService detailService;
 	private final CostMonitoringTransactionExcelService transactionExcelService;
 	private final CostMonitoringSnapshotLoader snapshotLoader;
+	private final CostOtImportService otImportService;
+
+	// Mã nhân viên do FE gửi (cùng cách Machine Locator / assistant logs)
+	static final String EMPLOYEE_HEADER = "X-Employee-Id";
 
 	private static final String EXCEL_CONTENT_TYPE =
 			"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
@@ -199,6 +210,50 @@ public class CostMonitoringController {
 
 		return ResponseEntity.ok(
 				service.getAvailableMonths()
+		);
+	}
+
+
+	// =========================================================
+	// ACTUAL OT (nạp từ file "FY.. Daily Cost monitoning.xlsx")
+	// Ghi dữ liệu: cần header X-Employee-Id có role trong cost-monitoring.ot.import-roles (mặc định ADMIN)
+	// =========================================================
+
+	// multipart/form-data: file=<.xlsx>; month=yyyy-MM (bỏ trống = mọi tháng trong file); dryRun=true chỉ xem trước
+	@PostMapping(value = "/ot/import", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+	public ResponseEntity<CostOtImportResult> importOt(
+			@RequestHeader(value = EMPLOYEE_HEADER, required = false) String employeeId,
+			@RequestPart(value = "file", required = false) MultipartFile file,
+			@RequestParam(required = false) String month,
+			@RequestParam(required = false, defaultValue = "false") boolean dryRun
+	) {
+
+		return ResponseEntity.ok(
+				otImportService.importUpload(file, month, dryRun, employeeId)
+		);
+	}
+
+	// BE tự đọc file trên share (cost-monitoring.ot.share-path); cùng params / kết quả với /ot/import
+	@PostMapping("/ot/import-from-share")
+	public ResponseEntity<CostOtImportResult> importOtFromShare(
+			@RequestHeader(value = EMPLOYEE_HEADER, required = false) String employeeId,
+			@RequestParam(required = false) String month,
+			@RequestParam(required = false, defaultValue = "false") boolean dryRun
+	) {
+
+		return ResponseEntity.ok(
+				otImportService.importFromShare(month, dryRun, employeeId)
+		);
+	}
+
+	// Tình trạng OT đã nạp trong tháng (4 dòng PR / MO / PG / MG); month yyyy-MM, bỏ trống = tháng hiện tại
+	@GetMapping("/ot/status")
+	public ResponseEntity<CostOtStatusResponse> getOtStatus(
+			@RequestParam(required = false) String month
+	) {
+
+		return ResponseEntity.ok(
+				otImportService.status(month)
 		);
 	}
 }

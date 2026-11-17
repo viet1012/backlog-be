@@ -41,7 +41,8 @@ import static com.example.backlogbe.assistant.screens.costmonitoring.CmText.t;
 //                      tăng / giảm nhiều nhất giữa 2 tháng đó; tháng đang chạy chỉ nêu dự báo.
 //   "Vì sao" khác (Ratio, nhiều khung, vật tư…), ngày cụ thể, khớp loại khác -> null (LLM + context các tháng + rangeNote).
 // Truy vấn các khung chạy song song trước khi dựng câu trả lời (warm); repository cache 6 giờ cho kỳ đã kết thúc.
-// Chỉ T&SL, RM (OT không có Actual theo ngày). Số % / chênh lệch tính từ số đã làm tròn 1 chữ số.
+// Tổng hợp theo tháng: T&SL, RM (+ OT khi câu hỏi nêu OT hoặc tháng đang xem có Actual OT); vì sao / vật tư: chỉ T&SL, RM
+// (OT không có dòng xuất kho). Số % / chênh lệch tính từ số đã làm tròn 1 chữ số.
 // Vật tư xuất nhiều lần nhất theo khoảng: CostMonitoringItemAnswers (chạy trước lớp này).
 // =========================================================
 @Slf4j
@@ -93,19 +94,35 @@ public class CostMonitoringRangeAnswers {
 
 		String f = CostMonitoringIntentClassifier.fold(question);
 		Map<String, String> safe = params != null ? params : Map.of();
-		List<CostMonitoringFocus> frames = CostMonitoringLookupAnswers.frames(question, safe);
+
+		// Tổng hợp theo tháng (snapshot): có OT khi câu hỏi nêu OT hoặc tháng đang xem đã có Actual OT
+		// (tháng trong khoảng chưa nạp OT -> ô "chưa có dữ liệu"). Vì sao / vật tư (dòng xuất kho): chỉ T&SL, RM.
+		List<CostMonitoringFocus> itemFrames = CostMonitoringLookupAnswers.frames(question, safe);
+		boolean withOt = CostMonitoringQuestion.costs(CostMonitoringQuestion.normalize(question)).contains("OT")
+				|| otActualViewed(safe);
+		List<CostMonitoringFocus> frames = withOt ? CostMonitoringLookupAnswers.frames(question, safe, true) : itemFrames;
 		if (frames.isEmpty()) {
 			return null;
 		}
 
 		boolean why = WHY.matcher(f).find();
+		String lookupKind0 = why ? null : CostMonitoringLookupAnswers.kind(question, f);
+		// Vì sao / top vật tư dựa trên dòng xuất kho -> không có OT
+		if (why || CostMonitoringLookupAnswers.TOP_ITEM.equals(lookupKind0)
+				|| CostMonitoringLookupAnswers.TOP_DETAIL.equals(lookupKind0)) {
+			frames = itemFrames;
+			if (frames.isEmpty()) {
+				return null;
+			}
+		}
+
 		// "Vì sao" chỉ nhận câu về chi phí / % Fluct của tối đa 2 khung (không hỏi vật tư / máy…) – còn lại LLM
 		if (why && (frames.size() > WHY_MAX_FRAMES || DETAIL.matcher(f).find()
 				|| CostMonitoringLookupAnswers.dimension(question, f) != null || !WHY_SUBJECT.matcher(f).find())) {
 			return null;
 		}
 
-		String lookupKind = why ? null : CostMonitoringLookupAnswers.kind(question, f);
+		String lookupKind = lookupKind0;
 		String kind;
 		String text;
 
@@ -140,6 +157,16 @@ public class CostMonitoringRangeAnswers {
 				+ String.join(",", frames.stream().map(fr -> fr.div() + " " + fr.cost()).toList()) + "; template=yes";
 
 		return new AnswerGuide(null, false, kind, text, suggestions(kind, frames, range, lang), match);
+	}
+
+
+	// Tháng đang xem có Actual OT (đã nạp file Daily Cost monitoring); lỗi đọc -> false (giữ T&SL, RM như cũ)
+	private boolean otActualViewed(Map<String, String> params) {
+		try {
+			return CostMonitoringLookupAnswers.otHasActual(loader.load(params));
+		} catch (RuntimeException e) {
+			return false;
+		}
 	}
 
 
@@ -295,8 +322,13 @@ public class CostMonitoringRangeAnswers {
 			sb.append(t(lang, "Chưa có dữ liệu (không có Actual trên màn hình): " + join(data.missing()) + ". ",
 					"No data (no Actual on screen): " + join(data.missing()) + ". "));
 		}
-		sb.append(t(lang, "Target (Fluct) tính theo từng tháng; chỉ T&SL, RM (OT không có Actual theo ngày).",
-				"Targets (Fluct) are per month; T&SL and RM only (OT has no daily Actual).")).append('_');
+		boolean hasOt = data.rows().keySet().stream().anyMatch(fr -> "OT".equals(fr.cost()));
+		sb.append(t(lang, "Target (Fluct) tính theo từng tháng", "Targets (Fluct) are per month"))
+				.append(hasOt
+						? t(lang, "; OT là số nạp từ file Daily Cost monitoring (tháng chưa nạp ghi \"chưa có số\").",
+						"; OT comes from the Daily Cost monitoring file (months not loaded show \"no data\").")
+						: t(lang, "; chỉ T&SL, RM.", "; T&SL and RM only."))
+				.append('_');
 		return sb.toString();
 	}
 

@@ -487,7 +487,7 @@
   {
     "question": "Khi nào dữ liệu được cập nhật?",
     "month": "2026-11",
-    "mustContain": ["T&SL", "RM"],
+    "mustContain": ["T&SL", "RM", "OT"],
     "mustNotContain": ["buổi sáng"],
     "llmCallCount": 0,
     "answerIntent": "data_update"
@@ -505,8 +505,14 @@
     "month": "2026-11",
     "mustContain": ["OT"],
     "mustNotContain": ["53.2"],
+    "llmCallCount": 0
+  },
+  {
+    "question": "OT của PRESS tháng này bao nhiêu?",
+    "month": "2026-11",
+    "mustContain": ["PRESS OT", "Fluct"],
     "llmCallCount": 0,
-    "answerIntent": "ot_no_data"
+    "answerIntent": "ot_value"
   },
   {
     "question": "Đến ngày 28 MOLD RM dự kiến chi bao nhiêu?",

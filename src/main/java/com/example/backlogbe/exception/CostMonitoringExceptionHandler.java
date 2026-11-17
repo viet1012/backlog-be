@@ -10,6 +10,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -57,6 +58,19 @@ public class CostMonitoringExceptionHandler {
 		return body(
 				HttpStatus.BAD_REQUEST,
 				ex.getName() + " has an invalid value."
+		);
+	}
+
+	// 401 / 403 / 503 do service chủ động trả (nạp OT: thiếu quyền, share không đọc được)
+	@ExceptionHandler(ResponseStatusException.class)
+	public ResponseEntity<Map<String, Object>> handleStatus(
+			ResponseStatusException ex
+	) {
+		return body(
+				ex.getStatusCode(),
+				ex.getReason() != null
+						? ex.getReason()
+						: "Request failed"
 		);
 	}
 

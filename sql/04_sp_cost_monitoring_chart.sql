@@ -1,6 +1,7 @@
 /* =====================================================================
    SP cho API chart Cost Monitoring (9 chart: PR/MO/Guide x OT/T&SL/RM)
-   Cần chạy trước: 01_cost_master.sql, 02_fn_cost_actual_daily.sql
+   Cần chạy trước: 01_cost_master.sql, 07_cost_ot_daily.sql, 02_fn_cost_actual_daily.sql
+   Actual OT: dbo.CostOtDaily (nạp qua POST /api/cost-monitoring/ot/import), cutoff = ngày cuối có dòng OT
    Index đề xuất: 05_cost_monitoring_indexes.sql
    Fluctuating TGT + ngày làm việc lấy từ [F2Database].[dbo].[F2_Working_Date]
    EXEC [KVH].dbo.sp_CostMonitoringChart @MonthStart = '2026-10-01', @SimuWeek = NULL;
@@ -106,6 +107,19 @@ BEGIN
     WHERE D IS NOT NULL
     GROUP BY Div, Chart, D;
 
+    /* OT: số nạp thủ công từ file FY26 (dbo.CostOtDaily) -> Actual chỉ tới ngày cuối CÓ DÒNG OT (≤ hôm qua),
+       không coi ngày chưa nạp là 0 (Estimate nối từ ngày có số thật). Chưa nạp gì trong tháng -> Act NULL. */
+    CREATE TABLE #OtCut (
+        Div    NVARCHAR(10) NOT NULL PRIMARY KEY,
+        Cutoff DATE NULL
+    );
+
+    INSERT INTO #OtCut (Div, Cutoff)
+    SELECT Div, MAX(D)
+    FROM #Act
+    WHERE Chart = N'OT' AND D <= @AsOf
+    GROUP BY Div;
+
     /* ---------- 4. Base: 9 khung x số ngày trong tháng ---------- */
     CREATE TABLE #Base (
         Div       NVARCHAR(10) NOT NULL,
@@ -140,13 +154,15 @@ BEGIN
            -- Pace cho Estimate: ưu tiên PL TGT, không có thì dùng FC TGT
            COALESCE(t.PL_TGT, t.FC_TGT) * SUM(k.WD) OVER (PARTITION BY t.Div, t.Chart ORDER BY k.D ROWS UNBOUNDED PRECEDING)
                     / NULLIF(SUM(k.WD) OVER (PARTITION BY t.Div, t.Chart), 0),
-           CASE WHEN t.Chart <> N'OT' AND k.D <= x.Cutoff THEN
+           CASE WHEN k.D <= x.Cutoff THEN
                 SUM(CASE WHEN k.D <= x.Cutoff THEN ISNULL(a.Amt, 0) END)
                     OVER (PARTITION BY t.Div, t.Chart ORDER BY k.D ROWS UNBOUNDED PRECEDING)
            END
     FROM #Tgt t
     CROSS JOIN CalWD k
-    CROSS APPLY (SELECT CASE WHEN t.Chart = N'RM' THEN @AsOfRM ELSE @AsOf END AS Cutoff) x
+    CROSS APPLY (SELECT CASE WHEN t.Chart = N'RM' THEN @AsOfRM
+                             WHEN t.Chart = N'OT' THEN (SELECT oc.Cutoff FROM #OtCut oc WHERE oc.Div = t.Div)
+                             ELSE @AsOf END AS Cutoff) x
     LEFT JOIN #WDay wr ON wr.D = CASE WHEN k.D >= @Today THEN DATEADD(DAY, -1, @Today) ELSE k.D END
     LEFT JOIN #Act a ON a.Div = t.Div AND a.Chart = t.Chart AND a.D = k.D
     OPTION (MAXRECURSION 40);

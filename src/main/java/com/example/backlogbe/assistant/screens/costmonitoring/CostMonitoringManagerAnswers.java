@@ -45,7 +45,7 @@ import static com.example.backlogbe.assistant.screens.costmonitoring.CmText.t;
 //   forecast_reliability: dự báo có đáng tin không -> cách tính, khung theo FC / PL, % tháng đã qua, khung 2 cách trái chiều.
 //   badge_explain     : "vì sao ghi Vượt 106%" -> % dự báo = Estimate cuối tháng / Fluct; % thực tế = Actual / Fluct.
 //   what to save      : saving_total – tổng phần dự báo vượt Fluct (gộp) + tổng ròng (ghi rõ).
-//   total_forecast    : tổng dự báo cuối tháng T&SL + RM theo bộ phận và cả 3 bộ phận so với Fluct / FC (code cộng).
+//   total_forecast    : tổng dự báo cuối tháng T&SL + RM (+ OT khi có Actual) theo bộ phận và cả 3 bộ phận so với Fluct / FC (code cộng).
 //   division_rank     : bộ phận nào đáng lo -> tổng K$ dự báo vượt Fluct theo bộ phận + khung đơn lẻ nặng nhất.
 //   report_list       : cần báo cáo khung nào -> đã vượt thực tế trước, rồi dự báo vượt theo K$ giảm dần.
 //   attention         : có gì cần tôi chú ý -> tối đa 3 điểm theo mức độ.
@@ -53,7 +53,7 @@ import static com.example.backlogbe.assistant.screens.costmonitoring.CmText.t;
 //   exec_summary      : tóm tắt / báo cáo nhanh / giám đốc / meeting -> ≤ 8 dòng (kết luận, 3 điểm, đề xuất);
 //                       "trong 3 câu" -> đúng 3 câu.
 // Phạm vi khung: câu tổng hợp (summary, report, total, saving, division, reliability, attention) chỉ theo bộ phận / loại
-//   chi phí NÊU trong câu (không bám ô drawer), mặc định 3 bộ phận × T&SL, RM (OT không có Actual). Câu 1 khung
+//   chi phí NÊU trong câu (không bám ô drawer), mặc định 3 bộ phận × T&SL, RM (+ OT khi tháng có Actual OT). Câu 1 khung
 //   (short, what-if, badge, history, production) dùng CostMonitoringLookupAnswers.frames (có drawer).
 // Mọi số hiển thị / cộng / trừ tính từ số đã làm tròn 1 chữ số; "vượt" theo CostMonitoringAssessment (giống FE).
 // =========================================================
@@ -453,8 +453,10 @@ public class CostMonitoringManagerAnswers {
 			return null;
 		}
 
-		List<Row> focus = rows(snapshot, CostMonitoringLookupAnswers.frames(question, params));
-		List<Row> all = rows(snapshot, scope(question));
+		// OT tham gia như T&SL / RM khi tháng đã có Actual OT (rows() vẫn bỏ khung chưa có Actual)
+		boolean ot = CostMonitoringLookupAnswers.otHasActual(snapshot);
+		List<Row> focus = rows(snapshot, CostMonitoringLookupAnswers.frames(question, params, ot));
+		List<Row> all = rows(snapshot, scope(question, ot));
 
 		return switch (kind) {
 			case PRODUCTION -> production(snapshot, focus, lang);
@@ -525,7 +527,8 @@ public class CostMonitoringManagerAnswers {
 		return new Answer(sb.toString().trim(), samples);
 	}
 
-	// OT: chỉ có FC / Fluct (chưa có Actual) – nêu target từng bộ phận được hỏi, không bịa số đã chi
+	// "OT bao nhiêu": Actual OT (nạp từ file Daily Cost monitoring) so với Fluct + dự báo cuối tháng từng bộ phận được hỏi.
+	// Bộ phận chưa có Actual OT tháng này -> chỉ nêu FC / Fluct, không bịa số đã chi.
 	private static Answer otValue(CostMonitoringSnapshot s, String question, String lang) {
 
 		List<String> divs = CostMonitoringQuestion.divs(CostMonitoringQuestion.normalize(question));
@@ -533,11 +536,16 @@ public class CostMonitoringManagerAnswers {
 			divs = CostMonitoringSnapshot.DIVS;
 		}
 
-		StringBuilder sb = new StringBuilder(t(lang,
-				"Khung **OT** chưa có Actual trên màn hình này (chỉ có FC / Fluct), nên chưa có số đã chi. Target tháng "
-						+ s.month() + ":",
-				"**OT** frames have no Actual on this screen (FC / Fluct only), so there is no spending yet. Targets for "
-						+ s.month() + ":")).append('\n');
+		boolean anyActual = divs.stream()
+				.map(div -> s.find(div, "OT"))
+				.anyMatch(c -> c != null && c.actMtdLatest() != null);
+
+		StringBuilder sb = new StringBuilder(anyActual
+				? t(lang, "Chi phí **OT** tháng " + s.month() + ":", "**OT** cost for " + s.month() + ":")
+				: t(lang, "Khung **OT** tháng " + s.month() + " chưa có Actual (chưa nạp số OT, chỉ có FC / Fluct), "
+								+ "nên chưa có số đã chi. Target:",
+						"**OT** frames for " + s.month() + " have no Actual yet (OT figures not loaded, FC / Fluct only), "
+								+ "so there is no spending yet. Targets:")).append('\n');
 
 		int lines = 0;
 		for (String div : divs) {
@@ -546,8 +554,28 @@ public class CostMonitoringManagerAnswers {
 				continue;
 			}
 			lines++;
-			sb.append("- ").append(div).append(" OT: FC ").append(CmText.k1(chart.fcTgt()))
-					.append("; Fluct ").append(CmText.k1(CostMonitoringSnapshot.fluct(chart))).append('\n');
+			sb.append("- **").append(div).append(" OT**: ");
+
+			CostMonitoringAssessment a = chart.actMtdLatest() != null ? CostMonitoringAssessment.of(s, chart) : null;
+
+			if (a == null || a.act() == null) {
+				sb.append(t(lang, "chưa có Actual; ", "no Actual yet; "))
+						.append("FC ").append(CmText.k1(chart.fcTgt()))
+						.append("; Fluct ").append(CmText.k1(CostMonitoringSnapshot.fluct(chart))).append('\n');
+				continue;
+			}
+
+			int day = s.lastActualDay(chart);
+			sb.append("Actual ").append(CmText.k1(a.act()))
+					.append(day > 0 ? t(lang, " (đến ", " (up to ") + CostMonitoringSnapshot.ddmm(s.month().atDay(day)) + ")" : "")
+					.append(" / Fluct ").append(CmText.k1(a.fluct()));
+			if (a.pct() != null) {
+				sb.append(" (").append(CmText.pct1(CmText.r1(a.pct()))).append(")");
+			}
+			if (!s.monthClosed()) {
+				sb.append(t(lang, "; dự báo: ", "; forecast: ")).append(CmText.estimateBrief(a, lang));
+			}
+			sb.append('\n');
 		}
 
 		if (lines == 0) {
@@ -604,7 +632,7 @@ public class CostMonitoringManagerAnswers {
 				? highestSentence(rows, lang)
 				: t(lang, "Nặng nhất là **", "The heaviest is **") + byK.name() + "**: " + forecastVsFluct(byK, lang)
 				+ crossSuffix(byK, lang) + ".";
-		String s3 = withinSentence(within, lang);
+		String s3 = withinSentence(within, rows, lang);
 
 		StringBuilder sb = new StringBuilder();
 
@@ -917,10 +945,11 @@ public class CostMonitoringManagerAnswers {
 				.append(t(lang, "; so với FC ", "; vs FC ")).append(CmText.k1(fc)).append(" → ")
 				.append(CmText.signedK(CmText.r1(est - fc))).append(".\n\n");
 
-		sb.append('_').append(t(lang,
-						"OT không tính vì chưa có Actual / dự báo. Tổng cộng từ số từng khung đã làm tròn 1 chữ số; bù trừ giữa "
+		String otNote = otNote(rows, lang);
+		sb.append('_').append(otNote.isEmpty() ? "" : otNote + " ").append(t(lang,
+						"Tổng cộng từ số từng khung đã làm tròn 1 chữ số; bù trừ giữa "
 								+ "các khung chỉ để tham khảo vì mỗi khung có target riêng. ",
-						"OT is excluded (no Actual / forecast). Totals add the per-frame numbers rounded to 1 decimal; offsets "
+						"Totals add the per-frame numbers rounded to 1 decimal; offsets "
 								+ "between frames are for reference only since each frame has its own target. "))
 				.append(dataFooter(s, rows, lang).substring(1));
 
@@ -1035,7 +1064,7 @@ public class CostMonitoringManagerAnswers {
 				t(lang, "Cần báo cáo lên cấp trên những khung nào?", "Which frames should be escalated?")));
 	}
 
-	// Xếp bộ phận theo tổng Actual (T&SL + RM, số đã làm tròn); OT không có Actual
+	// Xếp bộ phận theo tổng Actual (T&SL + RM, + OT khi đã nạp; số đã làm tròn)
 	private Answer divisionSpend(CostMonitoringSnapshot s, List<Row> rows, boolean personLike, String lang) {
 
 		List<Row> withAct = rows.stream().filter(r -> CmText.r1(r.a().act()) != null).toList();
@@ -1078,10 +1107,11 @@ public class CostMonitoringManagerAnswers {
 			sb.append('\n');
 		}
 
+		String otNote = otNote(withAct, lang);
 		sb.append(t(lang,
-				"Chi nhiều chưa có nghĩa là vượt: mỗi khung có target riêng (xem \"Bộ phận nào đáng lo nhất?\"). OT chưa có Actual nên không tính.",
-				"Higher spending does not mean over target: each frame has its own target (ask \"Which division is the most concerning?\"). "
-						+ "OT has no Actual, so it is excluded.")).append('\n');
+				"Chi nhiều chưa có nghĩa là vượt: mỗi khung có target riêng (xem \"Bộ phận nào đáng lo nhất?\").",
+				"Higher spending does not mean over target: each frame has its own target (ask \"Which division is the most concerning?\")."))
+				.append(otNote.isEmpty() ? "" : " " + otNote).append('\n');
 
 		sb.append('\n').append(dataFooter(s, rows, lang));
 
@@ -1232,7 +1262,13 @@ public class CostMonitoringManagerAnswers {
 			return null;
 		}
 
-		List<Row> prevOver = prev.values().stream().filter(r -> CostMonitoringAssessment.exceeds(r.a().act(), r.a().fluct())).toList();
+		// Chỉ so khung có số ở cả 2 tháng (vd OT tháng trước chưa nạp -> bỏ OT khỏi so sánh)
+		cur = cur.stream().filter(r -> prev.containsKey(r.name())).toList();
+		if (cur.isEmpty()) {
+			return null;
+		}
+
+		List<Row> prevOver =prev.values().stream().filter(r -> CostMonitoringAssessment.exceeds(r.a().act(), r.a().fluct())).toList();
 		List<Row> curOver = cur.stream().filter(r -> r.a().estimateWillExceed()).toList();
 		double prevGap = sumR1(prevOver, r -> CmText.subR1(r.a().act(), r.a().fluct()));
 		double curGap = sumR1(curOver, r -> r.a().estimateOver());
@@ -1704,16 +1740,23 @@ public class CostMonitoringManagerAnswers {
 
 	// Bộ phận / loại chi phí NÊU trong câu (không bám drawer); mặc định 3 bộ phận × T&SL, RM
 	static List<CostMonitoringFocus> scope(String question) {
+		return scope(question, false);
+	}
+
+	// withOt = true (tháng có Actual OT): mặc định 3 bộ phận × OT, T&SL, RM
+	static List<CostMonitoringFocus> scope(String question, boolean withOt) {
+
+		List<String> allowed = withOt ? CostMonitoringSnapshot.COSTS : COSTS;
 
 		String q = CostMonitoringQuestion.normalize(question);
 		List<String> divs = CostMonitoringQuestion.divs(q);
-		List<String> costs = CostMonitoringQuestion.costs(q).stream().filter(COSTS::contains).toList();
+		List<String> costs = CostMonitoringQuestion.costs(q).stream().filter(allowed::contains).toList();
 
 		if (divs.isEmpty()) {
 			divs = CostMonitoringSnapshot.DIVS;
 		}
 		if (costs.isEmpty()) {
-			costs = COSTS;
+			costs = allowed;
 		}
 
 		List<CostMonitoringFocus> frames = new ArrayList<>();
@@ -1725,7 +1768,7 @@ public class CostMonitoringManagerAnswers {
 		return frames;
 	}
 
-	// Khung có Actual và Fluct (OT bị loại vì không có Actual)
+	// Khung có Actual và Fluct (khung chưa có Actual – vd OT tháng chưa nạp – bị loại)
 	private static List<Row> rows(CostMonitoringSnapshot s, List<CostMonitoringFocus> frames) {
 
 		List<Row> rows = new ArrayList<>();
@@ -1810,16 +1853,26 @@ public class CostMonitoringManagerAnswers {
 				.orElse(t(lang, "Chưa đủ dữ liệu dự báo.", "Not enough forecast data."));
 	}
 
-	private static String withinSentence(List<Row> within, String lang) {
+	private static String withinSentence(List<Row> within, List<Row> rows, String lang) {
 
-		String ot = t(lang, "OT chưa có Actual nên chưa đánh giá.", "OT has no Actual, so it is not assessed.");
+		String ot = otNote(rows, lang);
 
 		if (within.isEmpty()) {
-			return t(lang, "Không khung nào còn trong Fluct theo dự báo; ", "No frame stays within Fluct by forecast; ") + ot;
+			return (t(lang, "Không khung nào còn trong Fluct theo dự báo.", "No frame stays within Fluct by forecast.")
+					+ (ot.isEmpty() ? "" : " " + ot));
 		}
 
 		return t(lang, "Trong Fluct: ", "Within Fluct: ")
-				+ String.join("; ", within.stream().map(r -> withinText(r, lang)).toList()) + ". " + ot;
+				+ String.join("; ", within.stream().map(r -> withinText(r, lang)).toList()) + "."
+				+ (ot.isEmpty() ? "" : " " + ot);
+	}
+
+	// Có khung OT trong danh sách (đã có Actual) -> ""; không -> "OT chưa có Actual (chưa nạp số OT) nên chưa tính."
+	private static String otNote(List<Row> rows, String lang) {
+		return rows.stream().anyMatch(r -> "OT".equals(r.cost()))
+				? ""
+				: t(lang, "OT chưa có Actual (chưa nạp số OT) nên chưa tính.",
+				"OT has no Actual yet (OT figures not loaded), so it is not included.");
 	}
 
 	// "PRESS RM (99.8% Fluct, còn dư 0.8 K$; vượt FC +8.1 K$)"
@@ -1896,7 +1949,7 @@ public class CostMonitoringManagerAnswers {
 	}
 
 	private static String costsLabel(List<Row> rows) {
-		return String.join(" / ", COSTS.stream().filter(c -> rows.stream().anyMatch(r -> c.equals(r.cost()))).toList());
+		return String.join(" / ", CostMonitoringSnapshot.COSTS.stream().filter(c -> rows.stream().anyMatch(r -> c.equals(r.cost()))).toList());
 	}
 
 	// Cộng các số đã làm tròn 1 chữ số, làm tròn lại 1 chữ số
@@ -1938,6 +1991,7 @@ public class CostMonitoringManagerAnswers {
 
 		int tsl = 0;
 		int rm = 0;
+		int ot = 0;
 
 		for (Row r : rows) {
 			int day = s.lastActualDay(r.chart());
@@ -1945,10 +1999,15 @@ public class CostMonitoringManagerAnswers {
 				tsl = Math.max(tsl, day);
 			} else if ("RM".equals(r.cost())) {
 				rm = Math.max(rm, day);
+			} else if ("OT".equals(r.cost())) {
+				ot = Math.max(ot, day);
 			}
 		}
 
 		List<String> parts = new ArrayList<>();
+		if (ot > 0) {
+			parts.add("OT " + t(lang, "đến ", "up to ") + CostMonitoringSnapshot.ddmm(s.month().atDay(ot)));
+		}
 		if (tsl > 0) {
 			parts.add("T&SL " + t(lang, "đến ", "up to ") + CostMonitoringSnapshot.ddmm(s.month().atDay(tsl)));
 		}

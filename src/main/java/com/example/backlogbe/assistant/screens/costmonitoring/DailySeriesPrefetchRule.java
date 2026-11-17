@@ -20,9 +20,9 @@ import java.util.regex.Pattern;
 //   en: which day, daily, by day, day by day, spike, "when … exceed / over".
 // Khung:
 //   đúng 1 (CostMonitoringQuestion.frame: câu hỏi, phần thiếu lấy từ ô drawer) -> month_end=true (đến hết tháng)
-//   ≥ 2 khung nêu rõ trong câu (bộ phận × T&SL / RM, tối đa 6) -> mỗi khung 1 lần, month_end=false
+//   ≥ 2 khung nêu rõ trong câu (bộ phận × OT / T&SL / RM, tối đa 9) -> mỗi khung 1 lần, month_end=false
 //     (đến ngày D + dòng tóm tắt Estimate cuối tháng / ngày dự kiến vượt)
-//   OT bỏ qua (chưa có actual).
+//   OT có Actual từ khi nạp file Daily Cost monitoring; tháng chưa nạp -> tool tự trả "chưa có Actual".
 // Không ra kết quả -> fallbackHint nhắc model tự gọi get_daily_series.
 // =========================================================
 @Component
@@ -47,8 +47,8 @@ public class DailySeriesPrefetchRule implements PrefetchRule {
 			"(?<![\\p{L}\\p{N}_])when(?![\\p{L}\\p{N}_]).*(?<![\\p{L}\\p{N}_])(?:exceed\\w*|over)(?![\\p{L}\\p{N}_])"
 	);
 
-	// Prefetch nhiều khung: tối đa (PRESS / MOLD / GUIDE × T&SL / RM)
-	private static final int MAX_FRAMES = 6;
+	// Prefetch nhiều khung: tối đa (PRESS / MOLD / GUIDE × OT / T&SL / RM)
+	private static final int MAX_FRAMES = 9;
 
 	// "chi nhiều nhất / ít nhất / cao nhất / thấp nhất" (có dấu / không dấu)
 	private static final Pattern MOST_SPENT = Pattern.compile(
@@ -91,13 +91,13 @@ public class DailySeriesPrefetchRule implements PrefetchRule {
 
 		// 1 khung: chuỗi đến hết tháng (ngày chưa tới có Estimate (MTD))
 		if (frame != null) {
-			return "OT".equals(frame.cost()) ? List.of() : List.of(call(1, frame, true));
+			return List.of(call(1, frame, true));
 		}
 
 		// Nhiều khung nêu rõ trong câu hỏi (≥ 2): chuỗi đến ngày D + dòng tóm tắt Estimate, không kéo đến hết tháng
 		String q = CostMonitoringQuestion.normalize(question);
 		List<String> divs = CostMonitoringQuestion.divs(q);
-		List<String> costs = CostMonitoringQuestion.costs(q).stream().filter(c -> !"OT".equals(c)).toList();
+		List<String> costs = CostMonitoringQuestion.costs(q);
 
 		if (divs.isEmpty() || costs.isEmpty() || divs.size() * costs.size() < 2) {
 			return List.of();
