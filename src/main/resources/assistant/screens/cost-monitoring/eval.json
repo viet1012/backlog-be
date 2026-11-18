@@ -659,20 +659,26 @@
   {
     "question": "OT PRESS tháng 10 bao nhiêu?",
     "month": "2026-11",
-    "mustContain": ["82.6"],
-    "mustNotContain": []
+    "mustContain": ["82.6", "2026-10"],
+    "mustNotContain": ["dự báo"],
+    "llmCallCount": 0,
+    "answerIntent": "ot_value"
   },
   {
     "question": "OT MOLD tháng 10 bao nhiêu?",
     "month": "2026-11",
-    "mustContain": ["29.0"],
-    "mustNotContain": []
+    "mustContain": ["29.0", "2026-10"],
+    "mustNotContain": ["dự báo"],
+    "llmCallCount": 0,
+    "answerIntent": "ot_value"
   },
   {
     "question": "OT GUIDE tháng 10 bao nhiêu?",
     "month": "2026-11",
-    "mustContain": ["35.6"],
-    "mustNotContain": []
+    "mustContain": ["35.6", "2026-10"],
+    "mustNotContain": ["dự báo"],
+    "llmCallCount": 0,
+    "answerIntent": "ot_value"
   },
   {
     "question": "Chi phí R&M sửa chữa bảo trì của PRESS tháng này bao nhiêu?",
@@ -689,5 +695,13 @@
     "mustNotContain": ["K$"],
     "llmCallCount": 0,
     "answerIntent": "not_on_screen"
+  },
+  {
+    "question": "PRESS T&SL tháng trước chi bao nhiêu?",
+    "month": "2026-11",
+    "mustContain": ["191.4", "2026-10"],
+    "mustNotContain": [],
+    "llmCallCount": 0,
+    "answerIntent": "frame_value"
   }
 ]

@@ -255,6 +255,13 @@ public class CostMonitoringAnswerGuide {
 			return item;
 		}
 
+		// "PRESS T&SL tháng trước chi bao nhiêu?": QuestionMonthDetector không coi "tháng trước" là tháng khác nên câu đi
+		// luồng này (eval 2026-11-18 #93: qua LLM 31 s) -> template số của tháng được hỏi
+		AnswerGuide value = otherMonthValue(question, params, lang);
+		if (value != null) {
+			return value;
+		}
+
 		// "Tháng trước có gì bất thường / tình hình tháng trước": template tổng quan của tháng trước
 		AnswerGuide previous = previousMonthOverview(question, params, lang);
 		if (previous != null) {
@@ -338,7 +345,59 @@ public class CostMonitoringAnswerGuide {
 		if (item != null) {
 			return item;
 		}
+		AnswerGuide value = otherMonthValue(question, params, lang);
+		if (value != null) {
+			return value;
+		}
 		return previousMonthOverview(question, params, lang);
+	}
+
+	// Cụm tháng trong câu gốc (có / không dấu): "tháng trước", "tháng 10", "tháng 10/2026", "last month"
+	private static final Pattern RAW_MONTH = Pattern.compile(
+			"(?iu)(?<![\\p{L}\\p{N}_])(?:th[aá]ng\\s+(?:tr[uư][oớ]c|\\d{1,2}(?:\\s*[/-]\\s*20\\d{2})?)|last month|previous month)(?![\\p{L}\\p{N}_])");
+
+	// Chỉ các template hỏi SỐ, tính được trên snapshot của 1 tháng bất kỳ (tháng đã kết thúc: không có dự báo)
+	private static final java.util.Set<String> OTHER_MONTH_VALUE_KINDS =
+			java.util.Set.of(CostMonitoringManagerAnswers.OT_VALUE, CostMonitoringLookupAnswers.FRAME_VALUE);
+
+	// "OT PRESS tháng 10 bao nhiêu?", "PRESS T&SL tháng trước chi bao nhiêu?" (eval 2026-11-18: qua LLM 7–34 s dù đã có số):
+	// bỏ cụm tháng khỏi câu, phân loại như câu tháng đang xem, chỉ nhận ot_value / frame_value, tính trên snapshot tháng hỏi.
+	private AnswerGuide otherMonthValue(String question, Map<String, String> params, String lang) {
+
+		String folded = CostMonitoringIntentClassifier.fold(question);
+		// So sánh 2 tháng ("… tháng trước so với tháng này", "cùng kỳ") -> không phải số của 1 tháng
+		if (PREVIOUS_MONTH_COMPARE.matcher(folded).find()) {
+			return null;
+		}
+
+		Map<String, String> safe = params != null ? params : Map.of();
+		java.time.YearMonth viewed = loader.month(safe);
+		java.time.YearMonth asked = CostMonitoringItemAnswers.askedMonth(question, folded, viewed);
+
+		if (asked == null || asked.equals(viewed) || asked.isAfter(java.time.YearMonth.from(loader.today()))) {
+			return null;
+		}
+
+		String stripped = RAW_MONTH.matcher(question).replaceAll(" ").replaceAll("\\s+", " ").trim();
+		if (stripped.isEmpty()) {
+			return null;
+		}
+
+		Map<String, String> monthParams = new java.util.HashMap<>(safe);
+		monthParams.put("month", asked.toString());
+		monthParams.remove("simuWeek");
+		monthParams.remove("plTgtMode");
+
+		AnswerGuide g = managerAnswers.guide(stripped, monthParams, lang);
+		if (g == null || !OTHER_MONTH_VALUE_KINDS.contains(g.intent())) {
+			g = lookupAnswers.guide(stripped, monthParams, lang);
+		}
+		if (g == null || !g.hasDirectAnswer() || !OTHER_MONTH_VALUE_KINDS.contains(g.intent())) {
+			return null;
+		}
+
+		return new AnswerGuide(null, false, g.intent(), g.directAnswer(), g.suggestions(),
+				g.intentMatch() + "; otherMonth=" + asked);
 	}
 
 	// "Tháng 3 năm nay có dữ liệu không?", "Tháng 9 đã có số chưa?" -> trả bằng code từ snapshot tháng đó
