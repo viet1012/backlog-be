@@ -703,5 +703,66 @@
     "mustNotContain": [],
     "llmCallCount": 0,
     "answerIntent": "frame_value"
+  },
+  {
+    "question": "Khi nào PRESS T&SL vượt PL?",
+    "month": "2026-11",
+    "mustContain": ["PRESS T&SL", "PL ("],
+    "mustNotContain": ["mốc Fluct"],
+    "llmCallCount": 0,
+    "answerIntent": "when_exceed_pl"
+  },
+  {
+    "question": "So với BP thì tháng này thế nào?",
+    "month": "2026-11",
+    "mustContain": ["BP"],
+    "mustNotContain": ["không có dữ liệu về BP"],
+    "llmCallCount": 0,
+    "answerIntent": "bp_compare"
+  },
+  {
+    "question": "Fluct PRESS T&SL hả?",
+    "month": "2026-11",
+    "mustContain": ["PRESS T&SL", "Fluct"],
+    "mustNotContain": ["bị hạ"],
+    "llmCallCount": 0,
+    "answerIntent": "frame_value"
+  },
+  {
+    "question": "Ngày 3 tháng 10 PRESS T&SL chi bao nhiêu?",
+    "month": "2026-11",
+    "mustContain": ["03/10", "PRESS T&SL"],
+    "mustNotContain": [],
+    "llmCallCount": 0,
+    "answerIntent": "day_spend"
+  },
+  {
+    "question": "So sánh vật tư PRESS T&SL với MOLD T&SL",
+    "month": "2026-11",
+    "mustContain": ["PRESS T&SL", "MOLD T&SL", "Mã chung"],
+    "mustNotContain": [],
+    "llmCallCount": 0,
+    "answerIntent": "item_compare"
+  },
+  {
+    "question": "Vì sao PRESS T&SL tệ hơn MOLD T&SL?",
+    "month": "2026-11",
+    "mustContain": ["Yếu tố", "tiến độ"],
+    "mustNotContain": ["\ntheo dự báo"],
+    "llmCallCount": 0
+  },
+  {
+    "question": "Tháng trước có đỡ hơn không?",
+    "month": "2026-11",
+    "mustContain": ["2026-10"],
+    "mustNotContain": [],
+    "llmCallCount": 0
+  },
+  {
+    "question": "Tổng dự kiến cuối tháng của RM 3 bộ phận so với Fluct?",
+    "month": "2026-11",
+    "mustContain": ["RM"],
+    "mustNotContain": ["OT chưa có Actual (chưa nạp số OT)"],
+    "llmCallCount": 0
   }
 ]
