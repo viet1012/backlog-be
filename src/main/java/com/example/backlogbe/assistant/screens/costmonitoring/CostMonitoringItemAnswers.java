@@ -205,9 +205,21 @@ public class CostMonitoringItemAnswers {
 			return null;
 		}
 
+		// "Hôm qua / ngày 5 / Thứ Hai … mua tool nào nhiều nhất": chỉ tính đúng ngày đó (test 2026-11-18: trả cả tháng 01/11–17/11).
+		// Ngày không xác định được trong tháng đang xem -> LLM.
+		LocalDate day = null;
+		if (MOST_ISSUED.equals(kind) && range == null && CostMonitoringLookupAnswers.singleDay(question, f)) {
+			day = CostMonitoringLookupAnswers.resolveDay(question, f, loader.month(safe), loader.today());
+			if (day == null) {
+				return null;
+			}
+		}
+
 		String text;
 		try {
-			text = answer(kind, question, f, frames, safe, MOST_ISSUED.equals(kind) ? range : null, lang);
+			text = day != null
+					? mostIssuedDay(frames, safe, day, lang)
+					: answer(kind, question, f, frames, safe, MOST_ISSUED.equals(kind) ? range : null, lang);
 		} catch (RuntimeException e) {
 			log.warn("Assistant item answer failed kind={} error={}", kind, e.getClass().getSimpleName());
 			return null;
@@ -239,7 +251,7 @@ public class CostMonitoringItemAnswers {
 		}
 
 		return new AnswerGuide(null, false, kind, text, suggestions(kind, lang),
-				"item=" + kind + (otherMonth ? "; month=" + asked : "")
+				"item=" + kind + (otherMonth ? "; month=" + asked : "") + (day != null ? "; day=" + day : "")
 						+ (range != null ? "; range=" + range.from() + ".." + range.to() : "") + "; template=yes");
 	}
 
@@ -588,6 +600,28 @@ public class CostMonitoringItemAnswers {
 
 	// span != null: cả khoảng nhiều tháng (dòng đầu ghi rõ các tháng); null: tháng đang xem tới mốc actual
 	String mostIssued(List<CostMonitoringFocus> frames, Map<String, String> params, MonthRange span, String lang) {
+		return mostIssued(frames, params, span, null, lang);
+	}
+
+	// Đúng 1 ngày: ngày chưa có dòng xuất ở mọi khung (vd RM chậm 1 ngày, ngày nghỉ) -> nói rõ, không lấy cả tháng
+	String mostIssuedDay(List<CostMonitoringFocus> frames, Map<String, String> params, LocalDate day, String lang) {
+
+		String text = mostIssued(frames, params, null, day, lang);
+		if (text != null) {
+			return text;
+		}
+
+		String label = CostMonitoringSnapshot.ddmm(day) + " (" + DailySeriesTool.weekday(day.getDayOfWeek(), lang) + ")";
+		String names = String.join(", ", frames.stream().map(fr -> fr.div() + " " + fr.cost()).toList());
+		boolean rm = frames.stream().anyMatch(fr -> "RM".equals(fr.cost()));
+		return t(lang, "Ngày **" + label + "** chưa có dòng xuất kho ở " + names
+						+ (rm ? " (RM ghi nhận chậm 1 ngày)" : " (có thể là ngày nghỉ hoặc dữ liệu chưa cập nhật)") + ".",
+				"No issue lines on **" + label + "** in " + names
+						+ (rm ? " (RM is recorded 1 day later)" : " (may be a day off or data not updated yet)") + ".");
+	}
+
+	// day != null: chỉ đúng ngày đó (tiêu đề ghi ngày, không phải kỳ cả tháng)
+	private String mostIssued(List<CostMonitoringFocus> frames, Map<String, String> params, MonthRange span, LocalDate day, String lang) {
 
 		StringBuilder sb = new StringBuilder();
 		int limit = frames.size() == 1 ? 5 : 3;
@@ -602,11 +636,21 @@ public class CostMonitoringItemAnswers {
 					.append(t(lang, ", theo khoảng trong câu hỏi:", ", range from the question:")).append("\n\n");
 		}
 
+		java.util.function.Function<CostMonitoringFocus, Period> periodOf = fr -> {
+			if (span != null) {
+				return spanPeriod(params, fr.cost(), span);
+			}
+			Period cur = period(params, fr.cost());
+			// 1 ngày: ngày sau mốc actual của khung (vd RM hôm qua) -> kỳ rỗng (không có dòng xuất)
+			return day == null ? cur
+					: day.isAfter(cur.to()) ? new Period(cur.month(), day, day.minusDays(1), cur.baseFrom(), cur.baseTo(), 0)
+					: new Period(cur.month(), day, day, cur.baseFrom(), cur.baseTo(), cur.fraction());
+		};
+
 		// Nạp trước (song song) thống kê các khung vào cache (test 0758: 6 khung × khoảng 3 tháng tuần tự 5.5–20 s)
 		if (frames.size() > 1) {
 			try {
-				frames.parallelStream().forEach(fr ->
-						stats(fr, span != null ? spanPeriod(params, fr.cost(), span) : period(params, fr.cost())));
+				frames.parallelStream().forEach(fr -> stats(fr, periodOf.apply(fr)));
 			} catch (RuntimeException e) {
 				log.warn("Assistant most-issued warm-up failed error={}", e.getClass().getSimpleName());
 			}
@@ -614,7 +658,7 @@ public class CostMonitoringItemAnswers {
 
 		for (CostMonitoringFocus frame : frames) {
 
-			Period p = span != null ? spanPeriod(params, frame.cost(), span) : period(params, frame.cost());
+			Period p = periodOf.apply(frame);
 			List<CostItemStatDto> list = stats(frame, p).stream()
 					.filter(s -> s.lines() > 0)
 					.sorted(Comparator.comparingInt(CostItemStatDto::lines).reversed()
@@ -628,7 +672,9 @@ public class CostMonitoringItemAnswers {
 			blocks++;
 
 			sb.append("**").append(frame.div()).append(' ').append(frame.cost()).append("**")
-					.append(t(lang, " – xuất nhiều lần nhất (", " – most frequently issued (")).append(p.range()).append("):\n");
+					.append(t(lang, " – xuất nhiều lần nhất (", " – most frequently issued ("))
+					.append(day != null ? t(lang, "ngày ", "on ") + CostMonitoringSnapshot.ddmm(day) + " ("
+							+ DailySeriesTool.weekday(day.getDayOfWeek(), lang) + ")" : p.range()).append("):\n");
 
 			int i = 0;
 			for (CostItemStatDto s : list) {
