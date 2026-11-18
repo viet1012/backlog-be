@@ -54,7 +54,8 @@ public class CostMonitoringAnswerGuide {
 	// Hỏi chi tiết (vật tư / máy / cost center / Category) -> cần get_top_items, không cấm tool, không template.
 	// Không dấu, khớp trên câu đã bỏ dấu (CostMonitoringIntentClassifier.fold)
 	private static final List<String> DETAIL_KEYWORDS = List.of(
-			"vat tu", "cost center", "category", "may", "item", "machine", "material"
+			"vat tu", "cost center", "category", "may", "item", "machine", "material",
+			"tool", "tools", "dung cu", "dao cu", "vat lieu", "phu tung"
 	);
 
 	// "Vì sao" cần giải thích sâu hơn kết luận tính sẵn (Ratio, so cùng kỳ, nhiều khung) -> vẫn qua LLM
@@ -165,7 +166,73 @@ public class CostMonitoringAnswerGuide {
 				g.suggestions(), g.intentMatch() + "; futureNote=yes");
 	}
 
+	// Chi phí có trong file "Daily Cost monitoring" nhưng không có trên màn hình (2026-11-18). Câu hỏi không nêu OT / T&SL / RM
+	// -> trả lời bằng code, không để template tra cứu số đưa số khung PRESS / MOLD / GUIDE thay thế.
+	// "luong" đứng riêng trùng "lượng" (số lượng) -> chỉ nhận cụm.
+	static final String NOT_ON_SCREEN = "not_on_screen";
+	private static final Pattern NOT_ON_SCREEN_RM = CostMonitoringQuestion.word(
+			"r&m|r & m|repair|maintenance|sua chua|bao tri|bao duong");
+	private static final Pattern NOT_ON_SCREEN_LABOR = CostMonitoringQuestion.word(
+			"luong co ban|tien luong|quy luong|basic|labor cost|labour cost|chi phi nhan cong|nhan cong");
+	private static final Pattern NOT_ON_SCREEN_OTHER = CostMonitoringQuestion.word(
+			"packing|packing material|bao bi|outside cost|gia cong ngoai|thue ngoai|mto|mts");
+
+	static AnswerGuide notOnScreen(String question, String lang) {
+
+		if (question == null || question.isBlank()) {
+			return null;
+		}
+
+		String f = CostMonitoringIntentClassifier.fold(question);
+
+		if (!CostMonitoringQuestion.costs(CostMonitoringQuestion.normalize(question)).isEmpty()) {
+			return null;
+		}
+
+		boolean rm = NOT_ON_SCREEN_RM.matcher(f).find();
+		boolean labor = NOT_ON_SCREEN_LABOR.matcher(f).find();
+		boolean other = NOT_ON_SCREEN_OTHER.matcher(f).find();
+
+		if (!rm && !labor && !other) {
+			return null;
+		}
+
+		StringBuilder text = new StringBuilder(t(lang,
+				"Màn hình Cost Monitoring chưa có số này – chỉ theo dõi 3 loại chi phí của PRESS, MOLD, GUIDE: "
+						+ "**OT** (tăng ca), **T&SL** (tool, vật tư tiêu hao) và **RM** (nguyên vật liệu).",
+				"Cost Monitoring does not have this figure – it only tracks 3 cost types for PRESS, MOLD, GUIDE: "
+						+ "**OT** (overtime), **T&SL** (tools, consumables) and **RM** (raw material)."));
+		if (rm) {
+			text.append("\n- ").append(t(lang,
+					"RM ở đây là nguyên vật liệu (Raw Material), không phải R&M (sửa chữa – bảo trì).",
+					"RM here is Raw Material, not R&M (repair & maintenance)."));
+		}
+		if (labor) {
+			text.append("\n- ").append(t(lang,
+					"Về nhân công, màn hình chỉ có OT (tăng ca); không có lương cơ bản (Basic) hay tổng Labor Cost.",
+					"For labor, only OT (overtime) is shown; no Basic labor or total Labor Cost."));
+		}
+		if (other) {
+			text.append("\n- ").append(t(lang,
+					"Không có Packing material, Outside Cost hay chi phí tách theo dòng sản phẩm (MTO / MTS / RE).",
+					"No Packing material, Outside Cost or split by product line (MTO / MTS / RE)."));
+		}
+
+		List<String> suggestions = labor
+				? List.of(t(lang, "OT PRESS tháng này thế nào?", "How is PRESS OT this month?"))
+				: List.of(t(lang, "RM PRESS tháng này thế nào?", "How is PRESS RM this month?"));
+
+		return new AnswerGuide(null, false, NOT_ON_SCREEN, text.toString(), suggestions,
+				NOT_ON_SCREEN + "(rm=" + rm + ",labor=" + labor + ",other=" + other + "); template=yes");
+	}
+
 	private AnswerGuide guideCurrent(String question, Map<String, String> params, String lang) {
+
+		// Chi phí không có trên màn hình (R&M, lương cơ bản, Packing…): trả lời trước mọi luồng khác
+		AnswerGuide missing = notOnScreen(question, lang);
+		if (missing != null) {
+			return missing;
+		}
 
 		// Câu hỏi cấp quản lý (tóm tắt, báo cáo, tổng dự kiến, what-if, bộ phận đáng lo, duyệt / xuất file…): template
 		// trước mọi luồng khác (test 2026-11-11 nhóm 30–34: qua LLM 12–70 s, nhiều câu sai)
@@ -186,6 +253,13 @@ public class CostMonitoringAnswerGuide {
 				}
 			}
 			return item;
+		}
+
+		// "PRESS T&SL tháng trước chi bao nhiêu?": QuestionMonthDetector không coi "tháng trước" là tháng khác nên câu đi
+		// luồng này (eval 2026-11-18 #93: qua LLM 31 s) -> template số của tháng được hỏi
+		AnswerGuide value = otherMonthValue(question, params, lang);
+		if (value != null) {
+			return value;
 		}
 
 		// "Tháng trước có gì bất thường / tình hình tháng trước": template tổng quan của tháng trước
@@ -257,6 +331,10 @@ public class CostMonitoringAnswerGuide {
 
 	// ChatOrchestrator gọi khi câu hỏi nhắc 1 tháng khác (không đi qua guide()): chỉ template tổng quan tháng đó
 	public AnswerGuide otherMonth(String question, Map<String, String> params, String lang) {
+		AnswerGuide missing = notOnScreen(question, lang);
+		if (missing != null) {
+			return missing;
+		}
 		AnswerGuide availability = dataAvailability(question, params, lang);
 		if (availability != null) {
 			return availability;
@@ -267,7 +345,59 @@ public class CostMonitoringAnswerGuide {
 		if (item != null) {
 			return item;
 		}
+		AnswerGuide value = otherMonthValue(question, params, lang);
+		if (value != null) {
+			return value;
+		}
 		return previousMonthOverview(question, params, lang);
+	}
+
+	// Cụm tháng trong câu gốc (có / không dấu): "tháng trước", "tháng 10", "tháng 10/2026", "last month"
+	private static final Pattern RAW_MONTH = Pattern.compile(
+			"(?iu)(?<![\\p{L}\\p{N}_])(?:th[aá]ng\\s+(?:tr[uư][oớ]c|\\d{1,2}(?:\\s*[/-]\\s*20\\d{2})?)|last month|previous month)(?![\\p{L}\\p{N}_])");
+
+	// Chỉ các template hỏi SỐ, tính được trên snapshot của 1 tháng bất kỳ (tháng đã kết thúc: không có dự báo)
+	private static final java.util.Set<String> OTHER_MONTH_VALUE_KINDS =
+			java.util.Set.of(CostMonitoringManagerAnswers.OT_VALUE, CostMonitoringLookupAnswers.FRAME_VALUE);
+
+	// "OT PRESS tháng 10 bao nhiêu?", "PRESS T&SL tháng trước chi bao nhiêu?" (eval 2026-11-18: qua LLM 7–34 s dù đã có số):
+	// bỏ cụm tháng khỏi câu, phân loại như câu tháng đang xem, chỉ nhận ot_value / frame_value, tính trên snapshot tháng hỏi.
+	private AnswerGuide otherMonthValue(String question, Map<String, String> params, String lang) {
+
+		String folded = CostMonitoringIntentClassifier.fold(question);
+		// So sánh 2 tháng ("… tháng trước so với tháng này", "cùng kỳ") -> không phải số của 1 tháng
+		if (PREVIOUS_MONTH_COMPARE.matcher(folded).find()) {
+			return null;
+		}
+
+		Map<String, String> safe = params != null ? params : Map.of();
+		java.time.YearMonth viewed = loader.month(safe);
+		java.time.YearMonth asked = CostMonitoringItemAnswers.askedMonth(question, folded, viewed);
+
+		if (asked == null || asked.equals(viewed) || asked.isAfter(java.time.YearMonth.from(loader.today()))) {
+			return null;
+		}
+
+		String stripped = RAW_MONTH.matcher(question).replaceAll(" ").replaceAll("\\s+", " ").trim();
+		if (stripped.isEmpty()) {
+			return null;
+		}
+
+		Map<String, String> monthParams = new java.util.HashMap<>(safe);
+		monthParams.put("month", asked.toString());
+		monthParams.remove("simuWeek");
+		monthParams.remove("plTgtMode");
+
+		AnswerGuide g = managerAnswers.guide(stripped, monthParams, lang);
+		if (g == null || !OTHER_MONTH_VALUE_KINDS.contains(g.intent())) {
+			g = lookupAnswers.guide(stripped, monthParams, lang);
+		}
+		if (g == null || !g.hasDirectAnswer() || !OTHER_MONTH_VALUE_KINDS.contains(g.intent())) {
+			return null;
+		}
+
+		return new AnswerGuide(null, false, g.intent(), g.directAnswer(), g.suggestions(),
+				g.intentMatch() + "; otherMonth=" + asked);
 	}
 
 	// "Tháng 3 năm nay có dữ liệu không?", "Tháng 9 đã có số chưa?" -> trả bằng code từ snapshot tháng đó
@@ -354,7 +484,9 @@ public class CostMonitoringAnswerGuide {
 
 		String folded = CostMonitoringIntentClassifier.fold(question);
 
-		if (PREVIOUS_MONTH_COMPARE.matcher(folded).find()) {
+		// Hỏi vật tư / tool mà template vật tư không trả được: không dùng template tổng quan / xếp hạng khung
+		// (audit 2026-11-18: "Ở tháng trước PRESS mua tool nào nhiều nhất" trả xếp hạng khung theo Actual / Fluct)
+		if (PREVIOUS_MONTH_COMPARE.matcher(folded).find() || CostMonitoringItemAnswers.mentionsItem(question)) {
 			return null;
 		}
 

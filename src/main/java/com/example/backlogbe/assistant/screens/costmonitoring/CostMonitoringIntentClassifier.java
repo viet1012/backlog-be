@@ -106,9 +106,11 @@ final class CostMonitoringIntentClassifier {
 			"thang truoc", "cung ky", "previous month", "last month"
 	);
 
-	// Hỏi vật tư / máy / cost center / Category: không phải xếp hạng khung
+	// Hỏi vật tư / tool / máy / cost center / Category: không phải xếp hạng khung
+	// (audit 2026-11-18: "PRESS mua tool nào nhiều nhất" bị xếp hạng khung vì thiếu "tool")
 	private static final List<String> DETAIL = List.of(
-			"vat tu", "cost center", "category", "may", "item", "items", "machine", "material"
+			"vat tu", "cost center", "category", "may", "item", "items", "machine", "material",
+			"tool", "tools", "dung cu", "dao cu", "vat lieu", "phu tung"
 	);
 
 	// Không khớp "cap nhat" (cập nhật), "chu nhat" (Chủ nhật – audit 2026-11-10 bị xếp hạng nhầm)
@@ -121,7 +123,8 @@ final class CostMonitoringIntentClassifier {
 	);
 
 	private static final List<String> OVERVIEW_GENERAL_EXCLUDE = List.of(
-			"vat tu", "cost center", "category", "may nao", "item", "items", "machine", "material", "ratio", "fluct"
+			"vat tu", "cost center", "category", "may nao", "item", "items", "machine", "material", "ratio", "fluct",
+			"tool", "tools", "dung cu", "dao cu", "vat lieu", "phu tung"
 	);
 
 	/*

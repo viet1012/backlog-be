@@ -203,6 +203,7 @@ public class CostMonitoringLookupAnswers {
 	// "ngày mấy / hôm mấy" (audit 2026-11-17 "press ngày mấy có ot cao nhất": qua LLM, trả 30/11 28.4 K$ – ngày chưa tới,
 	// đọc nhầm cột Estimate). "mấy" bỏ dấu = "may" nhưng chỉ khớp cụm "ngay may" / "hom may", không trùng MACHINE_FOLDED.
 	private static final Pattern WHICH_DAY = CostMonitoringQuestion.word("ngay nao|hom nao|ngay may|hom may|which day|what day");
+	private static final Pattern DAY_ASK_MAY = CostMonitoringQuestion.word("(ngay|hom) may");
 	private static final Pattern MOST = CostMonitoringQuestion.word(
 			"nhieu nhat|cao nhat|lon nhat|ton nhat|most|highest|largest|biggest");
 
@@ -503,8 +504,11 @@ public class CostMonitoringLookupAnswers {
 			return REMAINING_DAYS;
 		}
 
-		if (WHICH_DAY.matcher(f).find() && MOST.matcher(f).find() && !ITEM.matcher(f).find()
-				&& !NOT_ITEM.matcher(f).find()) {
+		// "ngày mấy / hôm mấy" bỏ dấu thành "ngay may" – "may" ở đây là "mấy", không phải "máy" (eval 2026-11-18 #71:
+		// "press ngày mấy có ot cao nhất" bị NOT_ITEM chặn -> LLM trả 07/11 3.2 K$, đúng là 06/11 3.18 K$)
+		String noDayAsk = DAY_ASK_MAY.matcher(f).replaceAll("$1");
+		if (WHICH_DAY.matcher(f).find() && MOST.matcher(f).find() && !ITEM.matcher(noDayAsk).find()
+				&& !NOT_ITEM.matcher(noDayAsk).find()) {
 			return TOP_DAY;
 		}
 
@@ -1512,7 +1516,12 @@ public class CostMonitoringLookupAnswers {
 				continue;
 			}
 
-			List<Daily> days = new ArrayList<>(dailies(snapshot, chart));
+			// Số hiển thị = chi của chính ngày đó làm tròn 1 chữ số (không phải hiệu 2 MTD đã làm tròn): xếp hạng theo số
+			// chưa làm tròn, nên hiệu MTD có thể ra ngày đứng đầu nhỏ hơn ngày sau (eval 2026-11-18 #71: 06/11 3.18 hiện
+			// "3.1", 07/11 3.16 hiện "3.2")
+			List<Daily> days = new ArrayList<>(dailies(snapshot, chart).stream()
+					.map(d -> d.raw() == null ? d : new Daily(d.date(), CmText.r1(d.raw()), d.raw()))
+					.toList());
 			days.removeIf(d -> d.amount() == null || Math.round(d.amount() * 10) <= 0);
 
 			if (days.isEmpty()) {
@@ -1541,7 +1550,8 @@ public class CostMonitoringLookupAnswers {
 									"; the day above is slightly higher before rounding.\n"));
 				}
 
-				List<Daily> next = days.subList(1, Math.min(days.size(), 1 + TOP_DAYS_NEXT));
+				// Không lặp lại ngày đã ghi "ngang nhau"
+				List<Daily> next = days.stream().skip(1).filter(d -> !ties.contains(d)).limit(TOP_DAYS_NEXT).toList();
 				if (!next.isEmpty()) {
 					sb.append(t(lang, "Tiếp theo: ", "Next: "))
 							.append(String.join("; ", next.stream()
