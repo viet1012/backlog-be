@@ -488,11 +488,23 @@ public class ChatOrchestrator {
 			toolRounds++;
 			messages.add(ChatMessage.assistantToolCalls(response.content(), response.toolCalls()));
 
+			// Ngân sách ký tự cho mỗi kết quả tool của vòng này, để lần gọi sau không vượt promptTokenWarn
+			// (audit 2026-11-17: 75/319 lần gọi vượt Context Length 16384 do kết quả tool nối dồn qua các vòng)
+			int budgetChars = toolResultBudgetChars(actualPrompt, response.toolCalls().size());
+			int cut = 0;
+
 			for (ToolCall call : response.toolCalls()) {
-				messages.add(ChatMessage.toolResult(
-						call.id(),
-						runTool(toolsByName.get(call.name()), call, screenParams, monthScope, lang, toolRounds, sources, trace)
-				));
+				String result = runTool(toolsByName.get(call.name()), call, screenParams, monthScope, lang, toolRounds, sources, trace);
+				String fitted = budgetChars > 0 ? truncateToolResult(result, budgetChars) : result;
+				if (fitted.length() < result.length()) {
+					cut++;
+				}
+				messages.add(ChatMessage.toolResult(call.id(), fitted));
+			}
+
+			if (cut > 0) {
+				log.warn("Assistant: tool results cut to prompt budget rid={} screenKey={} round={} cut={} budgetChars={}",
+						RequestTiming.rid(), screenKey, toolRounds, cut, budgetChars);
 			}
 		}
 	}
@@ -887,7 +899,29 @@ public class ChatOrchestrator {
 		return environment.acceptsProfiles(Profiles.of(DEV_PROFILE));
 	}
 
-	// maxLength theo tool (AssistantTool.maxResultLength, mặc định 3000)
+	// Chỗ dành cho phần model sinh thêm vào prompt lần sau (message tool_calls) – ước lượng
+	private static final int TOOL_CALL_MESSAGE_TOKENS = 300;
+	// Mỗi kết quả tool giữ ít nhất bấy nhiêu ký tự (dòng tóm tắt / kết luận đầu kết quả), kể cả khi đã hết ngân sách
+	static final int MIN_TOOL_RESULT_CHARS = 800;
+
+	// Số ký tự tối đa cho mỗi kết quả tool của vòng hiện tại: (promptTokenWarn − promptTokens lần gọi vừa rồi
+	// − phần tool_calls) × charsPerToken, chia đều cho các tool; không nhỏ hơn MIN_TOOL_RESULT_CHARS.
+	// Server không trả promptTokens -> -1 (chỉ giới hạn theo tool, như cũ).
+	int toolResultBudgetChars(Integer promptTokens, int toolCount) {
+
+		if (promptTokens == null || toolCount <= 0) {
+			return -1;
+		}
+
+		AssistantProperties.Llm llm = assistantProperties.getLlm();
+		int freeTokens = llm.getPromptTokenWarn() - promptTokens - TOOL_CALL_MESSAGE_TOKENS;
+		long chars = (long) Math.floor(Math.max(0, freeTokens) * llm.getCharsPerToken() / toolCount);
+
+		return (int) Math.max(MIN_TOOL_RESULT_CHARS, Math.min(Integer.MAX_VALUE, chars));
+	}
+
+	// maxLength theo tool (AssistantTool.maxResultLength, mặc định 3000). Cắt ở cuối dòng gần nhất
+	// (kết quả dạng "Nhãn=giá trị" theo dòng – không để dòng / số bị cắt dở) nếu dòng đó không quá ngắn.
 	static String truncateToolResult(String result, int maxLength) {
 
 		if (result == null) {
@@ -896,9 +930,14 @@ public class ChatOrchestrator {
 
 		int limit = maxLength > 0 ? maxLength : AssistantTool.DEFAULT_MAX_RESULT_LENGTH;
 
-		return result.length() > limit
-				? result.substring(0, limit) + "\n(đã rút gọn)"
-				: result;
+		if (result.length() <= limit) {
+			return result;
+		}
+
+		int lineEnd = result.lastIndexOf('\n', limit);
+		int end = lineEnd >= limit / 2 ? lineEnd : limit;
+
+		return result.substring(0, end) + "\n(đã rút gọn)";
 	}
 
 	private static String systemPrompt(List<ChatMessage> messages) {
