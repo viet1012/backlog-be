@@ -99,6 +99,10 @@ flowchart TD
   Kết luận khó do code tính sẵn (`*Assessment`, `AnswerGuide`).
 - **Prompt lớn**: ước tính (ký tự / `chars-per-token`) hoặc `promptTokens` thực tế > `prompt-token-warn` → log WARN
   `Assistant: prompt too large …` (không chặn request).
+- **Ngân sách kết quả tool**: sau mỗi lần gọi có `tool_calls`, kết quả tool của vòng đó bị cắt thêm còn
+  `(prompt-token-warn − promptTokens vừa rồi − 300) × chars-per-token / số tool` ký tự (tối thiểu 800 / tool, cắt ở cuối dòng)
+  để lần gọi sau không vượt Context Length → log WARN `Assistant: tool results cut to prompt budget …`. Server không trả
+  `promptTokens` → chỉ giới hạn theo `maxResultLength` như cũ.
 - HTTP client ép HTTP/1.1, không streaming; chỉ lấy `message.content`, bỏ phần reasoning / `<think>`.
 
 ## 3. Cấu trúc thư mục
@@ -473,10 +477,56 @@ Sai / thiếu → 400 `{status, message}`, vd "div must be one of PR, MO, Guide.
 - `POST /ot/import` (multipart `file` .xlsx/.xlsm, `month?` yyyy-MM, `dryRun?`) – đọc sheet PressCOGS / MoldCOGS / PG+DP-COGS /
   MG-COGS, cột ngày B và cột "Actual / OT" (dò theo tiêu đề), thay toàn bộ dòng của (tháng, SubDiv) có trong file, xóa cache snapshot.
 - `POST /ot/import-from-share` – BE đọc `cost-monitoring.ot.share-path` (tài khoản chạy BE phải đọc được share);
-  job tự động `cost-monitoring.ot.share-cron` (mặc định `-` = tắt, file không đổi thì bỏ qua).
+  job tự động `cost-monitoring.ot.share-cron` (mặc định `-` = tắt, file không đổi thì bỏ qua). Xem
+  [Import OT từ share khi chạy Docker](#import-ot-từ-share-khi-chạy-docker).
 - `GET /ot/status?month=` – 4 dòng PR / MO / PG / MG: số ngày, ngày cuối, tổng K$, lúc nạp, nguồn.
 - Ghi cần header `X-Employee-Id` có role trong `cost-monitoring.ot.import-roles` (mặc định `ADMIN`); 401 / 403 / 503 dạng `{status, message}`.
 - Upload cần `spring.servlet.multipart.max-file-size` / `max-request-size` ≥ 20MB (mặc định Spring 1MB).
+
+#### Import OT từ share khi chạy Docker
+
+`share-path` là đường dẫn **trong máy chạy BE**. BE chạy trên Windows (không Docker) dùng được UNC
+`//192.168.0.6/dtp/...`. Chạy trong Docker Desktop thì **không** dùng được UNC:
+
+- Container là Linux: `Path.of("//192.168.0.6/...")` thành thư mục cục bộ không tồn tại → 503 "BE không đọc được file trên share"
+  (log WARN `share read failed (<tên exception>)`).
+- Container không có phiên SMB / quyền domain của người dùng Windows. Mount CIFS trong Docker (`docker volume create --opt type=cifs`)
+  đã thử với `spclt\it.production`, kể cả `sec=ntlmssp`: `permission denied` (nghi share chỉ nhận Kerberos – cần xác nhận với IT).
+- Bind-mount ổ mạng (`Z:\`, `\\server\share`) trong Docker Desktop không thấy file.
+
+Cách đang dùng: Windows copy file về thư mục local, container bind-mount thư mục đó (không đưa mật khẩu vào Docker).
+
+1. Script copy `D:\Viet\Backlog\cost-ot\copy.cmd` (robocopy chỉ chép khi file đổi, giữ thời gian sửa → job BE bỏ qua khi file không đổi):
+   ```cmd
+   robocopy "\\192.168.0.6\dtp\9_Daily Costmonitoring" "D:\Viet\Backlog\cost-ot" "FY26 Daily Cost monitoning_FY26.xlsx" /R:2 /W:5 /NP /NJH /NJS
+   ```
+2. Task Scheduler `CostOT-Copy` chạy `copy.cmd` **16:00 thứ Tư hằng tuần**, tài khoản `it.production`.
+   Nên bật "Run whether user is logged on or not" (lưu mật khẩu để vào được share) và
+   "Run task as soon as possible after a scheduled start is missed" (cần xác nhận đã bật trên máy host):
+   ```cmd
+   schtasks /Create /TN "CostOT-Copy" /SC WEEKLY /D WED /ST 16:00 /TR "D:\Viet\Backlog\cost-ot\copy.cmd" /F
+   ```
+3. `D:\Viet\Backlog\build image_API.bat` chạy container với mount + biến môi trường (Spring map `COST_MONITORING_OT_SHARE_PATH`
+   → `cost-monitoring.ot.share-path`, không cần sửa `application.properties`):
+   ```bat
+   set "OT_DIR=D:\Viet\Backlog\cost-ot"
+   set "OT_FILE=FY26 Daily Cost monitoning_FY26.xlsx"
+   docker run -d ^
+     --restart unless-stopped ^
+     -p 127.0.0.1:9101:8080 ^
+     -v "%OT_DIR%:/data/cost-ot:ro" ^
+     -e "COST_MONITORING_OT_SHARE_PATH=/data/cost-ot/%OT_FILE%" ^
+     -e "COST_MONITORING_OT_SHARE_CRON=0 10 16 * * WED" ^
+     --name backlog_be_container ^
+     backlog_be
+   ```
+   Job BE chạy 16:10 thứ Tư (sau task copy 10 phút). Đổi lịch copy thì đổi cron cho khớp.
+4. Kiểm tra: `docker exec backlog_be_container ls -l /data/cost-ot` thấy file `.xlsx`; nạp ngay không chờ lịch:
+   Task Scheduler → `CostOT-Copy` → Run, rồi `POST /ot/import-from-share`.
+
+Lưu ý:
+- Task copy chạy bù muộn hơn 16:10 (máy tắt lúc 16:00) → job BE đã qua, dữ liệu chờ tuần sau; gọi `POST /ot/import-from-share` bằng tay.
+- Năm tài chính mới đổi tên file (FY27…) → sửa tên trong `copy.cmd` và `OT_FILE` trong `build image_API.bat`.
 
 ### `GET /api/cost-monitoring/detail/transactions` (nhẹ, không chạy snapshot / SP)
 
@@ -833,3 +883,7 @@ server hoặc ADMIN (qua API admin) đọc; không gửi ra ngoài.
 | 2026-11-17 | Hiệu năng API Cost Monitoring: `sp_CostMonitoringChart` ghi bước trung gian ra bảng tạm (#WDay, #Tgt, #Act, #Base) – trước đây CTE `Base` dùng 2 lần nên `fn_CostActualDaily` (quét `CostTool` / `CostRm`) chạy 2 lần; kết quả không đổi. `fn_CostActualDaily` + `CostTopItemsRepository` thêm khoảng thô trên cột gốc `UsedDate` (yyyyMMdd) và `Factory LIKE '612%'` để seek index (điều kiện `TRY_CONVERT` cũ giữ nguyên). Thêm `sql/05_cost_monitoring_indexes.sql` (index `UsedDate` cho `CostTool` / `CostRm`, `[Month]` cho `F2_PL_TGT`, `[Date]` cho `F2_Working_Date`). `CostMonitoringSnapshotLoader`: single-flight theo key – request đồng thời khi cache hết hạn chỉ chạy SP 1 lần. Đo lần 1 (SP ~0.96 s, 0.86 s ở `fn_CostActualDaily`: `CostCenterMaster` 41k logical reads do tra từng dòng, `CostTool` scan 3 lần do `UNION ALL`): function gom theo (ngày, tên cost center[, mã]) trước rồi mới join master; T&SL tách PR / MO / Guide bằng `CROSS APPLY (VALUES …)` trên 1 lần đọc. Log đo trong BE: `RequestTimingFilter` thêm `/api/cost-monitoring/chart`, `/detail/transactions`; `CostMonitoringSnapshotLoader` log INFO `cache=MISS|REFRESH spMs= waitMs=` khi chạy SP và `cache=WAIT` khi chờ request khác (cache HIT không log). |
 | 2026-11-17 | **Actual OT**: bảng `CostOtDaily` (`sql/07_cost_ot_daily.sql`) nạp từ file "FY26 Daily Cost monitoning" (sheet PressCOGS / MoldCOGS / PG+DP-COGS / MG-COGS, cột Labor Cost – Actual – OT, K$) qua `POST /api/cost-monitoring/ot/import` (upload), `/ot/import-from-share` (+ cron tùy chọn), `GET /ot/status`; nạp xong `CostMonitoringSnapshotLoader.invalidateAll()`. `fn_CostActualDaily` thêm OT (Guide = PG + MG, số âm = 0 như Excel); `sp_CostMonitoringChart` bỏ chặn OT, cutoff OT = ngày cuối có dòng OT. Excel Cost Monitoring.xlsb có lỗi `PR_OT!P` dùng `$K$625` (PR OT tháng 11: Excel 22.6 vs file nguồn 27.2 K$) – số API đúng theo file nguồn. Trợ lý: bỏ ghi cứng "OT chưa có Actual" – kiểm tra theo dữ liệu (`actMtdLatest`, `CostMonitoringLookupAnswers.otHasActual`): get_daily_series / pre-fetch nhận OT (tối đa 9 khung) + ghi "Actual khung này mới có đến ngày X"; `data_update` / `data_availability` nêu "OT đến dd/MM"; `ot_no_data` chỉ khi tháng chưa nạp; `ot_value` nêu Actual / Fluct / dự báo; lookup (khi nào vượt, theo ngày, ngân sách còn lại…), manager (tổng quan, tổng dự báo, bộ phận chi nhiều, báo cáo…), `range_summary` tính cả OT khi có Actual; câu vật tư / dòng xuất kho / `range_why` / so cùng kỳ theo vật tư giữ T&SL, RM; `status_vs_prev` chỉ so khung có số ở cả 2 tháng. knowledge.md / rules.md cập nhật nguồn OT, trễ nạp, không đoán nguyên nhân tăng ca. `ExplainVariancePrefetchRule.plan(…, otActual)`: câu không nêu loại chi phí (ranking / overview / forecast / compare) mặc định T&SL, RM, OT khi tháng đang xem có Actual OT (snapshot cache) – pre-fetch và template `precomputed` của `CostMonitoringAnswerGuide` dùng cùng kế hoạch; `plan(question, params)` (không đọc dữ liệu) giữ T&SL, RM cho `TopItemsPrefetchRule`. |
 | 2026-11-17 | Audit 17:13 "press ngày mấy có ot cao nhất ?" qua LLM (38 s) trả "30/11 – 28.4 K$" (ngày chưa tới, đọc nhầm cột Estimate; đúng: 06/11 3.18 K$). "ngày mấy / hôm mấy" thêm vào `WHICH_DAY` (lookup → `top_day`), `DAY_WHICH` (manager) và từ khóa `DailySeriesPrefetchRule`. `top_day`: khung có Actual dừng sớm hơn D (OT) ghi "mới có số đến dd/MM"; gợi ý OT không hỏi vật tư. Eval +1. |
+| 2026-11-18 | Xếp hạng ngày chi theo số chưa làm tròn: chi theo ngày (`CostMonitoringLookupAnswers.dailies`) là chênh 2 số cộng dồn đã làm tròn, có thể đảo thứ hạng (audit 17:21: Press OT trả 07/11 3.2 K$, đúng là 06/11 3.18 > 07/11 3.16). `Daily` thêm `raw` (chưa làm tròn), `top_day`, ngày cao nhất của `spike_days`, cao / thấp nhất của tóm tắt tháng, "3 ngày chi lớn nhất" xếp theo `raw`; hiển thị và tổng vẫn dùng số 1 chữ số. `top_day` ghi "ngang nhau" khi ngày khác bằng ngày cao nhất sau làm tròn. |
+| 2026-11-18 | So với tháng trước (audit 17:21 "so sánh ngày hôm nay vs tháng trước của press về ot": qua LLM 16 s, 15.5k token, ghi "hôm nay (16/11) vs 10/10" trong khi tool tính 01–10 cả 2 tháng). `prevMonthKind`: bỏ cụm "ngày hôm nay / tính đến nay / to date / so far" trước khi xét `PREV_MONTH_EXCLUDE` (từ "ngay" làm câu rơi về LLM) → template `prev_month`. Template và `compare_previous_month` ghi "Kỳ so sánh = 01–dd/MM vs 01–dd/MM" thay cho "Đến ngày (D)" (khung có Actual dừng sớm hơn D, vd OT, ghi "mới có số đến dd/MM"); thiếu Actual ghi "chưa có số". `knowledge.md` cập nhật mô tả tool. |
+| 2026-11-18 | Ngân sách prompt cho kết quả tool (audit 17/11: 75/319 lần gọi LLM vượt 16 384 token). WARN `prompt too large` đã có (`prompt-token-warn` = 13000). `ChatOrchestrator`: kết quả tool của mỗi vòng cắt theo token còn lại đến `prompt-token-warn` (tối thiểu 800 ký tự / tool), log WARN `tool results cut to prompt budget` (rid, screenKey, round, số kết quả bị cắt); `truncateToolResult` cắt ở cuối dòng gần nhất (không để dòng `Nhãn=giá trị` dở). Pre-fetch và system prompt chưa đổi – vẫn cần rút gọn `rules.md` / `knowledge.md`. |
+| 2026-11-18 | Tài liệu: thêm mục "Import OT từ share khi chạy Docker" (mục 6). Docker Desktop không đọc được UNC `//192.168.0.6/...`, mount CIFS bị `permission denied` → robocopy về `D:\Viet\Backlog\cost-ot` (Task Scheduler `CostOT-Copy` 16:00 thứ Tư), bind-mount `/data/cost-ot`, `COST_MONITORING_OT_SHARE_PATH` / `COST_MONITORING_OT_SHARE_CRON=0 10 16 * * WED` trong `build image_API.bat`. Không đổi code. |
