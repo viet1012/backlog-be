@@ -764,5 +764,13 @@
     "mustContain": ["RM"],
     "mustNotContain": ["OT chưa có Actual (chưa nạp số OT)"],
     "llmCallCount": 0
+  },
+  {
+    "question": "Ngày hôm qua, PRESS mua tool nào nhiều nhất?",
+    "month": "2026-11",
+    "mustContain": ["PRESS T&SL", "xuất nhiều lần nhất (ngày"],
+    "mustNotContain": ["01/11–", "MOLD", "GUIDE"],
+    "llmCallCount": 0,
+    "answerIntent": "item_most_issued"
   }
 ]
