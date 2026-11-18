@@ -255,6 +255,9 @@ public class CostMonitoringLookupAnswers {
 	private static final Pattern PREV_MONTH_EXCLUDE = CostMonitoringQuestion.word(
 			"vat tu|ma vat tu|category|loai vat tu|item|items|material|may|machine|cost center"
 					+ "|bat thuong|dot bien|unusual|abnormal|ngay|day|days|ratio|fluct bi|target bi");
+	private static final Pattern PREV_MONTH_TODAY = CostMonitoringQuestion.word(
+			"ngay hom nay|tinh den ngay hom nay|tinh den hom nay|den ngay hom nay|tinh den nay|den nay"
+					+ "|up to today|as of today|to date|so far");
 
 	// Xu hướng chi theo ngày trong tháng của 1 khung
 	private static final Pattern TREND_WORD = CostMonitoringQuestion.word(
@@ -566,8 +569,12 @@ public class CostMonitoringLookupAnswers {
 	// "So với tháng trước X thế nào", "X tháng này chi nhiều hơn cùng kỳ không" (1 khung, chỉ tổng) -> PREV_MONTH; khác -> null
 	static String prevMonthKind(String question, String f) {
 
+		// "ngày hôm nay / tính đến nay" = lũy kế tháng (cùng kỳ), không phải hỏi 1 ngày: bỏ trước khi xét "ngay" trong
+		// PREV_MONTH_EXCLUDE (audit 2026-11-17 "so sánh ngày hôm nay vs tháng trước của press về ot": qua LLM 16 s)
+		String scoped = PREV_MONTH_TODAY.matcher(f).replaceAll(" ");
+
 		if (!PREV_MONTH_REF.matcher(f).find() || !PREV_MONTH_SCOPE.matcher(f).find()
-				|| PREV_MONTH_EXCLUDE.matcher(f).find() || WHY.matcher(f).find()) {
+				|| PREV_MONTH_EXCLUDE.matcher(scoped).find() || WHY.matcher(f).find()) {
 			return null;
 		}
 
@@ -1512,8 +1519,10 @@ public class CostMonitoringLookupAnswers {
 				continue;
 			}
 
-			days.sort(Comparator.comparing(Daily::amount).reversed());
+			days.sort(Daily.BY_RAW_DESC);
 			Daily top = days.get(0);
+			// Các ngày bằng ngày cao nhất sau khi làm tròn hiển thị -> ghi "ngang nhau"
+			List<Daily> ties = days.stream().skip(1).filter(top::sameShown).toList();
 			Double act = CmText.r1(chart.actMtdLatest());
 			String name = fr.div() + " " + fr.cost();
 			any = true;
@@ -1524,6 +1533,13 @@ public class CostMonitoringLookupAnswers {
 						.append(t(lang, "** chi nhiều nhất: **", "**: **")).append(k1(top.amount())).append("**");
 				appendShare(sb, top.amount(), act, lang);
 				sb.append(".\n");
+				if (!ties.isEmpty()) {
+					sb.append(t(lang, "Ngang nhau (cùng ", "Tied (same "))
+							.append(k1(top.amount())).append(t(lang, " sau làm tròn): ", " after rounding): "))
+							.append(String.join(", ", ties.stream().map(d -> dayLabel(d.date(), lang)).toList()))
+							.append(t(lang, "; ngày trên cao hơn một chút theo số chưa làm tròn.\n",
+									"; the day above is slightly higher before rounding.\n"));
+				}
 
 				List<Daily> next = days.subList(1, Math.min(days.size(), 1 + TOP_DAYS_NEXT));
 				if (!next.isEmpty()) {
@@ -1536,6 +1552,11 @@ public class CostMonitoringLookupAnswers {
 				sb.append("- ").append(name).append(": ").append(dayLabel(top.date(), lang)).append(" – ")
 						.append(k1(top.amount()));
 				appendShare(sb, top.amount(), act, lang);
+				if (!ties.isEmpty()) {
+					sb.append(t(lang, " (ngang nhau với ", " (tied with "))
+							.append(String.join(", ", ties.stream().map(d -> dayLabel(d.date(), lang)).toList()))
+							.append(')');
+				}
 				sb.append('\n');
 			}
 		}
@@ -2102,7 +2123,7 @@ public class CostMonitoringLookupAnswers {
 			for (Daily d : spending) {
 				double avg = (total - d.amount()) / (spending.size() - 1);
 				double ratio = avg > 0 ? d.amount() / avg : 0;
-				if (top == null || d.amount() > top.amount()) {
+				if (top == null || d.rankValue() > top.rankValue()) {
 					top = d;
 					topRatio = ratio;
 					topAvg = avg;
@@ -2493,8 +2514,19 @@ public class CostMonitoringLookupAnswers {
 		sb.append("**").append(name).append("** ").append(current.month())
 				.append(t(lang, " so với tháng trước ", " vs previous month ")).append(previous.month()).append(":\n");
 
-		sb.append(t(lang, "- Actual cùng kỳ (đến ngày ", "- Actual same period (up to day ")).append(d).append("): **")
-				.append(k1(curAct)).append("**").append(t(lang, " so với ", " vs ")).append(k1(prevAct));
+		// Kỳ so sánh ghi rõ ngày 2 tháng (audit 2026-11-17: LLM ghi "hôm nay (16/11) vs 10/10")
+		sb.append(t(lang, "- Kỳ so sánh: ", "- Compared period: "))
+				.append(ComparePreviousMonthTool.period(current, d, previous, prevDay));
+		if (last > 0 && last < current.d()) {
+			sb.append(t(lang, " (" + fr.cost() + " mới có số đến ", " (" + fr.cost() + " has data up to "))
+					.append(String.format(Locale.ROOT, "%02d/%02d", d, current.month().getMonthValue())).append(')');
+		}
+		sb.append('\n');
+
+		String noActual = t(lang, "chưa có số", "no data");
+		sb.append(t(lang, "- Actual cùng kỳ: **", "- Actual same period: **"))
+				.append(curAct == null ? noActual : k1(curAct)).append("**").append(t(lang, " so với ", " vs "))
+				.append(prevAct == null ? noActual : k1(prevAct));
 		if (actDiff != null) {
 			sb.append(" → ").append(CmText.signedK(actDiff))
 					.append(actPct == null ? "" : " (" + CmText.signedPct1(actPct) + ")")
@@ -2513,7 +2545,8 @@ public class CostMonitoringLookupAnswers {
 		}
 		sb.append('\n');
 
-		sb.append(t(lang, "- Actual cả tháng trước: ", "- Previous month full Actual: ")).append(k1(prev.actMtdLatest()));
+		sb.append(t(lang, "- Actual cả tháng trước: ", "- Previous month full Actual: "))
+				.append(prev.actMtdLatest() == null ? noActual : k1(prev.actMtdLatest()));
 		Double prevResult = CmText.subR1(prev.actMtdLatest(), prevFluct);
 		if (prevResult != null) {
 			sb.append(" (").append(CmText.versus("Fluct", prevResult, null, lang)).append(')');
@@ -2577,8 +2610,8 @@ public class CostMonitoringLookupAnswers {
 		}
 
 		if (!spending.isEmpty()) {
-			Daily max = spending.stream().max(Comparator.comparing(Daily::amount)).get();
-			Daily min = spending.stream().min(Comparator.comparing(Daily::amount)).get();
+			Daily max = spending.stream().max(Comparator.comparingDouble(Daily::rankValue)).get();
+			Daily min = spending.stream().min(Comparator.comparingDouble(Daily::rankValue)).get();
 			sb.append(t(lang, "- Ngày chi cao nhất ", "- Highest day ")).append(dayLabel(max.date(), lang)).append(" **")
 					.append(k1(max.amount())).append("**");
 			if (spending.size() > 1) {
@@ -3012,7 +3045,7 @@ public class CostMonitoringLookupAnswers {
 		// 3 ngày chi lớn nhất
 		List<Daily> spending = new ArrayList<>(dailies(snapshot, chart));
 		spending.removeIf(x -> x.amount() == null || Math.round(x.amount() * 10) <= 0);
-		spending.sort(Comparator.comparing(Daily::amount).reversed());
+		spending.sort(Daily.BY_RAW_DESC);
 		if (!spending.isEmpty()) {
 			List<String> parts = new ArrayList<>();
 			for (Daily d : spending.subList(0, Math.min(3, spending.size()))) {
@@ -3099,7 +3132,22 @@ public class CostMonitoringLookupAnswers {
 	// CHUNG
 	// =========================================================
 
-	record Daily(LocalDate date, Double amount) {
+	// amount: số hiển thị (1 chữ số, dùng cho tổng / hiển thị); raw: số chưa làm tròn, chỉ dùng để xếp hạng
+	// (chênh 2 số cộng dồn đã làm tròn có thể đảo thứ tự, vd 3.18 vs 3.16 -> 3.1 vs 3.2)
+	record Daily(LocalDate date, Double amount, Double raw) {
+
+		// Giảm dần theo số chưa làm tròn
+		static final Comparator<Daily> BY_RAW_DESC = Comparator.comparingDouble(Daily::rankValue).reversed();
+
+		double rankValue() {
+			return raw != null ? raw : amount != null ? amount : Double.NEGATIVE_INFINITY;
+		}
+
+		// Bằng nhau sau khi làm tròn hiển thị
+		boolean sameShown(Daily other) {
+			return other != null && amount != null && other.amount() != null
+					&& Math.round(amount * 10) == Math.round(other.amount() * 10);
+		}
 	}
 
 	// Chi trong ngày = Act MTD hôm đó − Act MTD gần nhất trước đó (số 1 chữ số, giống get_daily_series)
@@ -3117,7 +3165,7 @@ public class CostMonitoringLookupAnswers {
 			}
 
 			if (point.actMtd() != null) {
-				result.add(new Daily(point.date(), CmText.subR1(point.actMtd(), lastMtd)));
+				result.add(new Daily(point.date(), CmText.subR1(point.actMtd(), lastMtd), point.actMtd() - lastMtd));
 				lastMtd = point.actMtd();
 			}
 		}

@@ -5,6 +5,7 @@ import com.example.backlogbe.dto.costmonitoring.CostChartDto;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
+import java.util.Locale;
 import java.util.Map;
 
 import static com.example.backlogbe.assistant.screens.costmonitoring.CmText.t;
@@ -66,15 +67,18 @@ public class ComparePreviousMonthTool implements AssistantTool {
 		sb.append(div).append(' ').append(cost).append(t(lang, "|Đơn vị=K$", "|Unit=K$")).append('\n');
 
 		// Tháng đang xem
+		// Kỳ so sánh ghi rõ ngày đầu–cuối 2 tháng (audit 2026-11-17: nhãn "Đến ngày (D)" bị model lẫn với D chung
+		// của màn hình, trả "hôm nay (16/11) vs 10/10" trong khi tool tính 01–10 của cả 2 tháng)
+		sb.append(t(lang, "Kỳ so sánh=", "Compared period=")).append(period(current, d, previous, prevDay)).append('\n');
+
 		sb.append(t(lang, "[Tháng này] ", "[This month] ")).append(current.month())
-				.append(t(lang, "|Đến ngày (D)=", "|Up to day (D)=")).append(d)
 				.append(t(lang, "|Số ngày trong tháng (N)=", "|Days in month (N)=")).append(current.n());
 		if (cur == null) {
 			sb.append('|').append(noData).append('\n');
 		} else {
 			sb.append("|FC=").append(fmt(cur.fcTgt()))
 					.append("|Fluct=").append(fmt(fluct(cur)))
-					.append(t(lang, "|Actual đến ngày D=", "|Actual up to day D=")).append(fmt(current.actAt(cur, d)))
+					.append(t(lang, "|Actual cùng kỳ=", "|Actual same period=")).append(fmt(current.actAt(cur, d)))
 					.append('\n');
 		}
 
@@ -87,8 +91,7 @@ public class ComparePreviousMonthTool implements AssistantTool {
 			sb.append("|FC=").append(fmt(prev.fcTgt()))
 					.append("|Fluct=").append(fmt(fluct(prev)))
 					.append(t(lang, "|Actual cả tháng=", "|Actual full month=")).append(fmt(prev.actMtdLatest()))
-					.append(t(lang, "|Actual cùng kỳ (đến ngày ", "|Actual same period (up to day "))
-					.append(prevDay).append(")=")
+					.append(t(lang, "|Actual cùng kỳ=", "|Actual same period="))
 					.append(fmt(previous.actAt(prev, prevDay)));
 		}
 
@@ -113,5 +116,11 @@ public class ComparePreviousMonthTool implements AssistantTool {
 		}
 
 		return sb.toString().trim();
+	}
+
+	// "01–10/11 vs 01–10/10" (tháng này vs tháng trước, cùng số ngày)
+	static String period(CostMonitoringSnapshot current, int d, CostMonitoringSnapshot previous, int prevDay) {
+		return String.format(Locale.ROOT, "01–%02d/%02d vs 01–%02d/%02d",
+				d, current.month().getMonthValue(), prevDay, previous.month().getMonthValue());
 	}
 }

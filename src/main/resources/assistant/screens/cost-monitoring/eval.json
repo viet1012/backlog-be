@@ -386,6 +386,14 @@
     "answerIntent": "prev_month"
   },
   {
+    "question": "so sánh ngày hôm nay vs tháng trước của press về t&sl",
+    "month": "2026-11",
+    "mustContain": ["PRESS T&SL", "Kỳ so sánh", "01–", "Actual cùng kỳ"],
+    "mustNotContain": ["hôm nay (", "compare_previous_month"],
+    "llmCallCount": 0,
+    "answerIntent": "prev_month"
+  },
+  {
     "question": "Vì sao PRESS T&SL dự báo vượt?",
     "month": "2026-11",
     "mustContain": ["PRESS T&SL", "tiến độ", "3 ngày chi lớn nhất"],
