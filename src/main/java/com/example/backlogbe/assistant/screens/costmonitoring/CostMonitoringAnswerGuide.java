@@ -356,9 +356,11 @@ public class CostMonitoringAnswerGuide {
 	private static final Pattern RAW_MONTH = Pattern.compile(
 			"(?iu)(?<![\\p{L}\\p{N}_])(?:th[aá]ng\\s+(?:tr[uư][oớ]c|\\d{1,2}(?:\\s*[/-]\\s*20\\d{2})?)|last month|previous month)(?![\\p{L}\\p{N}_])");
 
-	// Chỉ các template hỏi SỐ, tính được trên snapshot của 1 tháng bất kỳ (tháng đã kết thúc: không có dự báo)
+	// Chỉ các template hỏi SỐ, tính được trên snapshot của 1 tháng bất kỳ (tháng đã kết thúc: không có dự báo).
+	// Theo ngày (day_spend, top_day, spike_days): test 2026-11-18 ext-253 "Ngày 3 tháng 10 PRESS T&SL chi bao nhiêu?" qua LLM 15 s.
 	private static final java.util.Set<String> OTHER_MONTH_VALUE_KINDS =
-			java.util.Set.of(CostMonitoringManagerAnswers.OT_VALUE, CostMonitoringLookupAnswers.FRAME_VALUE);
+			java.util.Set.of(CostMonitoringManagerAnswers.OT_VALUE, CostMonitoringLookupAnswers.FRAME_VALUE,
+					CostMonitoringLookupAnswers.DAY_SPEND, CostMonitoringLookupAnswers.TOP_DAY, CostMonitoringLookupAnswers.SPIKE_DAYS);
 
 	// "OT PRESS tháng 10 bao nhiêu?", "PRESS T&SL tháng trước chi bao nhiêu?" (eval 2026-11-18: qua LLM 7–34 s dù đã có số):
 	// bỏ cụm tháng khỏi câu, phân loại như câu tháng đang xem, chỉ nhận ot_value / frame_value, tính trên snapshot tháng hỏi.
@@ -960,8 +962,8 @@ public class CostMonitoringAnswerGuide {
 			boolean xWorse = px > py;
 			boolean holds = claimWorse == xWorse;
 			String verdict = xWorse ? t(lang, " tệ hơn ", " is worse than ") : t(lang, " tốt hơn ", " is better than ");
-			sb.append(holds ? "" : t(lang, "**Tiền đề chưa đúng:** ", "**The premise does not hold:** "))
-					.append(t(lang, "theo " + criterion + ", ", "by " + criterion + ", "))
+			sb.append(holds ? t(lang, "Theo " + criterion + ", ", "By " + criterion + ", ")
+							: t(lang, "**Tiền đề chưa đúng:** theo " + criterion + ", ", "**The premise does not hold:** by " + criterion + ", "))
 					.append("**").append(x.name()).append(verdict).append(y.name()).append("**").append(pcts).append('.');
 		}
 
@@ -977,6 +979,40 @@ public class CostMonitoringAnswerGuide {
 					.append(CmText.signedK(bigK == x ? oy : ox)).append(t(lang, ") vì target lớn hơn (Fluct ", ") because its target is larger (Fluct "))
 					.append(CmText.k1(bigK.a().fluct())).append(t(lang, " so với ", " vs ")).append(CmText.k1(smallK.a().fluct()))
 					.append(").");
+		}
+
+		// Yếu tố (tháng đang diễn ra): chi so với tiến độ và Fluct so với FC của từng khung, theo % Fluct để so được
+		// giữa 2 khung có target khác nhau (test 2026-11-18 ext-130: chỉ nêu kết luận, không nêu vì sao)
+		if (!closed) {
+			String fx = factorText(x, lang);
+			String fy = factorText(y, lang);
+			if (fx != null && fy != null) {
+				sb.append('\n').append(t(lang, "**Yếu tố (hệ thống tính):**", "**Factors (system-computed):**"))
+						.append("\n- ").append(fx).append("\n- ").append(fy);
+			}
+		}
+
+		return sb.toString();
+	}
+
+	// "PRESS T&SL: chi so với tiến độ +32.8 K$ (21.4% Fluct); Fluct so với FC -21.8 K$ (target bị hạ)"; thiếu số -> null
+	private static String factorText(Frame f, String lang) {
+
+		CostMonitoringAssessment a = f.a();
+		Double pace = CmText.r1(a.excessVsPace());
+		Double fluct = CmText.r1(a.fluct());
+		if (pace == null || fluct == null || fluct == 0) {
+			return null;
+		}
+
+		StringBuilder sb = new StringBuilder(f.name()).append(t(lang, ": chi so với tiến độ ", ": spending vs pace "))
+				.append(CmText.signedK(pace)).append(" (").append(CmText.signedPct1(CmText.r1(pace / fluct * 100)))
+				.append(t(lang, " Fluct)", " of Fluct)"));
+
+		Double vsFc = CmText.subR1(a.fluct(), a.fc());
+		if (vsFc != null && Math.round(vsFc * 10) != 0) {
+			sb.append(t(lang, "; Fluct so với FC ", "; Fluct vs FC ")).append(CmText.signedK(vsFc))
+					.append(vsFc < 0 ? t(lang, " (target bị hạ)", " (target cut)") : t(lang, " (target được nâng)", " (target raised)"));
 		}
 
 		return sb.toString();

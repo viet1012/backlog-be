@@ -324,7 +324,8 @@ public final class CmText {
 		LocalDate cross = CostMonitoringSnapshot.estimateCrossDay(chart);
 
 		if (cross != null) {
-			return CostMonitoringSnapshot.ddmm(cross) + " (" + DailySeriesTool.weekday(cross.getDayOfWeek(), lang) + ")";
+			return CostMonitoringSnapshot.ddmm(cross) + " (" + DailySeriesTool.weekday(cross.getDayOfWeek(), lang) + ")"
+					+ staleCrossNote(chart, cross, lang);
 		}
 
 		Double act = chart.actMtdLatest();
@@ -336,6 +337,31 @@ public final class CmText {
 		}
 
 		return t(lang, "không vượt đến cuối tháng", "does not exceed by month-end");
+	}
+
+	/*
+	 * Ngày dự kiến vượt đã qua (hôm nay trở về trước) vì Actual của khung trễ (vd OT nạp từ file, mới đến 10/11):
+	 *   " – theo Estimate, Actual mới đến 10/11 nên chưa xác nhận". Ngày còn ở tương lai -> "".
+	 */
+	public static String staleCrossNote(CostChartDto chart, LocalDate cross, String lang) {
+
+		if (chart == null || cross == null || cross.isAfter(LocalDate.now())) {
+			return "";
+		}
+
+		LocalDate lastAct = null;
+		for (var point : chart.points()) {
+			if (point.actMtd() != null && point.date() != null && (lastAct == null || point.date().isAfter(lastAct))) {
+				lastAct = point.date();
+			}
+		}
+
+		if (lastAct == null) {
+			return "";
+		}
+
+		return t(lang, " – theo Estimate, Actual mới đến " + CostMonitoringSnapshot.ddmm(lastAct) + " nên chưa xác nhận",
+				" – by the Estimate, Actual only up to " + CostMonitoringSnapshot.ddmm(lastAct) + ", not confirmed");
 	}
 
 	public static String forecastBase(String base, String lang) {

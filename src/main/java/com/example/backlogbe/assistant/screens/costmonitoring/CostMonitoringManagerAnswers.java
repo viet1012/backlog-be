@@ -632,7 +632,7 @@ public class CostMonitoringManagerAnswers {
 				? highestSentence(rows, lang)
 				: t(lang, "Nặng nhất là **", "The heaviest is **") + byK.name() + "**: " + forecastVsFluct(byK, lang)
 				+ crossSuffix(byK, lang) + ".";
-		String s3 = withinSentence(within, rows, lang);
+		String s3 = withinSentence(s, within, rows, lang);
 
 		StringBuilder sb = new StringBuilder();
 
@@ -823,7 +823,7 @@ public class CostMonitoringManagerAnswers {
 		// 3. Dự kiến vượt sớm nhất (khác khung trên)
 		Row earliest = earliestCross(rows);
 		if (earliest != null && !used.contains(earliest) && points.size() < MAX_POINTS) {
-			points.add("**" + earliest.name() + t(lang, "** dự kiến vượt Fluct sớm nhất", "** is expected to exceed Fluct earliest")
+			points.add("**" + earliest.name() + t(lang, "** là khung vượt Fluct sớm nhất", "** is the earliest to exceed Fluct")
 					+ crossSuffix(earliest, lang) + t(lang, "; dự báo ", "; forecast ")
 					+ CmText.signedK(earliest.a().estimateOver()) + ".");
 			used.add(earliest);
@@ -945,7 +945,7 @@ public class CostMonitoringManagerAnswers {
 				.append(t(lang, "; so với FC ", "; vs FC ")).append(CmText.k1(fc)).append(" → ")
 				.append(CmText.signedK(CmText.r1(est - fc))).append(".\n\n");
 
-		String otNote = otNote(rows, lang);
+		String otNote = otNote(s, rows, lang);
 		sb.append('_').append(otNote.isEmpty() ? "" : otNote + " ").append(t(lang,
 						"Tổng cộng từ số từng khung đã làm tròn 1 chữ số; bù trừ giữa "
 								+ "các khung chỉ để tham khảo vì mỗi khung có target riêng. ",
@@ -1101,13 +1101,16 @@ public class CostMonitoringManagerAnswers {
 			// Tiêu chí thứ 2: dự báo cuối tháng so với Fluct (gộp các khung của bộ phận)
 			List<Row> withEst = d.rows().stream().filter(r -> r.a().estimateOver() != null).toList();
 			if (!withEst.isEmpty()) {
+				double estSum = sumR1(withEst, r -> r.a().estimateEom());
+				double fluctSum = sumR1(withEst, r -> r.a().fluct());
 				sb.append(t(lang, "; dự báo cuối tháng so với Fluct ", "; month-end forecast vs Fluct "))
-						.append(CmText.signedK(sumR1(withEst, r -> r.a().estimateOver())));
+						.append(CmText.signedK(sumR1(withEst, r -> r.a().estimateOver())))
+						.append(fluctSum > 0 ? " (" + CmText.pct1(CmText.r1(estSum / fluctSum * 100)) + t(lang, " Fluct)", " of Fluct)") : "");
 			}
 			sb.append('\n');
 		}
 
-		String otNote = otNote(withAct, lang);
+		String otNote = otNote(s, withAct, lang);
 		sb.append(t(lang,
 				"Chi nhiều chưa có nghĩa là vượt: mỗi khung có target riêng (xem \"Bộ phận nào đáng lo nhất?\").",
 				"Higher spending does not mean over target: each frame has its own target (ask \"Which division is the most concerning?\")."))
@@ -1273,10 +1276,20 @@ public class CostMonitoringManagerAnswers {
 		double prevGap = sumR1(prevOver, r -> CmText.subR1(r.a().act(), r.a().fluct()));
 		double curGap = sumR1(curOver, r -> r.a().estimateOver());
 
+		// Số khung vượt và tổng phần vượt phải cùng chiều mới kết luận đỡ / tệ hơn; ngược chiều -> nói rõ "chưa đỡ hơn"
+		int countCmp = Integer.compare(curOver.size(), prevOver.size());
+		int gapCmp = Double.compare(CmText.r1(curGap), CmText.r1(prevGap));
+
 		String verdict;
-		if (curOver.size() < prevOver.size() || (curOver.size() == prevOver.size() && curGap < prevGap)) {
+		if (countCmp < 0 && gapCmp > 0) {
+			verdict = t(lang, "**Chưa đỡ hơn tháng trước** (theo dự báo): ít khung vượt hơn nhưng tổng phần vượt lớn hơn",
+					"**Not better than last month** (by forecast): fewer frames over but a larger total excess");
+		} else if (countCmp > 0 && gapCmp < 0) {
+			verdict = t(lang, "**Lẫn lộn so với tháng trước** (theo dự báo): nhiều khung vượt hơn nhưng tổng phần vượt nhỏ hơn",
+					"**Mixed vs last month** (by forecast): more frames over but a smaller total excess");
+		} else if (countCmp < 0 || (countCmp == 0 && gapCmp < 0)) {
 			verdict = t(lang, "**Tháng này đang đỡ hơn tháng trước** (theo dự báo)", "**This month looks better than last month** (by forecast)");
-		} else if (curOver.size() > prevOver.size() || curGap > prevGap) {
+		} else if (countCmp > 0 || gapCmp > 0) {
 			verdict = t(lang, "**Tháng này đang tệ hơn tháng trước** (theo dự báo)", "**This month looks worse than last month** (by forecast)");
 		} else {
 			verdict = t(lang, "**Tháng này tương tự tháng trước** (theo dự báo)", "**This month looks similar to last month** (by forecast)");
@@ -1853,9 +1866,9 @@ public class CostMonitoringManagerAnswers {
 				.orElse(t(lang, "Chưa đủ dữ liệu dự báo.", "Not enough forecast data."));
 	}
 
-	private static String withinSentence(List<Row> within, List<Row> rows, String lang) {
+	private static String withinSentence(CostMonitoringSnapshot s, List<Row> within, List<Row> rows, String lang) {
 
-		String ot = otNote(rows, lang);
+		String ot = otNote(s, rows, lang);
 
 		if (within.isEmpty()) {
 			return (t(lang, "Không khung nào còn trong Fluct theo dự báo.", "No frame stays within Fluct by forecast.")
@@ -1867,11 +1880,29 @@ public class CostMonitoringManagerAnswers {
 				+ (ot.isEmpty() ? "" : " " + ot);
 	}
 
-	// Có khung OT trong danh sách (đã có Actual) -> ""; không -> "OT chưa có Actual (chưa nạp số OT) nên chưa tính."
-	private static String otNote(List<Row> rows, String lang) {
-		return rows.stream().anyMatch(r -> "OT".equals(r.cost()))
-				? ""
-				: t(lang, "OT chưa có Actual (chưa nạp số OT) nên chưa tính.",
+	/*
+	 * Có khung OT trong danh sách -> "". Không có OT:
+	 *   - OT của các bộ phận trong danh sách đã có Actual -> câu hỏi chỉ hỏi T&SL / RM: "Chỉ tính T&SL / RM theo câu hỏi (không gồm OT)."
+	 *   - OT chưa có Actual -> "OT chưa có Actual (chưa nạp số OT) nên chưa tính."
+	 */
+	private static String otNote(CostMonitoringSnapshot s, List<Row> rows, String lang) {
+
+		if (rows.stream().anyMatch(r -> "OT".equals(r.cost()))) {
+			return "";
+		}
+
+		boolean otHasActual = s != null && rows.stream().map(Row::div).distinct().anyMatch(div -> {
+			CostChartDto ot = s.find(div, "OT");
+			return ot != null && ot.actMtdLatest() != null;
+		});
+
+		if (otHasActual) {
+			String costs = String.join(" / ", rows.stream().map(Row::cost).distinct().toList());
+			return t(lang, "Chỉ tính " + costs + " theo câu hỏi (không gồm OT).",
+					"Only " + costs + " as asked (OT not included).");
+		}
+
+		return t(lang, "OT chưa có Actual (chưa nạp số OT) nên chưa tính.",
 				"OT has no Actual yet (OT figures not loaded), so it is not included.");
 	}
 
@@ -1908,7 +1939,8 @@ public class CostMonitoringManagerAnswers {
 
 		LocalDate day = CostMonitoringSnapshot.estimateCrossDay(r.chart());
 
-		return day == null ? "" : t(lang, ", dự kiến vượt từ ", ", expected to exceed from ") + dayLabel(day, lang);
+		return day == null ? "" : t(lang, ", dự kiến vượt từ ", ", expected to exceed from ") + dayLabel(day, lang)
+				+ CmText.staleCrossNote(r.chart(), day, lang);
 	}
 
 	// "giữ PRESS T&SL ≤ 4.99 K$/ngày (đang chi 7.85 K$/ngày, cần giảm 36%)"; không có số -> null
