@@ -525,8 +525,8 @@
   {
     "question": "press ngày mấy có ot cao nhất ?",
     "month": "2026-11",
-    "mustContain": ["PRESS OT"],
-    "mustNotContain": ["30/11"],
+    "mustContain": ["PRESS OT", "06/11", "**3.2 K$**"],
+    "mustNotContain": ["30/11", "**3.1 K$**"],
     "llmCallCount": 0,
     "answerIntent": "top_day"
   },
@@ -620,7 +620,7 @@
   {
     "question": "Tháng 3 năm nay có dữ liệu không?",
     "month": "2026-11",
-    "mustContain": ["2026-03", "chưa có số chi"],
+    "mustContain": ["2026-03", "có dữ liệu", "31/03"],
     "mustNotContain": ["[Dữ liệu tháng", "đã có dữ liệu"],
     "llmCallCount": 0,
     "answerIntent": "data_availability"
@@ -647,5 +647,47 @@
     "mustContain": ["Các tháng sau 2026-11"],
     "mustNotContain": [],
     "llmCallCount": 0
+  },
+  {
+    "question": "Ở tháng trước PRESS mua tool nào nhiều nhất",
+    "month": "2026-11",
+    "mustContain": ["2026-10", "PRESS T&SL", "lần"],
+    "mustNotContain": ["Xếp hạng theo Actual", "PRESS OT", "MOLD RM"],
+    "llmCallCount": 0,
+    "answerIntent": "item_most_issued"
+  },
+  {
+    "question": "OT PRESS tháng 10 bao nhiêu?",
+    "month": "2026-11",
+    "mustContain": ["82.6"],
+    "mustNotContain": []
+  },
+  {
+    "question": "OT MOLD tháng 10 bao nhiêu?",
+    "month": "2026-11",
+    "mustContain": ["29.0"],
+    "mustNotContain": []
+  },
+  {
+    "question": "OT GUIDE tháng 10 bao nhiêu?",
+    "month": "2026-11",
+    "mustContain": ["35.6"],
+    "mustNotContain": []
+  },
+  {
+    "question": "Chi phí R&M sửa chữa bảo trì của PRESS tháng này bao nhiêu?",
+    "month": "2026-11",
+    "mustContain": ["nguyên vật liệu", "không phải R&M"],
+    "mustNotContain": ["K$"],
+    "llmCallCount": 0,
+    "answerIntent": "not_on_screen"
+  },
+  {
+    "question": "Lương cơ bản (Basic) của PRESS tháng này là bao nhiêu?",
+    "month": "2026-11",
+    "mustContain": ["chỉ có OT"],
+    "mustNotContain": ["K$"],
+    "llmCallCount": 0,
+    "answerIntent": "not_on_screen"
   }
 ]

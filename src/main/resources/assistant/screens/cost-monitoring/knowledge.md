@@ -8,9 +8,16 @@ Lưới 3×3: hàng là bộ phận (PRESS, MOLD, GUIDE), cột là loại chi p
 - Cost center dùng chung được phân bổ theo tỷ lệ (F2 chung nhà máy, HT2 cho Press/Mold, HT-G cho Guide), nên Actual trên chart = chi phí trực tiếp + phần phân bổ.
 
 ## 2. Loại chi phí
-- OT: chi phí tăng ca (Labor Cost – OT thực tế), lấy từ file "Daily Cost monitoring" (sheet PressCOGS, MoldCOGS, PG+DP-COGS, MG-COGS; GUIDE = PG + MG), được nạp vào hệ thống theo đợt, nên Actual OT có thể trễ hơn T&SL vài ngày. Có Actual, Estimate, dự báo, đánh giá như T&SL / RM. Tháng chưa nạp số OT thì ghi "Chưa có actual", không coi là chi 0. Không có chi tiết vật tư / máy / cost center / dòng xuất kho; không suy đoán lý do tăng ca (số người, giờ làm…) vì không có dữ liệu đó.
+- OT: chi phí tăng ca (Labor Cost – OT thực tế), lấy từ file "Daily Cost monitoring" (sheet PressCOGS, MoldCOGS, PG+DP-COGS, MG-COGS; GUIDE = PG + MG, xem mục 2a), được nạp vào hệ thống theo đợt, nên Actual OT có thể trễ hơn T&SL vài ngày. Có Actual, Estimate, dự báo, đánh giá như T&SL / RM. Tháng chưa nạp số OT thì ghi "Chưa có actual", không coi là chi 0. Không có chi tiết vật tư / máy / cost center / dòng xuất kho; không suy đoán lý do tăng ca (số người, giờ làm…) vì không có dữ liệu đó.
 - T&SL ("Tool & SL"): dụng cụ, công cụ tiêu hao, vật tư sản xuất (kể cả văn phòng phẩm), từ dữ liệu xuất kho, cập nhật đến hôm qua.
 - RM (Raw Material): nguyên vật liệu (lò xo, phôi đồng…), từ dữ liệu xuất kho nguyên liệu, cập nhật đến hôm kia.
+  RM KHÔNG phải "R&M" / "Repair&Maintenance" (sửa chữa – bảo trì) trong file Daily Cost monitoring; màn hình không có R&M.
+
+## 2a. File "Daily Cost monitoring" (nguồn số OT) – thuật ngữ
+- Mỗi sheet là 1 nhóm: PressCOGS (PRESS), MoldCOGS (MOLD), PG+DP-COGS (PG = PRESS GUIDE, gồm DP = Dowel Pin), MG-COGS (MG = MOLD GUIDE). OT của GUIDE trên màn hình = OT PG+DP + OT MG. Sheet "Support Pillar" không thuộc PRESS / MOLD / GUIDE trên màn hình.
+- Labor Cost = Basic (lương cơ bản) + OT (tăng ca). Màn hình chỉ có OT; không có Basic, tổng Labor Cost.
+- File còn các cột Sales, Material Cost, Outside Cost, Repair&Maintenance, Supply, Tool, Packing material, và OT / Basic tách theo dòng sản phẩm (MTO, MTS, RE+CAM+BALL LOCK). Màn hình KHÔNG có các số này (T&SL = Tool + Supply theo dữ liệu xuất kho, không lấy từ file này): hỏi thì nói rõ màn hình chưa có dữ liệu đó, không ước lượng.
+- Tiền trong file là KUSD (= K$ trên màn hình).
 
 ## 3. Chỉ số và công thức
 D = ngày có dữ liệu mới nhất, N = số ngày trong tháng.

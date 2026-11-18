@@ -54,7 +54,8 @@ public class CostMonitoringAnswerGuide {
 	// Hỏi chi tiết (vật tư / máy / cost center / Category) -> cần get_top_items, không cấm tool, không template.
 	// Không dấu, khớp trên câu đã bỏ dấu (CostMonitoringIntentClassifier.fold)
 	private static final List<String> DETAIL_KEYWORDS = List.of(
-			"vat tu", "cost center", "category", "may", "item", "machine", "material"
+			"vat tu", "cost center", "category", "may", "item", "machine", "material",
+			"tool", "tools", "dung cu", "dao cu", "vat lieu", "phu tung"
 	);
 
 	// "Vì sao" cần giải thích sâu hơn kết luận tính sẵn (Ratio, so cùng kỳ, nhiều khung) -> vẫn qua LLM
@@ -165,7 +166,73 @@ public class CostMonitoringAnswerGuide {
 				g.suggestions(), g.intentMatch() + "; futureNote=yes");
 	}
 
+	// Chi phí có trong file "Daily Cost monitoring" nhưng không có trên màn hình (2026-11-18). Câu hỏi không nêu OT / T&SL / RM
+	// -> trả lời bằng code, không để template tra cứu số đưa số khung PRESS / MOLD / GUIDE thay thế.
+	// "luong" đứng riêng trùng "lượng" (số lượng) -> chỉ nhận cụm.
+	static final String NOT_ON_SCREEN = "not_on_screen";
+	private static final Pattern NOT_ON_SCREEN_RM = CostMonitoringQuestion.word(
+			"r&m|r & m|repair|maintenance|sua chua|bao tri|bao duong");
+	private static final Pattern NOT_ON_SCREEN_LABOR = CostMonitoringQuestion.word(
+			"luong co ban|tien luong|quy luong|basic|labor cost|labour cost|chi phi nhan cong|nhan cong");
+	private static final Pattern NOT_ON_SCREEN_OTHER = CostMonitoringQuestion.word(
+			"packing|packing material|bao bi|outside cost|gia cong ngoai|thue ngoai|mto|mts");
+
+	static AnswerGuide notOnScreen(String question, String lang) {
+
+		if (question == null || question.isBlank()) {
+			return null;
+		}
+
+		String f = CostMonitoringIntentClassifier.fold(question);
+
+		if (!CostMonitoringQuestion.costs(CostMonitoringQuestion.normalize(question)).isEmpty()) {
+			return null;
+		}
+
+		boolean rm = NOT_ON_SCREEN_RM.matcher(f).find();
+		boolean labor = NOT_ON_SCREEN_LABOR.matcher(f).find();
+		boolean other = NOT_ON_SCREEN_OTHER.matcher(f).find();
+
+		if (!rm && !labor && !other) {
+			return null;
+		}
+
+		StringBuilder text = new StringBuilder(t(lang,
+				"Màn hình Cost Monitoring chưa có số này – chỉ theo dõi 3 loại chi phí của PRESS, MOLD, GUIDE: "
+						+ "**OT** (tăng ca), **T&SL** (tool, vật tư tiêu hao) và **RM** (nguyên vật liệu).",
+				"Cost Monitoring does not have this figure – it only tracks 3 cost types for PRESS, MOLD, GUIDE: "
+						+ "**OT** (overtime), **T&SL** (tools, consumables) and **RM** (raw material)."));
+		if (rm) {
+			text.append("\n- ").append(t(lang,
+					"RM ở đây là nguyên vật liệu (Raw Material), không phải R&M (sửa chữa – bảo trì).",
+					"RM here is Raw Material, not R&M (repair & maintenance)."));
+		}
+		if (labor) {
+			text.append("\n- ").append(t(lang,
+					"Về nhân công, màn hình chỉ có OT (tăng ca); không có lương cơ bản (Basic) hay tổng Labor Cost.",
+					"For labor, only OT (overtime) is shown; no Basic labor or total Labor Cost."));
+		}
+		if (other) {
+			text.append("\n- ").append(t(lang,
+					"Không có Packing material, Outside Cost hay chi phí tách theo dòng sản phẩm (MTO / MTS / RE).",
+					"No Packing material, Outside Cost or split by product line (MTO / MTS / RE)."));
+		}
+
+		List<String> suggestions = labor
+				? List.of(t(lang, "OT PRESS tháng này thế nào?", "How is PRESS OT this month?"))
+				: List.of(t(lang, "RM PRESS tháng này thế nào?", "How is PRESS RM this month?"));
+
+		return new AnswerGuide(null, false, NOT_ON_SCREEN, text.toString(), suggestions,
+				NOT_ON_SCREEN + "(rm=" + rm + ",labor=" + labor + ",other=" + other + "); template=yes");
+	}
+
 	private AnswerGuide guideCurrent(String question, Map<String, String> params, String lang) {
+
+		// Chi phí không có trên màn hình (R&M, lương cơ bản, Packing…): trả lời trước mọi luồng khác
+		AnswerGuide missing = notOnScreen(question, lang);
+		if (missing != null) {
+			return missing;
+		}
 
 		// Câu hỏi cấp quản lý (tóm tắt, báo cáo, tổng dự kiến, what-if, bộ phận đáng lo, duyệt / xuất file…): template
 		// trước mọi luồng khác (test 2026-11-11 nhóm 30–34: qua LLM 12–70 s, nhiều câu sai)
@@ -257,6 +324,10 @@ public class CostMonitoringAnswerGuide {
 
 	// ChatOrchestrator gọi khi câu hỏi nhắc 1 tháng khác (không đi qua guide()): chỉ template tổng quan tháng đó
 	public AnswerGuide otherMonth(String question, Map<String, String> params, String lang) {
+		AnswerGuide missing = notOnScreen(question, lang);
+		if (missing != null) {
+			return missing;
+		}
 		AnswerGuide availability = dataAvailability(question, params, lang);
 		if (availability != null) {
 			return availability;
@@ -354,7 +425,9 @@ public class CostMonitoringAnswerGuide {
 
 		String folded = CostMonitoringIntentClassifier.fold(question);
 
-		if (PREVIOUS_MONTH_COMPARE.matcher(folded).find()) {
+		// Hỏi vật tư / tool mà template vật tư không trả được: không dùng template tổng quan / xếp hạng khung
+		// (audit 2026-11-18: "Ở tháng trước PRESS mua tool nào nhiều nhất" trả xếp hạng khung theo Actual / Fluct)
+		if (PREVIOUS_MONTH_COMPARE.matcher(folded).find() || CostMonitoringItemAnswers.mentionsItem(question)) {
 			return null;
 		}
 

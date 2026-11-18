@@ -81,8 +81,14 @@ public class CostMonitoringItemAnswers {
 			"mua nhieu nhat|mua nhieu|duoc mua|mua nhieu lan|xuat nhieu nhat|xuat nhieu|dung nhieu nhat|dung nhieu"
 					+ "|su dung nhieu|lay nhieu|nhieu lan nhat|thuong xuyen nhat|thuong xuyen|so luong nhieu nhat"
 					+ "|so luong lon nhat|most purchased|most bought|bought the most|bought most|most used|used the most"
-					+ "|most often|most frequently|highest quantity|largest quantity");
-	private static final Pattern MOST = CostMonitoringQuestion.word("nhieu nhat|most|top");
+					+ "|most often|most frequently|highest quantity|largest quantity"
+					+ "|buy the most|buys the most|purchase the most|purchased the most|use the most|uses the most");
+	// Động từ mua / xuất / dùng tách khỏi "nhiều nhất" bởi tối đa 4 từ: "mua tool nào nhiều nhất", "xuất vật tư gì nhiều
+	// nhất" (audit 2026-11-18: "Ở tháng trước PRESS mua tool nào nhiều nhất" không khớp ISSUE_MOST -> rơi xuống template
+	// xếp hạng khung tháng trước). "dung cu" (dụng cụ) không phải động từ "dùng".
+	private static final Pattern ISSUE_MOST_SPLIT = CostMonitoringQuestion.word(
+			"(?:mua|xuat|dung(?! cu)|lay)(?:\\s+[^\\s?]+){1,4}?\\s+(?:nhieu nhat|nhieu lan nhat|thuong xuyen nhat)");
+	private static final Pattern MOST =CostMonitoringQuestion.word("nhieu nhat|most|top");
 	private static final Pattern WHEN_WORD = CostMonitoringQuestion.word(
 			"luc nao|khi nao|ngay nao|hom nao|thoi diem nao|thoi gian nao|bao gio|vao ngay|tuan nao|when|which day|what day");
 	private static final Pattern BUY = CostMonitoringQuestion.word("mua|purchase|purchased|bought|buy|lay|xuat|dung");
@@ -264,6 +270,10 @@ public class CostMonitoringItemAnswers {
 				|| CODE.matcher(question.toUpperCase(Locale.ROOT)).find());
 	}
 
+	private static boolean issueMost(String f) {
+		return ISSUE_MOST.matcher(f).find() || ISSUE_MOST_SPLIT.matcher(f).find();
+	}
+
 	static String kind(String question, String f, String raw) {
 
 		boolean price = PRICE_WORD.matcher(f).find() || RAW_PRICE.matcher(raw).find();
@@ -281,7 +291,7 @@ public class CostMonitoringItemAnswers {
 				&& (item || code || BUY.matcher(f).find())) {
 			return ITEM_WHEN;
 		}
-		if (ISSUE_MOST.matcher(f).find() && item) {
+		if (issueMost(f) && item) {
 			return MOST_ISSUED;
 		}
 		if (ANOMALY.matcher(f).find() && (item || DETAIL_WORD.matcher(f).find())) {
@@ -296,7 +306,7 @@ public class CostMonitoringItemAnswers {
 	private String answer(String kind, String question, String f, List<CostMonitoringFocus> frames,
 						  Map<String, String> params, MonthRange span, String lang) {
 
-		boolean allowTop = ISSUE_MOST.matcher(f).find() || (MOST.matcher(f).find() && ITEM_WORD.matcher(f).find());
+		boolean allowTop = issueMost(f) || (MOST.matcher(f).find() && ITEM_WORD.matcher(f).find());
 
 		return switch (kind) {
 			case MOST_ISSUED -> mostIssued(frames, params, span, lang);

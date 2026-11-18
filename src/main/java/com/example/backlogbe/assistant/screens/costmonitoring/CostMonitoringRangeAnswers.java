@@ -549,7 +549,7 @@ public class CostMonitoringRangeAnswers {
 				.append(String.join(" ", insight(data.rows(), lang))).append('\n');
 
 		sb.append('\n').append(footer(data, false, lang).replace("._", ". " + t(lang,
-				"Vật tư: chi phí trực tiếp từ dòng xuất kho, chưa gồm phân bổ F2/HT2/HT-G; không có dữ liệu sản lượng nên không kết luận nguyên nhân sản xuất.",
+				"Vật tư: chi phí trực tiếp từ dòng xuất kho, chưa gồm phân bổ F2/HT2/HT-G; không có dữ liệu sản lượng nên chưa xác định được nguyên nhân từ sản xuất.",
 				"Items: direct cost from issue lines, excludes F2/HT2/HT-G allocation; no production data, so production causes are not concluded.") + "_"));
 
 		return sb.toString().trim();
