@@ -698,8 +698,13 @@ public class CostTopItemsRepository {
 			ORDER BY CASE WHEN %1$s IS NULL THEN 1 ELSE 0 END, %1$s
 			""";
 
-	// Tie-breaker cố định để phân trang ổn định (không lặp / thiếu dòng giữa các trang)
-	private static final String DEFAULT_ORDER = "Amt DESC, UsedDate, Code, Name, CcName, Machine, Qty";
+	// Tie-breaker cố định để phân trang ổn định (không lặp / thiếu dòng giữa các trang).
+	// Mỗi phần tử 1 cột: orderBy bỏ cột đang sắp xếp ra khỏi đây – SQL Server cấm 1 cột xuất hiện 2 lần
+	// trong ORDER BY (Msg 169, trước đây sort=qty / amountK lỗi 500).
+	private static final List<String> TIE_BREAKERS = List.of(
+			"Amt DESC", "UsedDate", "Code", "Name", "CcName", "Machine", "Qty", "UnitPrice"
+	);
+	private static final String DEFAULT_ORDER = String.join(", ", TIE_BREAKERS);
 
 	public record FilteredSummary(long total, Double totalK) {
 	}
@@ -893,9 +898,14 @@ public class CostTopItemsRepository {
 
 		String column = filter.sort().column();
 
+		// tie-breaker trừ cột đang sắp xếp ("Amt DESC" -> cột "Amt")
+		String rest = TIE_BREAKERS.stream()
+				.filter(t -> !t.split(" ")[0].equals(column))
+				.collect(java.util.stream.Collectors.joining(", "));
+
 		return "CASE WHEN " + column + " IS NULL THEN 1 ELSE 0 END, "
 				+ column + (filter.ascending() ? " ASC" : " DESC") + ", "
-				+ DEFAULT_ORDER;
+				+ rest;
 	}
 
 	// Đ/đ -> D/d (khớp REPLACE phía SQL); bỏ khoảng trắng thừa
