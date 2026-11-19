@@ -8,6 +8,7 @@ import com.example.backlogbe.assistant.screens.costmonitoring.CostMonitoringSnap
 import com.example.backlogbe.assistant.screens.costmonitoring.RatioTrendTool;
 import com.example.backlogbe.assistant.screens.costmonitoring.dto.CostTransactionLineDto;
 import com.example.backlogbe.assistant.screens.costmonitoring.repository.CostTopItemsRepository;
+import com.example.backlogbe.assistant.screens.costmonitoring.repository.CostTransactionFilter;
 import com.example.backlogbe.assistant.screens.costmonitoring.repository.CostWorkingDateRepository;
 import com.example.backlogbe.assistant.screens.costmonitoring.repository.CostWorkingDateRepository.DailyRatio;
 import com.example.backlogbe.dto.costmonitoring.CostChartDto;
@@ -18,6 +19,7 @@ import com.example.backlogbe.dto.costmonitoring.CostDetailResponse.Kpi;
 import com.example.backlogbe.dto.costmonitoring.CostDetailResponse.Transaction;
 import com.example.backlogbe.dto.costmonitoring.CostDetailResponse.TransactionPage;
 import com.example.backlogbe.dto.costmonitoring.CostMonitoringChartResponse;
+import com.example.backlogbe.dto.costmonitoring.CostTransactionFacetsResponse;
 import com.example.backlogbe.logging.RequestTiming;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -64,6 +66,13 @@ public class CostMonitoringDetailService {
 
 	// Giới hạn số dòng file export (1 div × 1 chart × tối đa 1 tháng)
 	public static final int MAX_EXPORT_ROWS = 50_000;
+
+	// Tìm / lọc bảng giao dịch (giữ số tham số SQL xa giới hạn 2100 của SQL Server)
+	private static final int MAX_QUERY_LENGTH = 200;
+	private static final int MAX_QUERY_TOKENS = 10;
+	private static final int MAX_FILTER_VALUES = 500;
+	private static final int DEFAULT_FACET_LIMIT = 500;
+	private static final int MAX_FACET_LIMIT = 1000;
 
 	private final CostMonitoringSnapshotLoader loader;
 	private final CostTopItemsRepository itemsRepository;
@@ -288,7 +297,7 @@ public class CostMonitoringDetailService {
 			return TransactionPage.empty(page, size);
 		}
 
-		TransactionPage result = loadTransactionPage(cost, div, from, to, page, size);
+		TransactionPage result = loadTransactionPage(cost, div, from, to, page, size, CostTransactionFilter.NONE);
 
 		// Actual (1 chữ số) − tổng trực tiếp (2 chữ số) = phân bổ F2 / HT2 / HT-G + điều chỉnh (chỉ khi cả kỳ)
 		Double totalK = result.totalAmountK();
@@ -303,6 +312,8 @@ public class CostMonitoringDetailService {
 	 * Lõi dùng chung cho /detail, /detail/transactions và export:
 	 * dòng xuất kho trực tiếp của bộ phận trong [from, to], thành tiền giảm dần, 1 trang.
 	 * cost: T&SL | RM (OT do caller xử lý); allocationK = null (caller tự gắn nếu có Actual).
+	 * filter rỗng -> truy vấn cũ (countRows / findTotal có cache + findLines);
+	 * có tìm / lọc / sắp xếp -> 1 truy vấn findFilteredPage (trang + tổng theo bộ lọc).
 	 */
 	private TransactionPage loadTransactionPage(
 			String cost,
@@ -310,10 +321,30 @@ public class CostMonitoringDetailService {
 			LocalDate from,
 			LocalDate to,
 			int page,
-			int size
+			int size,
+			CostTransactionFilter filter
 	) {
 
 		List<String> costCenters = CostMonitoringSnapshot.DIV_COST_CENTERS.get(div);
+
+		if (!filter.isEmpty()) {
+			long stepStart = System.nanoTime();
+			CostTopItemsRepository.FilteredPage result =
+					itemsRepository.findFilteredPage(cost, from, to, costCenters, filter, page * size, size);
+			logStep("findFilteredPage", stepStart);
+
+			return new TransactionPage(
+					from,
+					to,
+					page,
+					size,
+					result.total(),
+					(int) ((result.total() + size - 1) / size),
+					CmText.r2(result.totalK()),
+					null,
+					result.lines().stream().map(CostMonitoringDetailService::toTransaction).toList()
+			);
+		}
 
 		long stepStart = System.nanoTime();
 		long total = itemsRepository.countRows(cost, from, to, costCenters);
@@ -358,6 +389,7 @@ public class CostMonitoringDetailService {
 	/*
 	 * GET /detail/transactions: dòng xuất kho của div × chart trong [from, to] (cùng 1 tháng).
 	 * Không có Act nên allocationK = null. OT -> trang rỗng (from / to vẫn trả về).
+	 * filter: tìm / lọc / sắp xếp (parseFilter); NONE -> như trước.
 	 */
 	public TransactionPage getTransactions(
 			String divCode,
@@ -365,7 +397,8 @@ public class CostMonitoringDetailService {
 			String from,
 			String to,
 			Integer page,
-			Integer size
+			Integer size,
+			CostTransactionFilter filter
 	) {
 
 		TransactionScope scope = transactionScope(divCode, chartCode, from, to);
@@ -378,29 +411,41 @@ public class CostMonitoringDetailService {
 			return new TransactionPage(scope.from(), scope.to(), safePage, safeSize, 0, 0, null, null, List.of());
 		}
 
-		return loadTransactionPage(scope.cost(), scope.div(), scope.from(), scope.to(), safePage, safeSize);
+		return loadTransactionPage(scope.cost(), scope.div(), scope.from(), scope.to(), safePage, safeSize, filter);
 	}
 
 	/*
 	 * Bước 1 của export: validate + đếm dòng + tổng (trước khi ghi file -> lỗi trả 400 JSON).
-	 * Quá MAX_EXPORT_ROWS -> 400, yêu cầu thu hẹp khoảng ngày.
+	 * Quá MAX_EXPORT_ROWS -> 400, yêu cầu thu hẹp khoảng ngày / bộ lọc.
 	 */
 	public TransactionExport prepareTransactionExport(
 			String divCode,
 			String chartCode,
 			String from,
-			String to
+			String to,
+			CostTransactionFilter filter
 	) {
 
 		TransactionScope scope = transactionScope(divCode, chartCode, from, to);
 
 		if (scope.isOt()) {
-			return new TransactionExport(scope, 0, null);
+			return new TransactionExport(scope, 0, null, filter);
 		}
 
 		List<String> costCenters = CostMonitoringSnapshot.DIV_COST_CENTERS.get(scope.div());
 
-		long rowCount = itemsRepository.countRows(scope.cost(), scope.from(), scope.to(), costCenters);
+		long rowCount;
+		Double totalK;
+
+		if (filter.hasConditions()) {
+			CostTopItemsRepository.FilteredSummary summary =
+					itemsRepository.summarizeFiltered(scope.cost(), scope.from(), scope.to(), costCenters, filter);
+			rowCount = summary.total();
+			totalK = summary.totalK();
+		} else {
+			rowCount = itemsRepository.countRows(scope.cost(), scope.from(), scope.to(), costCenters);
+			totalK = null;
+		}
 
 		if (rowCount > MAX_EXPORT_ROWS) {
 			throw new IllegalArgumentException(String.format(Locale.ROOT,
@@ -408,12 +453,14 @@ public class CostMonitoringDetailService {
 					rowCount, MAX_EXPORT_ROWS));
 		}
 
-		Double totalK = itemsRepository.findTotal(scope.cost(), scope.from(), scope.to(), costCenters);
+		if (!filter.hasConditions()) {
+			totalK = itemsRepository.findTotal(scope.cost(), scope.from(), scope.to(), costCenters);
+		}
 
-		return new TransactionExport(scope, rowCount, CmText.r2(totalK));
+		return new TransactionExport(scope, rowCount, CmText.r2(totalK), filter);
 	}
 
-	// Bước 2 của export: đọc từng dòng (thành tiền giảm dần), tối đa MAX_EXPORT_ROWS; OT -> không có dòng
+	// Bước 2 của export: đọc từng dòng (theo bộ lọc / thứ tự của bảng), tối đa MAX_EXPORT_ROWS; OT -> không có dòng
 	public void forEachTransaction(TransactionExport export, Consumer<Transaction> consumer) {
 
 		TransactionScope scope = export.scope();
@@ -422,14 +469,181 @@ public class CostMonitoringDetailService {
 			return;
 		}
 
-		itemsRepository.streamLines(
+		List<String> costCenters = CostMonitoringSnapshot.DIV_COST_CENTERS.get(scope.div());
+
+		if (export.filter().isEmpty()) {
+			itemsRepository.streamLines(
+					scope.cost(),
+					scope.from(),
+					scope.to(),
+					costCenters,
+					MAX_EXPORT_ROWS,
+					line -> consumer.accept(toTransaction(line))
+			);
+			return;
+		}
+
+		itemsRepository.streamFilteredLines(
+				scope.cost(),
+				scope.from(),
+				scope.to(),
+				costCenters,
+				export.filter(),
+				MAX_EXPORT_ROWS,
+				line -> consumer.accept(toTransaction(line))
+		);
+	}
+
+	/*
+	 * GET /detail/transactions/facets: giá trị cho dropdown lọc 1 cột (kiểu Excel).
+	 * Áp dụng từ khóa + bộ lọc các cột khác (bỏ bộ lọc của chính cột này), đếm số dòng mỗi giá trị.
+	 * OT -> rỗng.
+	 */
+	public CostTransactionFacetsResponse getTransactionFacets(
+			String divCode,
+			String chartCode,
+			String from,
+			String to,
+			String column,
+			String facetQ,
+			Integer limit,
+			CostTransactionFilter filter
+	) {
+
+		TransactionScope scope = transactionScope(divCode, chartCode, from, to);
+
+		CostTransactionFilter.FacetColumn facetColumn = CostTransactionFilter.FacetColumn.fromParam(
+				column == null ? "" : column.trim());
+
+		if (facetColumn == null) {
+			throw new IllegalArgumentException("column must be one of date, category, costCenter, machine.");
+		}
+
+		int safeLimit = limit == null ? DEFAULT_FACET_LIMIT : limit;
+
+		if (safeLimit < 1 || safeLimit > MAX_FACET_LIMIT) {
+			throw new IllegalArgumentException("limit must be between 1 and " + MAX_FACET_LIMIT + ".");
+		}
+
+		if (facetQ != null && facetQ.length() > MAX_QUERY_LENGTH) {
+			throw new IllegalArgumentException("facetQ must be at most " + MAX_QUERY_LENGTH + " characters.");
+		}
+
+		if (scope.isOt()) {
+			return new CostTransactionFacetsResponse(facetColumn.param(), scope.from(), scope.to(), 0, false, List.of());
+		}
+
+		long stepStart = System.nanoTime();
+		CostTopItemsRepository.FacetRows rows = itemsRepository.findFacet(
 				scope.cost(),
 				scope.from(),
 				scope.to(),
 				CostMonitoringSnapshot.DIV_COST_CENTERS.get(scope.div()),
-				MAX_EXPORT_ROWS,
-				line -> consumer.accept(toTransaction(line))
+				filter,
+				facetColumn,
+				facetQ,
+				safeLimit
 		);
+		logStep("findFacet", stepStart);
+
+		List<CostTransactionFacetsResponse.Value> values = rows.rows().stream()
+				.map(r -> {
+					String value = r.value() == null ? "" : r.value();
+					return new CostTransactionFacetsResponse.Value(value, value, r.count());
+				})
+				.toList();
+
+		return new CostTransactionFacetsResponse(
+				facetColumn.param(),
+				scope.from(),
+				scope.to(),
+				rows.groups(),
+				rows.groups() > values.size(),
+				values
+		);
+	}
+
+	/*
+	 * Tham số tìm / lọc / sắp xếp của /detail/transactions (+ export, facets) -> CostTransactionFilter.
+	 * q    : tách theo khoảng trắng, tối đa MAX_QUERY_TOKENS từ, AND.
+	 * sort : "field,dir" – field: date | qty | unitPrice | amountK; dir: asc | desc (mặc định desc).
+	 * dates: yyyy-MM-dd; category / costCenter / machine: "" = ô trống. Mỗi cột tối đa MAX_FILTER_VALUES giá trị.
+	 * Tham số nhiều giá trị: lặp lại tên (category=A&category=B) – controller đọc bằng getParameterValues
+	 * (không tách theo dấu phẩy vì tên vật tư / cost center có thể chứa dấu phẩy).
+	 */
+	public static CostTransactionFilter parseFilter(
+			String q,
+			String sort,
+			List<String> dates,
+			List<String> categories,
+			List<String> costCenters,
+			List<String> machines
+	) {
+
+		List<String> tokens = List.of();
+
+		if (q != null && !q.isBlank()) {
+			if (q.length() > MAX_QUERY_LENGTH) {
+				throw new IllegalArgumentException("q must be at most " + MAX_QUERY_LENGTH + " characters.");
+			}
+			tokens = java.util.Arrays.stream(q.trim().split("\\s+"))
+					.filter(t -> !t.isBlank())
+					.distinct()
+					.toList();
+			if (tokens.size() > MAX_QUERY_TOKENS) {
+				throw new IllegalArgumentException("q must have at most " + MAX_QUERY_TOKENS + " words.");
+			}
+		}
+
+		CostTransactionFilter.SortField sortField = null;
+		boolean ascending = false;
+
+		if (sort != null && !sort.isBlank()) {
+			String[] parts = sort.trim().split(",", -1);
+			sortField = CostTransactionFilter.SortField.fromParam(parts[0].trim());
+			String dir = parts.length > 1 ? parts[1].trim().toLowerCase(Locale.ROOT) : "desc";
+
+			if (sortField == null || parts.length > 2 || !(dir.equals("asc") || dir.equals("desc"))) {
+				throw new IllegalArgumentException(
+						"sort must be <field>,<asc|desc> with field one of date, qty, unitPrice, amountK.");
+			}
+			ascending = dir.equals("asc");
+		}
+
+		List<LocalDate> parsedDates = limited(dates, "date").stream()
+				.filter(d -> d != null && !d.isBlank())
+				.map(d -> {
+					try {
+						return LocalDate.parse(d.trim());
+					} catch (DateTimeParseException e) {
+						throw new IllegalArgumentException("date must be yyyy-MM-dd.");
+					}
+				})
+				.distinct()
+				.toList();
+
+		return new CostTransactionFilter(
+				tokens,
+				parsedDates,
+				limited(categories, "category"),
+				limited(costCenters, "costCenter"),
+				limited(machines, "machine"),
+				sortField,
+				ascending
+		);
+	}
+
+	private static List<String> limited(List<String> values, String name) {
+
+		if (values == null || values.isEmpty()) {
+			return List.of();
+		}
+
+		if (values.size() > MAX_FILTER_VALUES) {
+			throw new IllegalArgumentException(name + " accepts at most " + MAX_FILTER_VALUES + " values.");
+		}
+
+		return values.stream().map(v -> v == null ? "" : v).toList();
 	}
 
 	private TransactionScope transactionScope(
@@ -479,10 +693,12 @@ public class CostMonitoringDetailService {
 	}
 
 	// rowCount / totalAmountK (K$, 2 chữ số) tính lúc chuẩn bị, dùng cho phần header của file
+	// filter: tìm / lọc / sắp xếp giống bảng đang xem (NONE = cả kỳ, thành tiền giảm dần)
 	public record TransactionExport(
 			TransactionScope scope,
 			long rowCount,
-			Double totalAmountK
+			Double totalAmountK,
+			CostTransactionFilter filter
 	) {
 	}
 

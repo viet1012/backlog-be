@@ -35,7 +35,8 @@ public class RequestTimingFilter extends OncePerRequestFilter {
 			"/api/backlogs/summary/status",
 			"/api/cost-monitoring/chart",
 			"/api/cost-monitoring/detail",
-			"/api/cost-monitoring/detail/transactions"
+			"/api/cost-monitoring/detail/transactions",
+			"/api/cost-monitoring/detail/transactions/facets"
 	);
 
 	@Override
