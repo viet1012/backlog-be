@@ -92,6 +92,8 @@ public class CostMonitoringItemAnswers {
 	private static final Pattern WHEN_WORD = CostMonitoringQuestion.word(
 			"luc nao|khi nao|ngay nao|hom nao|thoi diem nao|thoi gian nao|bao gio|vao ngay|tuan nao|when|which day|what day");
 	private static final Pattern BUY = CostMonitoringQuestion.word("mua|purchase|purchased|bought|buy|lay|xuat|dung");
+	private static final Pattern WHAT_THINGS = CostMonitoringQuestion.word(
+			"nhung gi|cai gi|thu gi|nhung thu gi|nhung mon gi|mon gi|what items|what things|what did");
 	private static final Pattern EXCEED =CostMonitoringQuestion.word("vuot|exceed|exceeds|over|cap nhat|update|updated");
 	private static final Pattern PRICE_WORD = CostMonitoringQuestion.word(
 			"don gia|thay doi gia|tang gia|giam gia|bien dong gia|gia ca|muc gia|gia mua|gia nhap|gia xuat|gia vat tu"
@@ -289,7 +291,8 @@ public class CostMonitoringItemAnswers {
 	static String kind(String question, String f, String raw) {
 
 		boolean price = PRICE_WORD.matcher(f).find() || RAW_PRICE.matcher(raw).find();
-		boolean item = ITEM_WORD.matcher(f).find();
+		// "mua những gì / cái gì nhiều nhất" = hỏi vật tư dù không có từ "vật tư" (test 2026-11-18)
+		boolean item = ITEM_WORD.matcher(f).find() || (WHAT_THINGS.matcher(f).find() && BUY.matcher(f).find());
 		boolean code = CODE.matcher(question.toUpperCase(Locale.ROOT)).find();
 
 		if (CUT.matcher(f).find() && (item || CATEGORY_WORD.matcher(f).find()) && !price) {

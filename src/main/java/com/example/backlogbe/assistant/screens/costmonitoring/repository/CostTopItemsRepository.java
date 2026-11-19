@@ -643,6 +643,275 @@ public class CostTopItemsRepository {
 		return result;
 	}
 
+	// =========================================================
+	// BẢNG GIAO DỊCH CÓ TÌM / LỌC / SẮP XẾP (drawer – /detail/transactions)
+	//
+	// Điều kiện đều chạy trên CTE B (cột đã chuẩn hóa) -> cùng phạm vi dòng với findLines / countRows.
+	// 1 truy vấn cho cả trang + tổng (COUNT / SUM OVER ()), thay vì countRows + findTotal + findLines.
+	// Không cache (bộ lọc rất đa dạng); phạm vi 1 khung × tối đa 1 tháng.
+	// =========================================================
+
+	// Chuỗi tìm: ghép các cột chữ (NULL -> ''), Đ/đ -> D/d, so sánh không phân biệt hoa thường / dấu
+	private static final String SEARCH_TEXT =
+			"(REPLACE(REPLACE(CONCAT(Code, N' ', Name, N' ', Category, N' ', CcCode, N' ', "
+					+ "NULLIF(CcName, N'(trống)'), N' ', Machine), N'Đ', N'D'), N'đ', N'd') COLLATE Latin1_General_CI_AI)";
+
+	// %1$s = điều kiện thêm (AND ...), %2$s = ORDER BY
+	private static final String FILTERED_PAGE = """
+			SELECT UsedDate,
+			       Code,
+			       Name,
+			       Category,
+			       Qty,
+			       QtyUnit,
+			       UnitPrice,
+			       Amt,
+			       CcCode,
+			       CcName,
+			       Machine,
+			       COUNT(*) OVER ()          AS Cnt,
+			       SUM(Amt) OVER () / 1000.0 AS TotK
+			FROM B
+			WHERE CC IN (:costCenters)
+			%1$s
+			ORDER BY %2$s
+			OFFSET :offset ROWS FETCH NEXT :limit ROWS ONLY
+			""";
+
+	private static final String FILTERED_SUMMARY = """
+			SELECT COUNT(*) AS Cnt, SUM(Amt) / 1000.0 AS TotK
+			FROM B
+			WHERE CC IN (:costCenters)
+			%1$s
+			""";
+
+	// Giá trị khác nhau của 1 cột + số dòng; Groups = tổng số giá trị (trước TOP). %1$s = biểu thức cột, %2$s = điều kiện
+	private static final String FACET = """
+			SELECT TOP (:limit)
+			       %1$s             AS Value,
+			       COUNT(*)         AS Cnt,
+			       COUNT(*) OVER () AS Groups
+			FROM B
+			WHERE CC IN (:costCenters)
+			%2$s
+			GROUP BY %1$s
+			ORDER BY CASE WHEN %1$s IS NULL THEN 1 ELSE 0 END, %1$s
+			""";
+
+	// Tie-breaker cố định để phân trang ổn định (không lặp / thiếu dòng giữa các trang)
+	private static final String DEFAULT_ORDER = "Amt DESC, UsedDate, Code, Name, CcName, Machine, Qty";
+
+	public record FilteredSummary(long total, Double totalK) {
+	}
+
+	public record FilteredPage(long total, Double totalK, List<CostTransactionLineDto> lines) {
+	}
+
+	public record FacetRow(String value, long count) {
+	}
+
+	// groups = tổng số giá trị khác nhau (có thể > rows.size() khi bị cắt bởi limit)
+	public record FacetRows(long groups, List<FacetRow> rows) {
+	}
+
+	/*
+	 * 1 trang giao dịch theo bộ lọc + tổng số dòng / tổng K$ của mọi dòng thỏa bộ lọc.
+	 * Trang vượt quá số dòng -> không có dòng nào mang Cnt, đếm lại bằng summarizeFiltered.
+	 */
+	public FilteredPage findFilteredPage(
+			String cost,
+			LocalDate from,
+			LocalDate to,
+			List<String> costCenters,
+			CostTransactionFilter filter,
+			int offset,
+			int limit
+	) {
+
+		MapSqlParameterSource params = params(from, to, costCenters, limit)
+				.addValue("offset", offset, Types.INTEGER);
+		String sql = base(cost) + FILTERED_PAGE.formatted(conditions(filter, params), orderBy(filter));
+
+		long[] total = {-1};
+		Double[] totalK = {null};
+
+		List<CostTransactionLineDto> lines = jdbcTemplate.query(sql, params, (rs, rowNum) -> {
+			total[0] = rs.getLong("Cnt");
+			totalK[0] = getDouble(rs, "TotK");
+			return toLine(rs);
+		});
+
+		if (total[0] < 0) {
+			FilteredSummary summary = summarizeFiltered(cost, from, to, costCenters, filter);
+			return new FilteredPage(summary.total(), summary.totalK(), List.of());
+		}
+
+		return new FilteredPage(total[0], totalK[0], lines);
+	}
+
+	// Số dòng + tổng K$ thỏa bộ lọc (không có dòng -> total 0, totalK null)
+	public FilteredSummary summarizeFiltered(
+			String cost,
+			LocalDate from,
+			LocalDate to,
+			List<String> costCenters,
+			CostTransactionFilter filter
+	) {
+
+		MapSqlParameterSource params = params(from, to, costCenters, 1);
+		String sql = base(cost) + FILTERED_SUMMARY.formatted(conditions(filter, params));
+
+		List<FilteredSummary> rows = jdbcTemplate.query(sql, params,
+				(rs, rowNum) -> new FilteredSummary(rs.getLong("Cnt"), getDouble(rs, "TotK")));
+
+		return rows.isEmpty() ? new FilteredSummary(0, null) : rows.get(0);
+	}
+
+	// Như findFilteredPage nhưng đọc từng dòng qua callback (export), tối đa limit dòng
+	public void streamFilteredLines(
+			String cost,
+			LocalDate from,
+			LocalDate to,
+			List<String> costCenters,
+			CostTransactionFilter filter,
+			int limit,
+			Consumer<CostTransactionLineDto> consumer
+	) {
+
+		MapSqlParameterSource params = params(from, to, costCenters, limit)
+				.addValue("offset", 0, Types.INTEGER);
+		String sql = base(cost) + FILTERED_PAGE.formatted(conditions(filter, params), orderBy(filter));
+
+		jdbcTemplate.query(sql, params, (RowCallbackHandler) rs -> consumer.accept(toLine(rs)));
+	}
+
+	/*
+	 * Giá trị cho dropdown lọc của 1 cột: áp dụng từ khóa + bộ lọc các cột KHÁC (bỏ bộ lọc của chính cột này).
+	 * facetQ: chỉ giữ giá trị chứa chuỗi này (không phân biệt hoa thường / dấu). Giá trị trống -> null.
+	 * Thứ tự: theo giá trị tăng dần (ngày: yyyy-MM-dd nên đúng thứ tự thời gian), trống cuối cùng.
+	 */
+	public FacetRows findFacet(
+			String cost,
+			LocalDate from,
+			LocalDate to,
+			List<String> costCenters,
+			CostTransactionFilter filter,
+			CostTransactionFilter.FacetColumn column,
+			String facetQ,
+			int limit
+	) {
+
+		MapSqlParameterSource params = params(from, to, costCenters, limit);
+		String where = conditions(filter.without(column), params);
+
+		String q = searchToken(facetQ);
+		if (!q.isEmpty()) {
+			where += "  AND (REPLACE(REPLACE(" + column.expression() + ", N'Đ', N'D'), N'đ', N'd') "
+					+ "COLLATE Latin1_General_CI_AI) LIKE :facetQ ESCAPE '\\'\n";
+			params.addValue("facetQ", "%" + likeEscape(q) + "%", Types.NVARCHAR);
+		}
+
+		long[] groups = {0};
+		List<FacetRow> rows = jdbcTemplate.query(
+				base(cost) + FACET.formatted(column.expression(), where),
+				params,
+				(rs, rowNum) -> {
+					groups[0] = rs.getLong("Groups");
+					return new FacetRow(rs.getString("Value"), rs.getLong("Cnt"));
+				}
+		);
+
+		return new FacetRows(groups[0], rows);
+	}
+
+	// AND ... cho bộ lọc; giá trị đưa vào params (không ghép chuỗi từ request vào SQL)
+	private static String conditions(CostTransactionFilter filter, MapSqlParameterSource params) {
+
+		StringBuilder sb = new StringBuilder();
+
+		List<String> tokens = filter.tokens().stream()
+				.map(CostTopItemsRepository::searchToken)
+				.filter(t -> !t.isEmpty())
+				.toList();
+
+		for (int i = 0; i < tokens.size(); i++) {
+			sb.append("  AND ").append(SEARCH_TEXT).append(" LIKE :q").append(i).append(" ESCAPE '\\'\n");
+			params.addValue("q" + i, "%" + likeEscape(tokens.get(i)) + "%", Types.NVARCHAR);
+		}
+
+		if (!filter.dates().isEmpty()) {
+			sb.append("  AND UsedDate IN (:fDates)\n");
+			params.addValue("fDates", filter.dates().stream().map(Date::valueOf).toList());
+		}
+
+		inClause(sb, params, "Category", "fCategory", filter.categories());
+		inClause(sb, params, "NULLIF(CcName, N'(trống)')", "fCostCenter", filter.costCenters());
+		inClause(sb, params, "Machine", "fMachine", filter.machines());
+
+		return sb.toString();
+	}
+
+	// values có "" -> thêm "OR cột IS NULL" (ô trống)
+	private static void inClause(
+			StringBuilder sb,
+			MapSqlParameterSource params,
+			String expression,
+			String name,
+			List<String> values
+	) {
+
+		if (values.isEmpty()) {
+			return;
+		}
+
+		List<String> nonBlank = values.stream()
+				.filter(v -> v != null && !v.isBlank())
+				.map(String::trim)
+				.distinct()
+				.toList();
+		boolean blank = values.stream().anyMatch(v -> v == null || v.isBlank());
+
+		List<String> parts = new java.util.ArrayList<>();
+
+		if (!nonBlank.isEmpty()) {
+			parts.add(expression + " IN (:" + name + ")");
+			params.addValue(name, nonBlank);
+		}
+		if (blank) {
+			parts.add(expression + " IS NULL");
+		}
+
+		sb.append("  AND (").append(String.join(" OR ", parts)).append(")\n");
+	}
+
+	// Cột sắp xếp lấy từ enum (whitelist); NULL luôn cuối; sau đó tie-breaker cố định
+	private static String orderBy(CostTransactionFilter filter) {
+
+		if (filter.sort() == null) {
+			return DEFAULT_ORDER;
+		}
+
+		String column = filter.sort().column();
+
+		return "CASE WHEN " + column + " IS NULL THEN 1 ELSE 0 END, "
+				+ column + (filter.ascending() ? " ASC" : " DESC") + ", "
+				+ DEFAULT_ORDER;
+	}
+
+	// Đ/đ -> D/d (khớp REPLACE phía SQL); bỏ khoảng trắng thừa
+	private static String searchToken(String value) {
+		return value == null ? "" : value.trim().replace('Đ', 'D').replace('đ', 'd');
+	}
+
+	// Ký tự đặc biệt của LIKE (dùng ESCAPE '\')
+	private static String likeEscape(String value) {
+		return value
+				.replace("\\", "\\\\")
+				.replace("%", "\\%")
+				.replace("_", "\\_")
+				.replace("[", "\\[");
+	}
+
 	private static String base(String cost) {
 
 		return switch (cost) {

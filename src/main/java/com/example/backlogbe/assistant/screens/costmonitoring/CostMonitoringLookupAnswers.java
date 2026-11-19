@@ -438,7 +438,8 @@ public class CostMonitoringLookupAnswers {
 			case REMAINING_DAYS -> closed ? null : remainingDays(snapshot, lang);
 			case REMAINING_BUDGET -> closed ? null : remainingBudget(snapshot, frames, lang);
 			case ANOMALY_TODAY -> closed ? null : anomalyToday(snapshot, frames, lang);
-			case PREV_MONTH -> frames.size() == 1 ? previousMonth(snapshot, frames.get(0), lang) : null;
+			case PREV_MONTH -> frames.size() == 1 && dayPairMatches(f, snapshot, frames.get(0))
+					? withDayCompare(previousMonth(snapshot, frames.get(0), lang), snapshot, frames.get(0), f, lang) : null;
 			case ITEM_CHANGE -> itemChange(snapshot, frames, dimension,
 					CHANGE_DOWN.matcher(f).find() && !CHANGE_UP.matcher(f).find(), WHY.matcher(f).find(), lang);
 			case TREND -> closed || frames.size() > 3 ? null
@@ -609,12 +610,87 @@ public class CostMonitoringLookupAnswers {
 		return subject && change && PREV_MONTH_REF.matcher(f).find() ? ITEM_CHANGE : null;
 	}
 
+	// "17 tháng này vs 17 tháng trước", "ngày 17 tháng trước": mốc ngày N của 2 tháng = so cùng kỳ 01–N
+	// (test 2026-11-18: bị hiểu thành "17 tháng gần đây")
+	private static final Pattern DAY_PAIR = CostMonitoringQuestion.word("(?:ngay )?(\\d{1,2}) thang (?:nay|truoc)");
+
+	// Mốc ngày N trong câu (DAY_PAIR) phải ≤ ngày có actual của khung và giống nhau ở 2 vế (ngày chưa có số -> LLM)
+	private static boolean dayPairMatches(String f, CostMonitoringSnapshot snapshot, CostMonitoringFocus fr) {
+
+		java.util.regex.Matcher m = DAY_PAIR.matcher(f);
+		CostChartDto chart = snapshot.find(fr.div(), fr.cost());
+		int actDay = chart == null ? 0 : snapshot.lastActualDay(chart);
+		Integer seen = null;
+
+		while (m.find()) {
+			int n = Integer.parseInt(m.group(1));
+			if (n < 1 || n > actDay || (seen != null && seen != n)) {
+				return false;
+			}
+			seen = n;
+		}
+		return true;
+	}
+
+	/*
+	 * Câu có mốc "ngày N tháng này / tháng trước": thêm trước khối cùng kỳ 1 dòng chi RIÊNG ngày N của 2 tháng
+	 * (chi trong ngày = hiệu Act MTD, như get_daily_series). Tháng trước không có ngày N (vd 31) -> ghi rõ.
+	 */
+	private Answer withDayCompare(Answer base, CostMonitoringSnapshot snapshot, CostMonitoringFocus fr, String f, String lang) {
+
+		java.util.regex.Matcher m = DAY_PAIR.matcher(f);
+		if (base == null || !m.find()) {
+			return base;
+		}
+
+		int n = Integer.parseInt(m.group(1));
+		CostChartDto chart = snapshot.find(fr.div(), fr.cost());
+		if (chart == null) {
+			return base;
+		}
+
+		YearMonth prevMonth = snapshot.month().minusMonths(1);
+		LocalDate curDay = snapshot.month().atDay(n);
+		Double cur = dayAmount(dailies(snapshot, chart), curDay);
+
+		String prevText;
+		Double prev = null;
+		if (n > prevMonth.lengthOfMonth()) {
+			prevText = t(lang, "tháng " + prevMonth + " không có ngày " + n, prevMonth + " has no day " + n);
+		} else {
+			CostMonitoringSnapshot previous = loader.load(prevMonth.toString(), null);
+			CostChartDto prevChart = previous.find(fr.div(), fr.cost());
+			prev = prevChart == null ? null : dayAmount(dailies(previous, prevChart), prevMonth.atDay(n));
+			prevText = (prev == null ? t(lang, "chưa có số", "no data") : "**" + k1(prev) + "**")
+					+ " (" + dayLabel(prevMonth.atDay(n), lang) + ")";
+		}
+
+		String line = t(lang, "**Chi riêng ngày " + n + "** – " + fr.div() + " " + fr.cost() + ": ",
+				"**Spending on day " + n + "** – " + fr.div() + " " + fr.cost() + ": ")
+				+ (cur == null ? t(lang, "chưa có số", "no data") : "**" + k1(cur) + "**") + " (" + dayLabel(curDay, lang) + ")"
+				+ t(lang, " so với ", " vs ") + prevText
+				+ (cur != null && prev != null ? " → " + CmText.signedK(CmText.subR1(cur, prev)) : "")
+				+ t(lang, ".\n\nLũy kế cùng kỳ (từ đầu tháng):\n", ".\n\nCumulative same period (month to date):\n");
+
+		return new Answer(line + base.text(), base.suggestions());
+	}
+
+	// Chi trong 1 ngày từ danh sách dailies; ngày không có điểm Actual -> null
+	private static Double dayAmount(List<Daily> days, LocalDate date) {
+		for (Daily d : days) {
+			if (date.equals(d.date())) {
+				return d.amount();
+			}
+		}
+		return null;
+	}
+
 	// "So với tháng trước X thế nào", "X tháng này chi nhiều hơn cùng kỳ không" (1 khung, chỉ tổng) -> PREV_MONTH; khác -> null
 	static String prevMonthKind(String question, String f) {
 
 		// "ngày hôm nay / tính đến nay" = lũy kế tháng (cùng kỳ), không phải hỏi 1 ngày: bỏ trước khi xét "ngay" trong
 		// PREV_MONTH_EXCLUDE (audit 2026-11-17 "so sánh ngày hôm nay vs tháng trước của press về ot": qua LLM 16 s)
-		String scoped = PREV_MONTH_TODAY.matcher(f).replaceAll(" ");
+		String scoped = DAY_PAIR.matcher(PREV_MONTH_TODAY.matcher(f).replaceAll(" ")).replaceAll(" ");
 
 		if (!PREV_MONTH_REF.matcher(f).find() || !PREV_MONTH_SCOPE.matcher(f).find()
 				|| PREV_MONTH_EXCLUDE.matcher(scoped).find() || WHY.matcher(f).find()) {

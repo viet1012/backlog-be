@@ -2,7 +2,9 @@ package com.example.backlogbe.controller;
 
 import com.example.backlogbe.assistant.screens.costmonitoring.CostChartForecasts;
 import com.example.backlogbe.assistant.screens.costmonitoring.CostMonitoringSnapshotLoader;
+import com.example.backlogbe.assistant.screens.costmonitoring.repository.CostTransactionFilter;
 import com.example.backlogbe.dto.costmonitoring.CostDetailResponse;
+import com.example.backlogbe.dto.costmonitoring.CostTransactionFacetsResponse;
 import com.example.backlogbe.dto.costmonitoring.CostDetailResponse.TransactionPage;
 import com.example.backlogbe.dto.costmonitoring.CostMonitoringChartResponse;
 import com.example.backlogbe.dto.costmonitoring.CostOtImportResult;
@@ -14,6 +16,7 @@ import com.example.backlogbe.service.CostMonitoringDetailService.TransactionScop
 import com.example.backlogbe.service.CostMonitoringService;
 import com.example.backlogbe.service.CostMonitoringTransactionExcelService;
 import com.example.backlogbe.service.costot.CostOtImportService;
+import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -32,6 +35,7 @@ import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBo
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.time.format.DateTimeFormatter;
+import java.util.Arrays;
 import java.util.List;
 
 // Đọc: không cần đăng nhập. Ghi (/ot/import*): cần X-Employee-Id có quyền (CostOtImportService).
@@ -121,7 +125,11 @@ public class CostMonitoringController {
 	// =========================================================
 
 	// vd /detail/transactions?div=PR&chart=T%26SL&from=2026-10-01&to=2026-10-15&page=0&size=50
-	// Cùng shape với /detail.transactions; allocationK luôn null; OT -> rỗng
+	//      &q=steel m2&sort=amountK,desc&date=2026-10-05&date=2026-10-06&category=PR CT CT1&costCenter=Press ALL&machine=
+	// Cùng shape với /detail.transactions; allocationK luôn null; OT -> rỗng.
+	// Tìm / lọc / sắp xếp (không bắt buộc, không truyền = như trước) – xem CostMonitoringDetailService.parseFilter:
+	//   q (từ khóa, AND, không phân biệt dấu), sort=date|qty|unitPrice|amountK,asc|desc,
+	//   date / category / costCenter / machine lặp lại được ("" = ô trống); totalElements / totalAmountK theo bộ lọc.
 	@GetMapping("/detail/transactions")
 	public ResponseEntity<TransactionPage> getTransactions(
 			// PR | MO | Guide; bắt buộc
@@ -134,25 +142,52 @@ public class CostMonitoringController {
 			// 0-based
 			@RequestParam(required = false) Integer page,
 			// 1..200, mặc định 50
-			@RequestParam(required = false) Integer size
+			@RequestParam(required = false) Integer size,
+			@RequestParam(required = false) String q,
+			@RequestParam(required = false) String sort,
+			HttpServletRequest request
 	) {
 
 		return ResponseEntity.ok(
-				detailService.getTransactions(div, chart, from, to, page, size)
+				detailService.getTransactions(div, chart, from, to, page, size, filterOf(q, sort, request))
 		);
 	}
 
-	// Cùng params (không page / size) -> .xlsx, thành tiền giảm dần, tối đa MAX_EXPORT_ROWS dòng
+	// Giá trị cho dropdown lọc 1 cột (kiểu Excel): cùng bộ lọc như /detail/transactions (bỏ bộ lọc của chính cột),
+	// column = date | category | costCenter | machine; facetQ: tìm trong danh sách giá trị; limit 1..1000 (mặc định 500)
+	@GetMapping("/detail/transactions/facets")
+	public ResponseEntity<CostTransactionFacetsResponse> getTransactionFacets(
+			@RequestParam(required = false) String div,
+			@RequestParam(required = false) String chart,
+			@RequestParam(required = false) String from,
+			@RequestParam(required = false) String to,
+			@RequestParam(required = false) String column,
+			@RequestParam(required = false) String facetQ,
+			@RequestParam(required = false) Integer limit,
+			@RequestParam(required = false) String q,
+			HttpServletRequest request
+	) {
+
+		return ResponseEntity.ok(
+				detailService.getTransactionFacets(div, chart, from, to, column, facetQ, limit, filterOf(q, null, request))
+		);
+	}
+
+	// Cùng params (không page / size) -> .xlsx theo bộ lọc / thứ tự của bảng (mặc định thành tiền giảm dần),
+	// tối đa MAX_EXPORT_ROWS dòng
 	@GetMapping("/detail/transactions/export")
 	public ResponseEntity<StreamingResponseBody> exportTransactions(
 			@RequestParam(required = false) String div,
 			@RequestParam(required = false) String chart,
 			@RequestParam(required = false) String from,
-			@RequestParam(required = false) String to
+			@RequestParam(required = false) String to,
+			@RequestParam(required = false) String q,
+			@RequestParam(required = false) String sort,
+			HttpServletRequest request
 	) {
 
 		// Validate + đếm dòng trước khi ghi file: mọi lỗi trả 400 JSON
-		TransactionExport plan = detailService.prepareTransactionExport(div, chart, from, to);
+		TransactionExport plan = detailService.prepareTransactionExport(div, chart, from, to, filterOf(q, sort, request));
 		TransactionScope scope = plan.scope();
 
 		String fileName = "cost_transactions_"
@@ -180,6 +215,24 @@ public class CostMonitoringController {
 	// "T&SL" -> "TSL" (chỉ giữ chữ / số)
 	private static String safeFilePart(String value) {
 		return value.replaceAll("[^A-Za-z0-9]", "");
+	}
+
+	// Tham số lọc nhiều giá trị đọc thẳng getParameterValues: @RequestParam List<String> tách "A,B" thành 2 giá trị
+	// khi chỉ có 1 tham số -> sai với tên cost center / máy có dấu phẩy
+	private static CostTransactionFilter filterOf(String q, String sort, HttpServletRequest request) {
+		return CostMonitoringDetailService.parseFilter(
+				q,
+				sort,
+				multi(request, "date"),
+				multi(request, "category"),
+				multi(request, "costCenter"),
+				multi(request, "machine")
+		);
+	}
+
+	private static List<String> multi(HttpServletRequest request, String name) {
+		String[] values = request.getParameterValues(name);
+		return values == null ? List.of() : Arrays.asList(values);
 	}
 
 

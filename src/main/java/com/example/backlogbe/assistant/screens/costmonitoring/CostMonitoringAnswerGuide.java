@@ -226,6 +226,37 @@ public class CostMonitoringAnswerGuide {
 				NOT_ON_SCREEN + "(rm=" + rm + ",labor=" + labor + ",other=" + other + "); template=yes");
 	}
 
+	// "… mua những gì nhiều nhất và ngày nào là dùng tiền nhiều nhất?" (test 2026-11-18: chỉ trả lịch xuất của 1 vật tư,
+	// bỏ phần ngày chi nhiều nhất). Tách tại "và ngày / hôm nào": phần 1 -> item_most_issued, phần 2 -> top_day của khung.
+	private static final Pattern DAY_SPLIT = Pattern.compile("(?iu)[,;]?\\s+(?:v[àa]|and)\\s+(?=(?:ng[àa]y|h[ôo]m)\\s+n[àa]o|which day)");
+	private static final Pattern DAY_MONEY = CostMonitoringQuestion.word(
+			"dung tien|chi tien|ton tien|tieu tien|chi nhieu|ton nhieu|tieu nhieu|chi phi cao|spend|spent|spending|cost the most");
+
+	private AnswerGuide itemAndTopDay(String question, Map<String, String> params, String lang) {
+
+		String[] parts = DAY_SPLIT.split(question, 2);
+		if (parts.length != 2 || !DAY_MONEY.matcher(CostMonitoringIntentClassifier.fold(parts[1])).find()) {
+			return null;
+		}
+
+		AnswerGuide item = itemAnswers.guide(parts[0], params, lang);
+		if (item == null || !item.hasDirectAnswer() || !CostMonitoringItemAnswers.MOST_ISSUED.equals(item.intent())) {
+			return null;
+		}
+
+		// Phần ngày mượn khung từ phần 1 ("press t&sl"): "Ngày nào chi nhiều nhất – <phần 1>"
+		AnswerGuide day = lookup("Ngày nào chi nhiều nhất " + parts[0], params, lang);
+		if (day == null || !day.hasDirectAnswer() || !CostMonitoringLookupAnswers.TOP_DAY.equals(day.intent())) {
+			return null;
+		}
+
+		return new AnswerGuide(null, false, item.intent() + "+" + day.intent(),
+				item.directAnswer() + "\n\n" + t(lang, "**Ngày chi nhiều nhất** (tổng chi của khung):", "**Top spending day** (frame total):")
+						+ "\n" + day.directAnswer(),
+				java.util.stream.Stream.concat(item.suggestions().stream(), day.suggestions().stream()).distinct().limit(3).toList(),
+				item.intentMatch() + "; " + day.intentMatch());
+	}
+
 	private AnswerGuide guideCurrent(String question, Map<String, String> params, String lang) {
 
 		// Chi phí không có trên màn hình (R&M, lương cơ bản, Packing…): trả lời trước mọi luồng khác
@@ -239,6 +270,12 @@ public class CostMonitoringAnswerGuide {
 		AnswerGuide manager = managerAnswers.guide(question, params, lang);
 		if (manager != null) {
 			return manager;
+		}
+
+		// Câu ghép "X mua những gì nhiều nhất và ngày nào chi nhiều nhất": trả cả 2 phần
+		AnswerGuide combo = itemAndTopDay(question, params, lang);
+		if (combo != null) {
+			return combo;
 		}
 
 		// Chi tiết vật tư: xuất nhiều lần nhất, xuất vào lúc nào, đơn giá thay đổi, vật tư bất thường (template từ dòng xuất kho)

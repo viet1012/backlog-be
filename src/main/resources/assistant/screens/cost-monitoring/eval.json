@@ -772,5 +772,24 @@
     "mustNotContain": ["01/11–", "MOLD", "GUIDE"],
     "llmCallCount": 0,
     "answerIntent": "item_most_issued"
+  },
+  {
+    "question": "So sánh 17 tháng này vs 17 tháng trước của PRESS T&SL",
+    "month": "2026-11",
+    "mustContain": ["PRESS T&SL", "2026-10"],
+    "mustNotContain": ["6 tháng gần đây", "2026-05"]
+  },
+  {
+    "question": "So sánh ngày 17 tháng này vs ngày 17 tháng trước của PRESS T&SL",
+    "month": "2026-11",
+    "mustContain": ["Chi riêng ngày 17", "17/10"],
+    "mustNotContain": ["6 tháng gần đây"]
+  },
+  {
+    "question": "Trong tháng này, PRESS T&SL mua những gì nhiều nhất và ngày nào là dùng tiền nhiều nhất?",
+    "month": "2026-11",
+    "mustContain": ["xuất nhiều lần nhất", "Ngày chi nhiều nhất"],
+    "mustNotContain": ["MOLD", "GUIDE"],
+    "llmCallCount": 0
   }
 ]

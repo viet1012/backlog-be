@@ -533,10 +533,36 @@ Lưu ý:
 Tham số: `div`, `chart` (như `/detail`), `from`, `to` (yyyy-MM-dd, bắt buộc, `from <= to`, cùng 1 tháng), `page`, `size` (như `/detail`).
 Trả đúng shape `transactions` của `/detail` (cùng lõi `loadTransactionPage`), `allocationK` luôn `null` (không có Actual). OT → trang rỗng.
 
+Tìm / lọc / sắp xếp server-side (không bắt buộc; không truyền → hành vi cũ). `CostMonitoringDetailService.parseFilter` → `CostTransactionFilter`:
+
+| Tham số | Ý nghĩa |
+|---|---|
+| `q` | Từ khóa, tách theo khoảng trắng (≤ 10 từ, ≤ 200 ký tự), **AND**; mỗi từ tìm trong Code, Text, Category, mã + tên cost center, Machine. Không phân biệt hoa thường / dấu (`COLLATE Latin1_General_CI_AI`, Đ/đ → D/d). `%` `_` `[` được escape. |
+| `sort` | `date\|qty\|unitPrice\|amountK` + `,asc\|desc` (thiếu chiều → desc). NULL luôn cuối; tie-breaker cố định (thành tiền giảm dần, ngày, mã…) để phân trang ổn định. Sai → 400. |
+| `date`, `category`, `costCenter`, `machine` | Lặp lại được (`category=A&category=B`, ≤ 500 giá trị / cột): OR trong 1 cột, AND giữa các cột. `""` = ô trống. `costCenter` so theo **tên** cost center (`costCenterName`, giá trị FE hiển thị). Đọc bằng `getParameterValues` (không tách theo dấu phẩy). |
+
+Có tìm / lọc / sắp xếp → 1 truy vấn `CostTopItemsRepository.findFilteredPage` (trang + `COUNT/SUM OVER ()`), không cache;
+`totalElements` / `totalAmountK` tính theo bộ lọc. Log bước `findFilteredPage`.
+
+### `GET /api/cost-monitoring/detail/transactions/facets`
+
+Giá trị cho dropdown lọc 1 cột (kiểu Excel). Tham số: như `/detail/transactions` (trừ `page` / `size` / `sort`) + `column`
+(`date|category|costCenter|machine`, bắt buộc), `facetQ` (tìm trong danh sách giá trị), `limit` (1..1000, mặc định 500).
+Áp dụng `q` + bộ lọc các cột **khác** (bỏ bộ lọc của chính cột đang hỏi). GROUP BY, không tải dòng giao dịch. Log bước `findFacet`.
+
+```json
+{ "column": "costCenter", "from": "2026-11-01", "to": "2026-11-18", "total": 23, "truncated": false,
+  "values": [{ "value": "Press ALL", "label": "Press ALL", "count": 214 }, { "value": "", "label": "", "count": 12 }] }
+```
+
+`date`: value `yyyy-MM-dd`, tăng dần; cột khác A→Z; `""` (ô trống) luôn cuối. `total` = số giá trị khác nhau; `truncated` khi bị cắt bởi `limit`. OT → rỗng.
+
 ### `GET /api/cost-monitoring/detail/transactions/export`
 
-Cùng tham số (không `page` / `size`) → file `.xlsx` (`cost_transactions_{div}_{chart}_{yyyyMMdd}-{yyyyMMdd}.xlsx`, `T&SL` → `TSL`).
-Phần đầu: Div, Chart, Period, Unit, Scope, Rows, Total (K$), Exported at; bảng cùng cột với drawer, sort thành tiền giảm dần.
+Cùng tham số (không `page` / `size`; nhận cả `q`, `sort`, `date`, `category`, `costCenter`, `machine` như trên)
+→ file `.xlsx` (`cost_transactions_{div}_{chart}_{yyyyMMdd}-{yyyyMMdd}.xlsx`, `T&SL` → `TSL`).
+Phần đầu: Div, Chart, Period, Unit, Scope, Rows, Total (K$), Exported at; bảng cùng cột với drawer, theo bộ lọc / thứ tự đang xem
+(mặc định thành tiền giảm dần).
 Validate + đếm dòng trước khi stream (lỗi → 400 JSON); quá 50 000 dòng → 400, yêu cầu thu hẹp khoảng ngày. SXSSF, đọc DB từng dòng.
 
 ### `POST /api/assistant/chat`
@@ -894,3 +920,6 @@ server hoặc ADMIN (qua API admin) đọc; không gửi ra ngoài.
 | 2026-11-18 | Hỏi số của 1 tháng khác ("OT PRESS tháng 10 bao nhiêu?", "PRESS T&SL tháng trước chi bao nhiêu?") trước qua LLM 7–34 s. `CostMonitoringAnswerGuide.otherMonthValue` (trong `otherMonth`, sau chi tiết vật tư): bỏ cụm tháng khỏi câu, phân loại như câu tháng đang xem với snapshot tháng được hỏi, chỉ nhận `ot_value` / `frame_value` (tháng đã kết thúc: không có dự báo). Tháng tương lai / trùng tháng đang xem → luồng cũ. Eval: 3 câu OT tháng 10 yêu cầu `llmCallCount=0`, thêm 1 câu `frame_value` tháng trước (93 case). Eval lần 4: 92/93 – "tháng trước" (không kèm số) không phải "tháng khác" của `QuestionMonthDetector` nên đi `guideCurrent` → gọi thêm `otherMonthValue` ở đó (sau chi tiết vật tư); câu so sánh ("so với", "cùng kỳ", "tháng này"…) không dùng template này. |
 | 2026-11-18 | Bộ test UI 259 câu (ai-test-suite 15:47). Sửa: (1) `when_exceed_pl` mới – "Khi nào X vượt PL?" trước qua LLM gán ngày vượt Fluct cho PL; dùng chung `whenExceedFc` với mốc PL TGT. (2) `bp_compare` mới – "So với BP thì sao?" trước LLM 46 s trả "không có dữ liệu BP" dù chart có cột `bp`; so BP với Actual và dự báo cuối tháng, không có BP thì nói rõ (không thay bằng FC); `frame_value` ghi thêm BP. (3) `item_compare` mới – "So sánh vật tư X với Y": top 5 vật tư mỗi khung + mã chung (trước LLM 43 s gán nhầm mã EDM WIRE). (4) Câu cụt "Fluct PRESS T&SL hả?" → `frame_value` (trước LLM 29 s). (5) `otherMonthValue` nhận thêm `day_spend` / `top_day` / `spike_days` ("Ngày 3 tháng 10 PRESS T&SL chi bao nhiêu?" trước LLM 15 s). (6) `statusVsPrev`: không kết luận "đỡ hơn" khi ít khung vượt hơn nhưng tổng phần vượt lớn hơn (8/9 +188.4 so với 9/9 +178.9). (7) Ghi chú OT: câu chỉ hỏi RM / T&SL mà OT đã có Actual → "Chỉ tính … theo câu hỏi (không gồm OT)" thay vì "OT chưa có Actual". (8) Ngày dự kiến vượt đã qua (OT Actual trễ, vd vượt từ 17/11 khi hôm nay 18/11) → thêm "theo Estimate, Actual mới đến dd/mm nên chưa xác nhận" (`CmText.staleCrossNote`). (9) "3 ngày chi lớn nhất" / `top_day`: xếp theo số hiển thị trước, số gốc sau (trước "0.9; 0.8; 0.9"). (10) "Vì sao X tệ hơn Y": viết hoa đầu câu, thêm dòng **Yếu tố** (chi so với tiến độ theo % Fluct, Fluct so với FC). (11) `division_spend` thêm % Fluct dự báo. Eval thêm 8 case. Chưa xử lý: tháng tương lai ("Tháng 12 dự kiến chi bao nhiêu?") vẫn LLM vì `ChatOrchestrator` coi là mismatch (cần mở rộng hợp đồng core); truy vấn lạnh chậm (ext-232 106 s, ext-221 30 s, ext-241 27 s). |
 | 2026-11-18 | "Ngày hôm qua, PRESS mua tool nào nhiều nhất?" trả cả tháng (01/11–17/11). `CostMonitoringItemAnswers`: `item_most_issued` có mốc 1 ngày (hôm qua, hôm kia, ngày N, thứ X – dùng `CostMonitoringLookupAnswers.singleDay` / `resolveDay`) → chỉ tính dòng xuất đúng ngày đó, tiêu đề "xuất nhiều lần nhất (ngày dd/mm (Thứ …))"; ngày chưa có dòng xuất (RM chậm 1 ngày, ngày nghỉ) → nói rõ; ngày ngoài tháng đang xem → LLM. Eval thêm 1 case (102). |
+| 2026-11-18 | "So sánh 17 tháng này vs 17 tháng trước của PRESS T&SL" (ý: ngày 17) bị `multi_month` hiểu là "17 tháng gần đây" rồi cắt còn 6 tháng. `CostMonitoringManagerAnswers.monthsBack`: "N tháng này", "ngày N tháng này / trước" là mốc ngày → không phải số tháng; N > 12 cũng không nhận (giống giới hạn khoảng của core). `CostMonitoringLookupAnswers.prev_month`: bỏ cụm "N tháng này / trước" trước khi xét từ loại trừ "ngày"; chỉ dùng template khi N trùng ngày có actual của khung (prev_month so cùng kỳ 01–ngày actual), khác → LLM. Eval thêm 1 case (103; không ép `llmCallCount` vì phụ thuộc ngày actual khi chạy). |
+| 2026-11-18 | (1) "So sánh ngày 17 tháng này vs ngày 17 tháng trước": `prev_month` nhận mốc ngày N ≤ ngày actual của khung (trước chỉ khi N = ngày actual) và thêm dòng đầu "**Chi riêng ngày N**" của 2 tháng (hiệu Act MTD) trước khối lũy kế cùng kỳ (`withDayCompare`). (2) "PRESS T&SL mua những gì nhiều nhất và ngày nào là dùng tiền nhiều nhất?" chỉ trả lịch xuất 1 vật tư (`item_when`). `CostMonitoringAnswerGuide.itemAndTopDay`: tách tại "và ngày / hôm nào" (phần sau có "dùng / chi tiền…"), phần 1 -> `item_most_issued`, phần 2 -> `top_day` (mượn khung của phần 1), ghép 1 câu trả lời. `CostMonitoringItemAnswers`: "mua những gì / cái gì" được hiểu là hỏi vật tư. Eval thêm 2 case (105). |
+| 2026-11-19 | Bảng giao dịch drawer: tìm / lọc dropdown / sắp xếp chuyển sang server-side (FE trước phải tải đủ ~51 trang × 200 dòng rồi xử lý ở trình duyệt). `/detail/transactions` thêm `q`, `sort`, `date` / `category` / `costCenter` / `machine` (lặp lại được, `""` = ô trống) → `CostTransactionFilter`; có bộ lọc thì 1 truy vấn `findFilteredPage` (trang + `COUNT/SUM OVER ()`), không thì giữ đường cũ (cache `countRows` / `findTotal`). Thêm `/detail/transactions/facets` (giá trị + số dòng cho dropdown, bỏ bộ lọc của chính cột). Export nhận cùng bộ lọc / thứ tự. `/detail` không đổi. Tìm không dấu dùng `COLLATE Latin1_General_CI_AI` trên chuỗi ghép (cần xác nhận không lỗi xung đột collation trên DB thật). |

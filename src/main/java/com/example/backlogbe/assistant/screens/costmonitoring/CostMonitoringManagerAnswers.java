@@ -120,6 +120,8 @@ public class CostMonitoringManagerAnswers {
 	private static final Pattern MONTHS_BACK = CostMonitoringQuestion.word(
 			"(\\d{1,2}|hai|ba|bon|nam|sau) thang (?:gan day|gan nhat|qua|vua qua|truoc)"
 					+ "|(?:last|past|previous) (\\d{1,2}|two|three|four|five|six) months");
+	private static final Pattern DAY_OF_MONTH_REF = CostMonitoringQuestion.word(
+			"ngay \\d{1,2} thang (?:nay|truoc)|\\d{1,2} thang nay|day \\d{1,2} (?:this|last) month");
 	private static final Pattern MONTHS_RECENT = CostMonitoringQuestion.word(
 			"may thang gan day|cac thang gan day|cac thang truoc|nhung thang gan day|recent months");
 	private static final Pattern PREV_MONTH_REF = CostMonitoringQuestion.word(
@@ -1999,6 +2001,12 @@ public class CostMonitoringManagerAnswers {
 
 	static int monthsBack(String f) {
 
+		// "17 tháng này vs 17 tháng trước", "ngày 17 tháng trước": số là NGÀY, không phải số tháng
+		// (test 2026-11-18: hiểu thành "17 tháng gần đây", cắt còn 6 tháng)
+		if (DAY_OF_MONTH_REF.matcher(f).find()) {
+			return 0;
+		}
+
 		Matcher m = MONTHS_BACK.matcher(f);
 
 		if (m.find()) {
@@ -2011,7 +2019,8 @@ public class CostMonitoringManagerAnswers {
 				case "sau", "six" -> 6;
 				default -> Integer.parseInt(n);
 			};
-			return value < 2 ? 0 : Math.min(value, MAX_MONTHS_BACK);
+			// > 12 không phải số tháng hợp lý (core QuestionMonthDetector cũng bỏ khoảng > 12 tháng) -> không phải multi_month
+			return value < 2 || value > 12 ? 0 : Math.min(value, MAX_MONTHS_BACK);
 		}
 
 		return MONTHS_RECENT.matcher(f).find() ? 3 : 0;
