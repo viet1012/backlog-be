@@ -316,20 +316,18 @@ public class CostMonitoringAnswerGuide {
 			return lookup;
 		}
 
-		// "Hôm nay có gì bất thường": chi ngày gần nhất + template tổng quan tháng (nếu câu hỏi đủ điều kiện)
+		// "Hôm nay có gì bất thường": câu trả lời anomaly_today đã gồm kết luận dự báo vượt + khung nặng nhất
+		// (đánh giá 2026-11-20: ghép nguyên template tổng quan làm câu trả lời dài, dồn điểm chính xuống cuối).
+		// Vẫn lấy khối KẾT LUẬN của tổng quan cho luồng LLM (tắt template) và intent "overview+…" cho chart % Fluct.
 		AnswerGuide overview = byIntent(question, params, lang);
 
 		if (overview == null || !overview.hasDirectAnswer()) {
 			return lookup;
 		}
 
-		List<String> suggestions = new ArrayList<>(lookup.suggestions());
-		overview.suggestions().stream().filter(s -> !suggestions.contains(s)).forEach(suggestions::add);
-
 		return new AnswerGuide(overview.conclusion(), overview.toolsSufficient(), overview.intent() + "+" + lookup.intent(),
-				lookup.directAnswer() + "\n\n" + t(lang, "**Tình hình cả tháng:**", "**Month to date:**") + "\n"
-						+ compactOverview(overview.directAnswer(), lang),
-				suggestions.stream().limit(3).toList(),
+				lookup.directAnswer(),
+				lookup.suggestions(),
 				overview.intentMatch() + "; " + lookup.intentMatch());
 	}
 

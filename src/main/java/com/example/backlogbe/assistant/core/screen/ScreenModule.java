@@ -76,6 +76,20 @@ public interface ScreenModule {
 		return null;
 	}
 
+	// Biểu đồ kèm câu trả lời theo intent (AnswerGuide.intent) – số do code tính từ dữ liệu màn hình, không do LLM.
+	// params: params tháng đang xem; chỉ gọi khi câu trả lời theo tháng đang xem (không khoảng / tháng khác).
+	// Rỗng = không vẽ (mặc định). Lỗi -> ChatOrchestrator bỏ qua (log WARN), câu trả lời vẫn trả bình thường.
+	default List<com.example.backlogbe.assistant.core.api.dto.AssistantChart> answerCharts(
+			String intent, String question, Map<String, String> params, String lang) {
+		return List.of();
+	}
+
+	// Thẻ tóm tắt đầu câu trả lời (cùng điều kiện gọi với answerCharts). null = không có (mặc định).
+	default com.example.backlogbe.assistant.core.api.dto.AssistantCard answerCard(
+			String intent, String question, Map<String, String> params, String lang) {
+		return null;
+	}
+
 	// Điều kiện cho câu gợi ý động. null = màn hình không có gợi ý động / greeting.
 	// Tham số sai -> IllegalArgumentException (400); lỗi khác (vd DB) -> engine bỏ câu động, log WARN.
 	default List<SuggestionCondition> suggestionConditions(Map<String, String> params) {

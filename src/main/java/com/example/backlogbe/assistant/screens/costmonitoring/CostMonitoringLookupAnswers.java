@@ -1878,14 +1878,42 @@ public class CostMonitoringLookupAnswers {
 	// BẤT THƯỜNG HÔM NAY
 	// =========================================================
 
+	// Loại chi phí có ngày actual cuối chậm hơn D từ bấy nhiêu ngày -> "dữ liệu cũ" (RM trễ 1 ngày là bình thường)
+	static final int STALE_DAYS = 3;
+	// Số khung dự báo vượt nặng nhất nêu bằng chữ (phần còn lại xem chart % Fluct)
+	static final int TOP_OVER = 3;
+	// Chi ngày gần nhất so với TB ngày có chi: ≥ +20% "↑", ≤ −20% "↓", còn lại "≈"
+	private static final double NEAR_AVG = 0.2;
+
+	// Chi ngày có chi gần nhất của 1 khung
+	record Latest(CostMonitoringFocus fr, LocalDate date, double amount, Double avg, boolean spike, List<CostLineDto> unusual,
+				  Double act) {
+		String name() {
+			return fr.div() + " " + fr.cost();
+		}
+	}
+
+	/*
+	 * "Hôm nay có gì bất thường" – thứ tự (đánh giá 2026-11-20: câu cũ mở đầu "Không có chi đột biến", dồn 8 khung dự báo
+	 * vượt xuống cuối, không nói OT cũ 9 ngày, liệt kê 9 dòng chi gần nhất không có gì đáng chú ý):
+	 *   1. Câu kết luận: đột biến (có / không) + số khung dự báo vượt Fluct / tổng khung
+	 *   2. Chi đột biến (nếu có): từng khung + khoản lớn
+	 *   3. ≤ TOP_OVER khung dự báo vượt nặng nhất (theo % Fluct, giống chart), còn lại -> "xem biểu đồ"
+	 *   4. Lưu ý dữ liệu cũ: loại chi phí có ngày actual cuối chậm ≥ STALE_DAYS so với D
+	 *   5. Chi ngày gần nhất: 1 dòng / loại chi phí (bỏ loại dữ liệu cũ), mũi tên so với TB ngày có chi
+	 *   6. Footer: ngưỡng đột biến + mốc số liệu
+	 */
 	private Answer anomalyToday(CostMonitoringSnapshot snapshot, List<CostMonitoringFocus> frames, String lang) {
 
 		LocalDate latest = snapshot.month().atDay(snapshot.d());
 
-		List<String> spikes = new ArrayList<>();
-		List<String> latestLines = new ArrayList<>();
-		boolean anySpendOnLatest = false;
-		CostMonitoringFocus firstSpike = null;
+		List<Latest> latestRows = new ArrayList<>();
+		// Ngày actual cuối mới nhất của từng loại chi phí (OT nạp từ file riêng, có thể chậm nhiều ngày)
+		Map<String, Integer> costLastDay = new java.util.LinkedHashMap<>();
+		// Khung có dự báo (tổng) / dự báo vượt Fluct (gồm đã vượt thực tế)
+		int forecastFrames = 0;
+		List<CostMonitoringFocus> overFrames = new ArrayList<>();
+		Map<CostMonitoringFocus, CostMonitoringAssessment> assessments = new java.util.HashMap<>();
 
 		for (CostMonitoringFocus fr : frames) {
 
@@ -1893,6 +1921,17 @@ public class CostMonitoringLookupAnswers {
 
 			if (chart == null) {
 				continue;
+			}
+
+			costLastDay.merge(fr.cost(), snapshot.lastActualDay(chart), Math::max);
+
+			CostMonitoringAssessment a = CostMonitoringAssessment.of(snapshot, chart);
+			if (a.fluct() != null && a.estimateEom() != null) {
+				forecastFrames++;
+				assessments.put(fr, a);
+				if (a.alreadyOver() || a.estimateWillExceed()) {
+					overFrames.add(fr);
+				}
 			}
 
 			List<Daily> days = dailies(snapshot, chart);
@@ -1908,10 +1947,6 @@ public class CostMonitoringLookupAnswers {
 				continue;
 			}
 
-			if (last.date().equals(latest)) {
-				anySpendOnLatest = true;
-			}
-
 			// Trung bình các ngày có chi khác (không gồm ngày đang xét)
 			double sum = 0;
 			int count = 0;
@@ -1922,77 +1957,176 @@ public class CostMonitoringLookupAnswers {
 				}
 			}
 			Double avg = count > 0 ? CmText.r1(sum / count) : null;
-			String name = fr.div() + " " + fr.cost();
-
-			latestLines.add("- " + name + ": " + dayLabel(last.date(), lang) + " " + k1(last.amount())
-					+ (avg != null ? t(lang, " (TB các ngày có chi khác ", " (avg of other spending days ") + k1(avg) + ")" : ""));
-
 			boolean spike = avg != null && avg > 0 && last.amount() >= SPIKE_MIN_K && last.amount() / avg >= SPIKE_RATIO;
 
-			List<CostLineDto> unusual = unusualLines(fr, last.date(), chart.actMtdLatest());
-
-			if (spike || !unusual.isEmpty()) {
-
-				StringBuilder s = new StringBuilder("- **").append(name).append("**: ")
-						.append(dayLabel(last.date(), lang)).append(t(lang, " chi ", " spent ")).append(k1(last.amount()));
-				if (spike) {
-					s.append(t(lang, ", gấp ", ", ")).append(String.format(Locale.ROOT, "%.1f", last.amount() / avg))
-							.append(t(lang, " lần trung bình ngày có chi (", "× the average spending day ("))
-							.append(k1(avg)).append(')');
-				}
-				for (CostLineDto line : unusual) {
-					s.append("\n  - ").append(t(lang, "khoản lớn: ", "large line: "))
-							.append(CmText.itemLabel(line.code(), line.name(), lang)).append(' ')
-							.append(k2(line.amountK()));
-					String share = ExplainVarianceTool.pctOfAct(line.amountK(), chart.actMtdLatest());
-					if (!share.isEmpty()) {
-						s.append(" (").append(share).append(" Actual)");
-					}
-				}
-				spikes.add(s.toString());
-				if (firstSpike == null) {
-					firstSpike = fr;
-				}
-			}
+			latestRows.add(new Latest(fr, last.date(), last.amount(), avg, spike,
+					unusualLines(fr, last.date(), chart.actMtdLatest()), chart.actMtdLatest()));
 		}
 
-		if (latestLines.isEmpty()) {
+		if (latestRows.isEmpty()) {
 			return null;
 		}
 
+		List<Latest> spikes = latestRows.stream().filter(r -> r.spike() || !r.unusual().isEmpty()).toList();
+
+		// Nặng nhất trước: K$ dự báo vượt Fluct giảm dần (quản lý quan tâm số tiền; chart vẫn xếp theo % Fluct)
+		List<CostMonitoringFocus> overSorted = overFrames.stream()
+				.sorted(Comparator.comparingDouble((CostMonitoringFocus fr) -> {
+					Double over = assessments.get(fr).estimateOver();
+					return over == null ? 0 : over;
+				}).reversed())
+				.toList();
+
+		List<String> staleCosts = costLastDay.entrySet().stream()
+				.filter(e -> e.getValue() > 0 && snapshot.d() - e.getValue() >= STALE_DAYS)
+				.map(Map.Entry::getKey)
+				.toList();
+
+		// "Nặng nhất" chỉ xét khung có dữ liệu mới (đánh giá 2026-11-20: câu đầu nêu PRESS OT / GUIDE OT – đúng loại vừa
+		// cảnh báo dữ liệu cũ 9 ngày – còn PRESS RM +58.3 K$ bị dồn vào "khung khác"). Khung dữ liệu cũ nêu ở dòng ⚠.
+		List<CostMonitoringFocus> overFresh = overSorted.stream().filter(fr -> !staleCosts.contains(fr.cost())).toList();
+		List<CostMonitoringFocus> overStale = overSorted.stream().filter(fr -> staleCosts.contains(fr.cost())).toList();
+
 		StringBuilder sb = new StringBuilder();
 
-		sb.append(t(lang, "Dữ liệu mới nhất: **", "Latest data: **")).append(dayLabel(latest, lang)).append("**");
-		if (!anySpendOnLatest) {
-			sb.append(t(lang, " – không phát sinh chi (ngày nghỉ / chưa ghi nhận); xét ngày có chi gần nhất của từng khung.",
-					" – no spending (holiday / not yet recorded); checking each frame's most recent spending day."));
-		}
-		sb.append('\n').append('\n');
-
-		if (spikes.isEmpty()) {
-			sb.append(t(lang, "**Không có chi đột biến** ở ngày có chi gần nhất (ngưỡng: ≥ ",
-							"**No spending spike** on the most recent spending day (threshold: ≥ "))
-					.append(String.format(Locale.ROOT, "%.0f", SPIKE_RATIO))
-					.append(t(lang, " lần trung bình ngày có chi, hoặc 1 khoản ≥ 10% Actual).",
-							"× the average spending day, or a single line ≥ 10% of Actual)."))
-					.append('\n');
+		// 1. Kết luận
+		String spikePart = spikes.isEmpty()
+				? t(lang, "Hôm nay không có chi đột biến", "No spending spike today")
+				: t(lang, "Có " + spikes.size() + " khung chi đột biến", spikes.size() + " frame(s) with a spending spike");
+		sb.append("**").append(spikePart);
+		if (overSorted.isEmpty()) {
+			sb.append(t(lang, "**, các khung đều dự báo trong Fluct.", "**, all frames forecast within Fluct."));
 		} else {
-			sb.append(t(lang, "**Có " + spikes.size() + " khung chi bất thường:**",
-					"**" + spikes.size() + " frame(s) with unusual spending:**")).append('\n');
-			spikes.forEach(s -> sb.append(s).append('\n'));
+			sb.append(spikes.isEmpty() ? t(lang, ", nhưng ", ", but ") : t(lang, " và ", " and "))
+					.append(overSorted.size()).append('/').append(forecastFrames)
+					.append(t(lang, " khung đang dự báo vượt Fluct**", " frames are forecast above Fluct**"));
+			// Khớp dòng ⚠: nói rõ bao nhiêu khung trong số đó là dữ liệu cũ
+			if (!overStale.isEmpty()) {
+				String costs = String.join(", ", overStale.stream().map(CostMonitoringFocus::cost).distinct().toList());
+				sb.append(t(lang, " (gồm " + overStale.size() + " khung " + costs + " dữ liệu cũ)",
+						" (incl. " + overStale.size() + " " + costs + " frame(s) with stale data)"));
+			}
+			List<String> worst = (overFresh.isEmpty() ? overSorted : overFresh).stream().limit(2).map(fr -> {
+				CostMonitoringAssessment a = assessments.get(fr);
+				return fr.div() + " " + fr.cost() + " (" + CmText.signedK(a.estimateOver()) + ")";
+			}).toList();
+			sb.append(t(lang, " – nặng nhất ", " – worst ")).append(String.join(t(lang, " và ", " and "), worst)).append('.');
+		}
+		sb.append("\n\n");
+
+		// 2. Chi đột biến
+		if (!spikes.isEmpty()) {
+			sb.append(t(lang, "**Chi đột biến:**", "**Spending spikes:**")).append('\n');
+			for (Latest r : spikes) {
+				sb.append("- **").append(r.name()).append("**: ").append(dayLabel(r.date(), lang))
+						.append(t(lang, " chi ", " spent ")).append(k1(r.amount()));
+				if (r.spike()) {
+					sb.append(t(lang, ", gấp ", ", ")).append(String.format(Locale.ROOT, "%.1f", r.amount() / r.avg()))
+							.append(t(lang, " lần TB ngày có chi (", "× the average spending day ("))
+							.append(k1(r.avg())).append(')');
+				}
+				for (CostLineDto line : r.unusual()) {
+					sb.append("\n  - ").append(t(lang, "khoản lớn: ", "large line: "))
+							.append(CmText.itemLabel(line.code(), line.name(), lang)).append(' ')
+							.append(k2(line.amountK()));
+					String share = ExplainVarianceTool.pctOfAct(line.amountK(), r.act());
+					if (!share.isEmpty()) {
+						sb.append(" (").append(share).append(" Actual)");
+					}
+				}
+				sb.append('\n');
+			}
+			sb.append('\n');
 		}
 
-		sb.append('\n').append(t(lang, "**Chi ngày gần nhất:**", "**Most recent spending day:**")).append('\n');
-		latestLines.forEach(l -> sb.append(l).append('\n'));
+		// 3. Khung dự báo vượt nặng nhất (dữ liệu mới; khung dữ liệu cũ nêu ở dòng ⚠)
+		if (!overFresh.isEmpty()) {
+			sb.append(t(lang, "**Dự báo vượt Fluct nhiều nhất (theo K$):**", "**Largest forecast overrun vs Fluct (K$):**")).append('\n');
+			for (CostMonitoringFocus fr : overFresh.stream().limit(TOP_OVER).toList()) {
+				CostMonitoringAssessment a = assessments.get(fr);
+				sb.append("- **").append(fr.div()).append(' ').append(fr.cost()).append("**: ")
+						.append(t(lang, "vượt **", "above by **")).append(CmText.signedK(a.estimateOver())).append("** (")
+						.append(t(lang, "cuối tháng khoảng ", "month-end about ")).append(k1(a.estimateEom()))
+						.append(", ").append(CmText.pct1(a.estimatePctOfFluct())).append(" Fluct)\n");
+			}
+			if (overFresh.size() > TOP_OVER) {
+				sb.append(t(lang, "- _… và " + (overFresh.size() - TOP_OVER) + " khung khác (xem biểu đồ bên dưới)._",
+						"- _… and " + (overFresh.size() - TOP_OVER) + " more (see chart below)._")).append('\n');
+			}
+			sb.append('\n');
+		}
 
-		// Không footer / không tóm tắt dự báo: CostMonitoringAnswerGuide ghép thêm template tổng quan tháng (nếu có),
-		// footer nằm cuối phần đó; dòng "Dữ liệu mới nhất" ở trên đã nêu mốc ngày.
+		// 4. Dữ liệu cũ (+ các khung của loại đó đang dự báo vượt)
+		for (String cost : staleCosts) {
+			LocalDate day = snapshot.month().atDay(costLastDay.get(cost));
+			int lag = snapshot.d() - day.getDayOfMonth();
+			List<String> staleOver = overStale.stream().filter(fr -> fr.cost().equals(cost))
+					.map(fr -> fr.div() + " " + CmText.signedK(assessments.get(fr).estimateOver())).toList();
+			sb.append(t(lang,
+					"⚠ **" + cost + "** mới cập nhật đến " + dayLabel(day, lang) + ", chậm " + lag + " ngày so với dữ liệu mới nhất – "
+							+ (staleOver.isEmpty() ? "dự báo " + cost + " kém tin cậy hơn."
+							: "dự báo " + cost + " vượt Fluct (" + String.join(", ", staleOver) + ") kém tin cậy hơn, cần chờ số mới."),
+					"⚠ **" + cost + "** is only updated to " + dayLabel(day, lang) + ", " + lag + " days behind the latest data – "
+							+ (staleOver.isEmpty() ? "the " + cost + " forecast is less reliable."
+							: "the " + cost + " forecast above Fluct (" + String.join(", ", staleOver) + ") is less reliable; wait for new data.")))
+					.append("\n\n");
+		}
+
+		// 5. Chi ngày gần nhất: 1 dòng / loại chi phí, bỏ loại dữ liệu cũ
+		Map<String, List<Latest>> byCost = new java.util.LinkedHashMap<>();
+		for (Latest r : latestRows) {
+			if (!staleCosts.contains(r.fr().cost())) {
+				byCost.computeIfAbsent(r.fr().cost(), k -> new ArrayList<>()).add(r);
+			}
+		}
+		if (!byCost.isEmpty()) {
+			sb.append(t(lang, "**Chi ngày gần nhất** (K$, so với TB ngày có chi):", "**Latest spending day** (K$, vs average spending day):"))
+					.append('\n');
+			for (Map.Entry<String, List<Latest>> e : byCost.entrySet()) {
+				List<Latest> rows = e.getValue();
+				boolean sameDay = rows.stream().map(Latest::date).distinct().count() == 1;
+				sb.append("- ").append(e.getKey());
+				if (sameDay) {
+					sb.append(' ').append(ddmm(rows.get(0).date()));
+				}
+				sb.append(": ");
+				List<String> parts = new ArrayList<>();
+				for (Latest r : rows) {
+					StringBuilder p = new StringBuilder(r.fr().div()).append(' ')
+							.append(String.format(Locale.ROOT, "%.1f", r.amount()));
+					if (!sameDay) {
+						p.append(" (").append(ddmm(r.date())).append(')');
+					}
+					if (r.avg() != null) {
+						p.append(t(lang, " (TB ", " (avg ")).append(String.format(Locale.ROOT, "%.1f", r.avg())).append(") ")
+								.append(r.amount() >= r.avg() * (1 + NEAR_AVG) ? "↑"
+										: r.amount() <= r.avg() * (1 - NEAR_AVG) ? "↓" : "≈");
+					}
+					parts.add(p.toString());
+				}
+				sb.append(String.join(", ", parts)).append('\n');
+			}
+			sb.append('\n');
+		}
+
+		// 6. Footer
+		sb.append('_').append(t(lang, "Đột biến: ≥ ", "Spike: ≥ ")).append(String.format(Locale.ROOT, "%.0f", SPIKE_RATIO))
+				.append(t(lang, " lần TB ngày có chi, hoặc 1 khoản ≥ 10% Actual. ",
+						"× the average spending day, or a single line ≥ 10% of Actual. "))
+				.append(t(lang, "Số liệu tháng ", "Data for month ")).append(snapshot.month())
+				.append(t(lang, ", mới nhất ", ", latest ")).append(dayLabel(latest, lang)).append("._");
+
 		Set<String> suggestions = new LinkedHashSet<>();
-		suggestions.add(t(lang, "Có gì bất thường trong tháng này?", "Anything unusual this month?"));
-		if (firstSpike != null) {
-			String name = firstSpike.div() + " " + firstSpike.cost();
+		if (!spikes.isEmpty()) {
+			String name = spikes.get(0).name();
 			suggestions.add(t(lang, "Vật tư nào chi nhiều nhất ở " + name + "?", "Which items cost the most in " + name + "?"));
 		}
+		if (!overSorted.isEmpty()) {
+			CostMonitoringFocus top = overFresh.isEmpty() ? overSorted.get(0) : overFresh.get(0);
+			String name = top.div() + " " + top.cost();
+			suggestions.add(t(lang, "Vì sao " + name + " dự báo vượt?", "Why is " + name + " forecast to exceed?"));
+		}
+		suggestions.add(t(lang, "Mỗi ngày còn được chi tối đa bao nhiêu?", "How much can we spend per day?"));
 
 		return new Answer(sb.toString().trim(), List.copyOf(suggestions));
 	}
@@ -3227,6 +3361,16 @@ public class CostMonitoringLookupAnswers {
 		boolean ahead = a.excessVsPace() != null && a.excessVsPace() > 0;
 		Double fluctVsFc = CmText.subR1(a.fluct(), a.fc());
 
+		// Dự báo vượt Fluct = target bị hạ (FC − Fluct) + dự báo vượt FC (Estimate − FC): 2 phần cộng đúng bằng tổng
+		// (đánh giá 2026-11-20: PRESS RM +58.3 = +41.0 target hạ + +17.3 vượt FC, câu cũ gọi "chi nhanh hơn tiến độ" là
+		// nguyên nhân chính trong khi tiến độ đó đo theo Fluct đã bị hạ)
+		Double targetCut = CmText.subR1(a.fc(), a.fluct());
+		Double overFc = a.estimateOverFc();
+		boolean split = !over && forecastOver && a.estimateOver() != null && targetCut != null && overFc != null;
+
+		// Ngày actual của CHÍNH khung (RM trễ 1 ngày) – mọi phép tính tiến độ ghi rõ ngày này
+		int actDay = Math.max(1, snapshot.lastActualDay(chart));
+
 		StringBuilder sb = new StringBuilder();
 
 		// Câu đầu: kết luận
@@ -3234,6 +3378,26 @@ public class CostMonitoringLookupAnswers {
 			sb.append("**").append(name).append(t(lang, "** đã vượt Fluct ", "** is already above Fluct "))
 					.append(CmText.signedK(CmText.subR1(a.act(), a.fluct()))).append(" (Actual ").append(k1(a.act()))
 					.append(", Fluct ").append(k1(a.fluct())).append(").\n");
+		} else if (split) {
+			sb.append("**").append(name).append(t(lang, "** chưa vượt Fluct (Actual ", "** is not above Fluct yet (Actual "))
+					.append(k1(a.act())).append(" / ").append(k1(a.fluct()))
+					.append(t(lang, ") nhưng dự báo cuối tháng vượt **", ") but is forecast to exceed by **"))
+					.append(CmText.signedK(a.estimateOver())).append("**");
+			if (targetCut > 0 && overFc > 0) {
+				sb.append(" = **").append(CmText.signedK(targetCut)).append("**")
+						.append(t(lang, " do target bị hạ (Fluct thấp hơn FC) + **", " from the target cut (Fluct below FC) + **"))
+						.append(CmText.signedK(overFc)).append("**")
+						.append(t(lang, " do dự báo vượt chính FC.", " from the forecast exceeding FC itself."));
+			} else if (targetCut > 0) {
+				sb.append(t(lang, " – hoàn toàn do target bị hạ ", " – entirely because the target was cut "))
+						.append(CmText.signedK(targetCut))
+						.append(t(lang, " (Fluct thấp hơn FC); so với FC dự báo vẫn ", " (Fluct below FC); vs FC the forecast is still "))
+						.append(CmText.signedK(overFc)).append('.');
+			} else {
+				sb.append(t(lang, " – dự báo vượt cả FC ", " – the forecast exceeds FC too, by "))
+						.append(CmText.signedK(overFc)).append('.');
+			}
+			sb.append('\n');
 		} else if (forecastOver || ahead) {
 			sb.append("**").append(name).append(t(lang, "** chưa vượt Fluct (Actual ", "** is not above Fluct yet (Actual "))
 					.append(k1(a.act())).append(" / ").append(k1(a.fluct())).append(")")
@@ -3254,21 +3418,45 @@ public class CostMonitoringLookupAnswers {
 					.append(CmText.signedK(CmText.subR1(a.fc(), a.fluct())))
 					.append(t(lang, " + chi vượt FC (Actual − FC) ", " + spending above FC (Actual − FC) "))
 					.append(CmText.signedK(CmText.subR1(a.act(), a.fc()))).append('\n');
-		} else if (a.excessVsPace() != null) {
-			sb.append(t(lang, "- Chi so với tiến độ (Actual − Fluct × D/N): ", "- Spending vs pace (Actual − Fluct × D/N): "))
-					.append(CmText.signedK(a.excessVsPace(),
-							// "X thì sao" (status): không gọi là nguyên nhân – người dùng không hỏi vì sao (eval #60)
-							status ? t(lang, "chi nhanh hơn tiến độ – yếu tố chính của dự báo", "ahead of pace – main driver of the forecast")
-									: t(lang, "chi nhanh hơn tiến độ – nguyên nhân chính", "ahead of pace – main cause"),
-							t(lang, "chi trong tiến độ", "within pace")));
-			if (a.currentRate() != null && a.targetRate() != null) {
-				sb.append(t(lang, "; tốc độ ", "; rate ")).append(CmText.rate(a.currentRate(), lang))
-						.append(t(lang, " so với nhịp Fluct ", " vs Fluct pace ")).append(CmText.rate(a.targetRate(), lang));
+		} else {
+			// Cách biết: dự báo = Actual + phần còn lại, so với ngân sách còn lại trong Fluct
+			if (forecastOver && a.estimateEom() != null) {
+				Double rest = CmText.subR1(a.estimateEom(), a.act());
+				Double budgetLeft = CmText.subR1(a.fluct(), a.act());
+				sb.append(t(lang, "- Cách biết: dự báo ", "- How we know: forecast ")).append(k1(a.estimateEom()))
+						.append(" = Actual ").append(k1(a.act())).append(" + ").append(k1(rest))
+						.append(t(lang, " cho " + (snapshot.n() - actDay) + " ngày còn lại (", " for the remaining " + (snapshot.n() - actDay) + " days ("))
+						.append(restBasis(a.estimateBase(), lang))
+						.append(t(lang, "), trong khi ngân sách còn lại trong Fluct chỉ ", "), while the budget left within Fluct is only "))
+						.append(k1(budgetLeft)).append(t(lang, " → thiếu ", " → short by ")).append(CmText.signedK(a.estimateOver()))
+						.append('\n');
 			}
-			sb.append('\n');
+
+			// Tốc độ chi đến ngày actual của khung: so với tiến độ FC và tiến độ Fluct, ghi rõ phép tính
+			// ("X thì sao" – status: không gọi là nguyên nhân, eval #60)
+			Double paceFluct = CmText.r1(a.fluct() * actDay / snapshot.n());
+			Double vsFluct = CmText.subR1(a.act(), paceFluct);
+			Double paceFc = a.fc() != null ? CmText.r1(a.fc() * actDay / snapshot.n()) : null;
+			Double vsFc = paceFc != null ? CmText.subR1(a.act(), paceFc) : null;
+			if (vsFluct != null) {
+				sb.append(t(lang, "- Tốc độ chi đến ngày " + actDay + ": ", "- Spending pace up to day " + actDay + ": "));
+				if (vsFc != null) {
+					sb.append(t(lang, "so với tiến độ FC (", "vs FC pace ("))
+							.append(String.format(Locale.ROOT, "%.1f × %d/%d = %.1f", CmText.r1(a.fc()), actDay, snapshot.n(), paceFc))
+							.append(") ").append(paceWord(vsFc, lang)).append(' ').append(CmText.signedK(vsFc)).append("; ");
+				}
+				sb.append(t(lang, "so với tiến độ Fluct (", "vs Fluct pace ("))
+						.append(String.format(Locale.ROOT, "%.1f × %d/%d = %.1f", CmText.r1(a.fluct()), actDay, snapshot.n(), paceFluct))
+						.append(") ").append(paceWord(vsFluct, lang)).append(' ').append(CmText.signedK(vsFluct));
+				if (a.currentRate() != null) {
+					sb.append(t(lang, "; đang chi ", "; currently ")).append(CmText.rate(a.currentRate(), lang));
+				}
+				sb.append('\n');
+			}
 		}
 
-		if (fluctVsFc != null && Math.round(fluctVsFc * 10) < 0) {
+		// Đã tách "target bị hạ" ở câu đầu (split) -> không lặp dòng Fluct thấp hơn FC
+		if (!split && fluctVsFc != null && Math.round(fluctVsFc * 10) < 0) {
 			sb.append(t(lang, "- Fluct thấp hơn FC ", "- Fluct below FC ")).append(CmText.signedK(fluctVsFc))
 					.append(t(lang, " (Ratio âm, target bị hạ) → góp phần làm dễ vượt Fluct", " (negative Ratio, target cut) → makes exceeding Fluct easier"))
 					.append('\n');
@@ -3328,9 +3516,16 @@ public class CostMonitoringLookupAnswers {
 			}
 		}
 
-		// Dòng dự báo riêng (trước đây "- cuối tháng …" đứng lẻ, không rõ của khung nào)
-		sb.append('\n').append(t(lang, "**Dự báo:** ", "**Forecast:** ")).append(CmText.estimateBrief(a, lang)).append('\n');
-		sb.append('\n').append(footer(snapshot, lang));
+		// Dòng dự báo riêng (trước đây "- cuối tháng …" đứng lẻ, không rõ của khung nào); split: câu đầu + "Cách biết" đã nêu
+		if (!split) {
+			sb.append('\n').append(t(lang, "**Dự báo:** ", "**Forecast:** ")).append(CmText.estimateBrief(a, lang)).append('\n');
+		}
+		// Footer theo ngày actual của CHÍNH khung (RM trễ 1 ngày: câu cũ ghi "actual đến ngày 19" khi RM chỉ đến 18)
+		sb.append('\n').append(actDay < snapshot.d()
+				? "_" + t(lang, "Số liệu tháng ", "Data for month ") + snapshot.month() + "; " + fr.cost()
+				+ t(lang, " actual đến ngày " + actDay + " (dữ liệu chung đến ngày " + snapshot.d() + ")._",
+				" actual up to day " + actDay + " (overall data up to day " + snapshot.d() + ")._")
+				: footer(snapshot, lang));
 
 		// OT không có vật tư: gợi ý theo ngày / dự báo
 		List<String> suggestions = COSTS.contains(fr.cost())
@@ -3346,6 +3541,23 @@ public class CostMonitoringLookupAnswers {
 		String kind = status ? FRAME_STATUS : WHY_FRAME;
 		return new AnswerGuide(null, false, kind, sb.toString().trim(), suggestions,
 				match + "; lookup=" + kind + "; template=yes");
+	}
+
+	// Cơ sở phần dự báo còn lại (CostMonitoringAssessment.estimateBase)
+	private static String restBasis(String base, String lang) {
+		if ("PL".equals(base)) {
+			return t(lang, "phân bổ PL TGT theo ngày làm việc còn lại", "PL TGT spread over remaining working days");
+		}
+		if ("FC".equals(base)) {
+			return t(lang, "phân bổ FC theo ngày làm việc còn lại (chưa có PL)", "FC spread over remaining working days (no PL)");
+		}
+		return t(lang, "theo nhịp Fluct", "at Fluct pace");
+	}
+
+	// Chênh so với tiến độ: dương = nhanh hơn
+	private static String paceWord(double diff, String lang) {
+		return Math.round(diff * 10) > 0 ? t(lang, "nhanh hơn", "ahead by")
+				: Math.round(diff * 10) < 0 ? t(lang, "chậm hơn", "behind by") : t(lang, "đúng tiến độ", "on pace");
 	}
 
 	// Khoản lớn ≥ 10% Actual trong khoảng ngày (tối đa MAX_UNUSUAL)
