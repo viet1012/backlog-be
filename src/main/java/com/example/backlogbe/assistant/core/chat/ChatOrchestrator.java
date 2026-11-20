@@ -2,6 +2,8 @@ package com.example.backlogbe.assistant.core.chat;
 
 import com.example.backlogbe.assistant.core.api.AssistantExceptionHandler;
 import com.example.backlogbe.assistant.core.api.AssistantRateLimiter;
+import com.example.backlogbe.assistant.core.api.dto.AssistantCard;
+import com.example.backlogbe.assistant.core.api.dto.AssistantChart;
 import com.example.backlogbe.assistant.core.api.dto.AssistantChatRequest;
 import com.example.backlogbe.assistant.core.audit.AssistantAuditLogger;
 import com.example.backlogbe.assistant.core.audit.AssistantAuditTrace;
@@ -232,9 +234,11 @@ public class ChatOrchestrator {
 				answerSource = AssistantAuditTrace.ANSWER_TEMPLATE;
 
 				String answer = answerPostProcessor.process(guide.directAnswer(), screenKey, lang);
+				List<AssistantChart> charts = charts(module, screenKey, guide, question, plan, params, lang);
+				AssistantCard card = card(module, screenKey, guide, question, plan, params, lang);
 				ok = true;
 
-				return new AssistantChatResponse(answer, List.of(), null, suggestions(guide));
+				return new AssistantChatResponse(answer, List.of(), null, suggestions(guide), charts, card);
 			}
 
 			// Chỉ request gọi LLM mới tính vào hạn mức llm-per-minute
@@ -340,9 +344,13 @@ public class ChatOrchestrator {
 				return answerPostProcessor.process(raw, screenKey, lang);
 			});
 
+			// Câu từ chối do lộ system prompt: không kèm chart / thẻ
+			boolean refused = PromptGuard.refusal(lang).equals(answer);
+			List<AssistantChart> charts = refused ? List.of() : charts(module, screenKey, guide, question, plan, params, lang);
+			AssistantCard card = refused ? null : card(module, screenKey, guide, question, plan, params, lang);
 			ok = true;
 
-			return new AssistantChatResponse(answer, List.copyOf(sources), answeredMonth[0]);
+			return new AssistantChatResponse(answer, List.copyOf(sources), answeredMonth[0], List.of(), charts, card);
 
 		} finally {
 			log.info(
@@ -682,6 +690,66 @@ public class ChatOrchestrator {
 					screenKey, e.getClass().getSimpleName());
 			return null;
 		}
+	}
+
+	// =========================================================
+	// BIỂU ĐỒ (ScreenModule.answerCharts)
+	//
+	// Chỉ khi câu trả lời theo tháng đang xem: không khoảng nhiều tháng, không nhắc tháng khác (kể cả không dựng được).
+	// Không có intent -> không vẽ. Lỗi -> rỗng (log WARN tên lỗi), câu trả lời vẫn trả bình thường.
+	// =========================================================
+	private static List<AssistantChart> charts(
+			ScreenModule module,
+			String screenKey,
+			AnswerGuide guide,
+			String question,
+			QuestionMonthDetector.MonthPlan plan,
+			Map<String, String> params,
+			String lang
+	) {
+
+		if (!visualsAllowed(module, guide, plan)) {
+			return List.of();
+		}
+
+		try {
+			List<AssistantChart> charts = module.answerCharts(guide.intent(), question, params, lang);
+			return charts == null ? List.of() : charts;
+		} catch (RuntimeException e) {
+			log.warn("Assistant: cannot build answer charts screenKey={} error={}",
+					screenKey, e.getClass().getSimpleName());
+			return List.of();
+		}
+	}
+
+	// Thẻ tóm tắt (ScreenModule.answerCard) – cùng điều kiện với chart; lỗi -> null
+	private static AssistantCard card(
+			ScreenModule module,
+			String screenKey,
+			AnswerGuide guide,
+			String question,
+			QuestionMonthDetector.MonthPlan plan,
+			Map<String, String> params,
+			String lang
+	) {
+
+		if (!visualsAllowed(module, guide, plan)) {
+			return null;
+		}
+
+		try {
+			return module.answerCard(guide.intent(), question, params, lang);
+		} catch (RuntimeException e) {
+			log.warn("Assistant: cannot build answer card screenKey={} error={}",
+					screenKey, e.getClass().getSimpleName());
+			return null;
+		}
+	}
+
+	// Chart / thẻ chỉ khi có intent và câu trả lời theo tháng đang xem (không khoảng / tháng khác)
+	private static boolean visualsAllowed(ScreenModule module, AnswerGuide guide, QuestionMonthDetector.MonthPlan plan) {
+		return module != null && guide != null && guide.intent() != null && !guide.intent().isBlank()
+				&& (plan == null || (plan.range() == null && plan.extra().isEmpty() && !plan.mismatch()));
 	}
 
 	// Gợi ý tiếp theo của câu trả lời template (kind = dynamic: theo dữ liệu màn hình)

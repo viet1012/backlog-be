@@ -1,5 +1,7 @@
 package com.example.backlogbe.assistant.screens.costmonitoring;
 
+import com.example.backlogbe.assistant.core.api.dto.AssistantCard;
+import com.example.backlogbe.assistant.core.api.dto.AssistantChart;
 import com.example.backlogbe.assistant.core.prefetch.PrefetchRule;
 import com.example.backlogbe.assistant.core.screen.AnswerGuide;
 import com.example.backlogbe.assistant.core.screen.ParamSpec;
@@ -62,6 +64,7 @@ public class CostMonitoringModule implements ScreenModule {
 	private final List<AssistantTool> tools;
 	private final List<PrefetchRule> prefetchRules;
 	private final CostMonitoringAnswerGuide answerGuide;
+	private final CostMonitoringChartBuilder chartBuilder;
 
 	public CostMonitoringModule(
 			CostMonitoringContextProvider contextProvider,
@@ -76,9 +79,11 @@ public class CostMonitoringModule implements ScreenModule {
 			ExplainVariancePrefetchRule explainVariancePrefetchRule,
 			DailySeriesPrefetchRule dailySeriesPrefetchRule,
 			TopItemsPrefetchRule topItemsPrefetchRule,
-			CostMonitoringAnswerGuide answerGuide
+			CostMonitoringAnswerGuide answerGuide,
+			CostMonitoringChartBuilder chartBuilder
 	) {
 		this.answerGuide = answerGuide;
+		this.chartBuilder = chartBuilder;
 		this.contextProvider = contextProvider;
 		this.suggestionConditions = suggestionConditions;
 		this.tools = List.of(dailySeriesTool, topItemsTool, comparePreviousMonthTool, explainVarianceTool,
@@ -133,6 +138,18 @@ public class CostMonitoringModule implements ScreenModule {
 	@Override
 	public AnswerGuide answerGuideForOtherMonth(String question, Map<String, String> params, String lang) {
 		return answerGuide.otherMonth(question, params, lang);
+	}
+
+	// Biểu đồ kèm câu trả lời theo intent (CostMonitoringChartBuilder)
+	@Override
+	public List<AssistantChart> answerCharts(String intent, String question, Map<String, String> params, String lang) {
+		return chartBuilder.build(intent, question, params, lang);
+	}
+
+	// Thẻ tóm tắt 1 khung (CostMonitoringChartBuilder.buildCard)
+	@Override
+	public AssistantCard answerCard(String intent, String question, Map<String, String> params, String lang) {
+		return chartBuilder.buildCard(intent, question, params, lang);
 	}
 
 	@Override
