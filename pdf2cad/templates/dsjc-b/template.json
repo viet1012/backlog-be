@@ -1,0 +1,472 @@
+{
+ "name": "dsjc-b",
+ "title": "DSJC-B Punch blank (Φ8~Φ25)",
+ "source_pdf": "21.DR-TE-20352-00 (DSJC-B).pdf",
+ "base_dxf": "base.dxf",
+ "table_key": "No",
+ "params": {
+  "No": {
+   "desc": "Cỡ danh nghĩa",
+   "desc_en": "Nominal size",
+   "desc_ja": "呼び径"
+  },
+  "L": {
+   "desc": "Chiều dài tổng",
+   "desc_en": "Overall length",
+   "desc_ja": "全長",
+   "required": true,
+   "aliases": [
+    "dài"
+   ]
+  },
+  "P": {
+   "desc": "Đường kính thân ΦP (+0.008/+0.002)",
+   "desc_en": "Shank diameter ΦP (+0.008/+0.002)",
+   "desc_ja": "軸径 ΦP (+0.008/+0.002)"
+  },
+  "H": {
+   "desc": "Đường kính đầu ΦH (-0.02/-0.18)",
+   "desc_en": "Head diameter ΦH (-0.02/-0.18)",
+   "desc_ja": "頭部径 ΦH (-0.02/-0.18)"
+  },
+  "S": {
+   "desc": "Chiều dài lỗ Φd1 từ mũi (±0.2)",
+   "desc_en": "Length of hole Φd1 from the tip (±0.2)",
+   "desc_ja": "先端からの穴 Φd1 の深さ (±0.2)"
+  },
+  "d1": {
+   "desc": "Lỗ Φd1 phía mũi",
+   "desc_en": "Hole Φd1 at the tip",
+   "desc_ja": "先端側の穴 Φd1"
+  },
+  "d2": {
+   "desc": "Lỗ Φd2 (khoan mồi ren)",
+   "desc_en": "Hole Φd2 (tap drill)",
+   "desc_ja": "穴 Φd2（ねじ下穴）"
+  },
+  "d3": {
+   "desc": "Lỗ ngang Φd3 tại S+1",
+   "desc_en": "Cross hole Φd3 at S+1",
+   "desc_ja": "S+1 位置の横穴 Φd3"
+  },
+  "M": {
+   "desc": "Ren M ở đầu",
+   "desc_en": "Thread M at the head",
+   "desc_ja": "頭部のねじ M"
+  },
+  "l": {
+   "desc": "Chiều sâu ren ℓ",
+   "desc_en": "Thread depth ℓ",
+   "desc_ja": "ねじ深さ ℓ",
+   "aliases": [
+    "ℓ"
+   ]
+  },
+  "S1": {
+   "desc": "S+1",
+   "derived": "S+1"
+  }
+ },
+ "table": [
+  {
+   "No": 8,
+   "P": {
+    "range": [
+     7,
+     7
+    ]
+   },
+   "M": 4,
+   "l": 8,
+   "d1": 1.1,
+   "d2": 3.4,
+   "S": {
+    "range": [
+     27,
+     27
+    ],
+    "also": [
+     15
+    ]
+   },
+   "H": 11,
+   "d3": 1.5,
+   "L": {
+    "range": [
+     50,
+     100
+    ],
+    "also": [
+     40
+    ]
+   }
+  },
+  {
+   "No": 10,
+   "P": {
+    "range": [
+     9,
+     9
+    ]
+   },
+   "M": 5,
+   "l": 10,
+   "d1": 1.5,
+   "d2": 4.3,
+   "S": {
+    "range": [
+     28,
+     28
+    ],
+    "also": [
+     15
+    ]
+   },
+   "H": 13,
+   "d3": 1.5,
+   "L": {
+    "range": [
+     50,
+     100
+    ],
+    "also": [
+     40
+    ]
+   }
+  },
+  {
+   "No": 13,
+   "P": {
+    "range": [
+     11,
+     12
+    ]
+   },
+   "M": 5,
+   "l": 10,
+   "d1": 1.8,
+   "d2": 4.3,
+   "S": {
+    "range": [
+     28,
+     28
+    ],
+    "also": [
+     15
+    ]
+   },
+   "H": 16,
+   "d3": 1.5,
+   "L": {
+    "range": [
+     50,
+     100
+    ],
+    "also": [
+     40
+    ]
+   }
+  },
+  {
+   "No": 16,
+   "P": {
+    "range": [
+     14,
+     15
+    ]
+   },
+   "M": 5,
+   "l": 10,
+   "d1": 2.8,
+   "d2": 4.3,
+   "S": {
+    "range": [
+     36,
+     36
+    ],
+    "also": [
+     17,
+     24
+    ]
+   },
+   "H": 19,
+   "d3": 1.5,
+   "L": {
+    "range": [
+     60,
+     100
+    ],
+    "also": [
+     40,
+     50
+    ]
+   }
+  },
+  {
+   "No": 20,
+   "P": {
+    "range": [
+     17,
+     19
+    ]
+   },
+   "M": 5,
+   "l": 10,
+   "d1": 2.8,
+   "d2": 4.3,
+   "S": {
+    "range": [
+     36,
+     36
+    ],
+    "also": [
+     17,
+     24
+    ]
+   },
+   "H": 23,
+   "d3": 1.5,
+   "L": {
+    "range": [
+     60,
+     100
+    ],
+    "also": [
+     40,
+     50
+    ]
+   }
+  },
+  {
+   "No": 25,
+   "P": {
+    "range": [
+     21,
+     24
+    ]
+   },
+   "M": 5,
+   "l": 10,
+   "d1": 2.8,
+   "d2": 4.3,
+   "S": {
+    "range": [
+     36,
+     36
+    ],
+    "also": [
+     17,
+     24
+    ]
+   },
+   "H": 28,
+   "d3": 1.5,
+   "L": {
+    "range": [
+     60,
+     100
+    ],
+    "also": [
+     40,
+     50
+    ]
+   }
+  }
+ ],
+ "rules": [
+  {
+   "text": "8≤No.≤13 and L=(40)mm ⇒ S=15mm",
+   "if": "8<=No<=13 and L==40",
+   "then": {
+    "S": 15
+   }
+  },
+  {
+   "text": "16≤No.≤25 and L=(40)mm ⇒ S=17mm",
+   "if": "16<=No<=25 and L==40",
+   "then": {
+    "S": 17
+   }
+  },
+  {
+   "text": "16≤No.≤25 and L=(50)mm ⇒ S=24mm",
+   "if": "16<=No<=25 and L==50",
+   "then": {
+    "S": 24
+   }
+  }
+ ],
+ "solid": {
+  "_comment": "Khối 3D (mặt cắt nửa, x từ mặt mũ tới mũi): mũ ΦH dày 5, thân ΦP; lỗ: ren M sâu ℓ, Φd2 tới cách mũi S, Φd1 từ mũi sâu S; lỗ ngang Φd3 tại S+1 tính từ mũi",
+  "outer": [["0", "H/2"], ["5", "H/2"], ["5", "P/2"], ["L", "P/2"]],
+  "inner": [["0", "M/2"], ["l", "M/2"], ["l", "d2/2"], ["L-S", "d2/2"], ["L-S", "d1/2"], ["L", "d1/2"]],
+  "cross": [{"x": "L-S-1", "d": "d3"}]
+ },
+ "checks": [
+  {
+   "expr": "d1 < d2 < M < P < H",
+   "msg": "Đường kính phải thoả d1 < d2 < M < P < H",
+   "msg_en": "Diameters must satisfy d1 < d2 < M < P < H",
+   "msg_ja": "径は d1 < d2 < M < P < H を満たす必要があります"
+  },
+  {
+   "expr": "S + 1 + d3/2 < L - l",
+   "msg": "Lỗ ngang Φd3 (tại S+1) chồng vào đoạn ren ℓ: cần S+1+d3/2 < L-ℓ",
+   "msg_en": "Cross hole Φd3 (at S+1) overlaps the thread ℓ: need S+1+d3/2 < L-ℓ",
+   "msg_ja": "横穴 Φd3（S+1 位置）がねじ部 ℓ と重なります: S+1+d3/2 < L-ℓ が必要"
+  },
+  {
+   "expr": "L > 5 + l",
+   "msg": "L phải lớn hơn 5 + ℓ",
+   "msg_en": "L must be greater than 5 + ℓ",
+   "msg_ja": "L は 5 + ℓ より大きくする必要があります"
+  }
+ ],
+ "view": {
+  "box": [
+   55,
+   100,
+   215,
+   175
+  ],
+  "x0": 79.4729,
+  "axis_y": 142.3511,
+  "x_dims": [
+   {
+    "name": "5",
+    "expr": "5",
+    "a": 79.4729,
+    "b": 83.7142
+   },
+   {
+    "name": "L",
+    "expr": "L",
+    "a": 79.4729,
+    "b": 166.026
+   },
+   {
+    "name": "S",
+    "expr": "S",
+    "a": 133.776,
+    "b": 166.026
+   },
+   {
+    "name": "S+1",
+    "expr": "S+1",
+    "a": 132.9346,
+    "b": 166.026
+   },
+   {
+    "name": "d3",
+    "expr": "d3",
+    "a": 132.2943,
+    "b": 133.5643
+   },
+   {
+    "name": "d3/2 (tâm lỗ ngang)",
+    "expr": "d3/2",
+    "a": 132.2943,
+    "b": 132.9346
+   },
+   {
+    "name": "ℓ (sâu ren, giả định)",
+    "expr": "l",
+    "a": 79.4729,
+    "b": 86.2621
+   }
+  ],
+  "r_dims": [
+   {
+    "name": "Ød1",
+    "expr": "d1",
+    "half": true,
+    "a": 142.3511,
+    "b": 143.5418
+   },
+   {
+    "name": "Ød2",
+    "expr": "d2",
+    "half": true,
+    "a": 142.3511,
+    "b": 144.2614
+   },
+   {
+    "name": "M",
+    "expr": "M",
+    "half": true,
+    "a": 142.3511,
+    "b": 144.4704
+   },
+   {
+    "name": "ØP",
+    "expr": "P",
+    "half": true,
+    "a": 142.3511,
+    "b": 150.8416
+   },
+   {
+    "name": "ØH",
+    "expr": "H",
+    "half": true,
+    "a": 142.3511,
+    "b": 152.1116
+   }
+  ]
+ },
+ "labels": [
+  {
+   "text": "L",
+   "to": "{L}"
+  },
+  {
+   "text": "S%%p0.2",
+   "to": "{S}%%p0.2"
+  },
+  {
+   "text": "(S+I)",
+   "to": "({S+1})"
+  },
+  {
+   "text": "(S+1)",
+   "to": "({S+1})"
+  },
+  {
+   "text": "%%cH",
+   "to": "%%c{H}"
+  },
+  {
+   "text": "%%cP",
+   "to": "%%c{P}"
+  },
+  {
+   "text": "%%cd1",
+   "to": "%%c{d1}"
+  },
+  {
+   "text": "%%cd2",
+   "to": "%%c{d2}"
+  },
+  {
+   "text": "%%cd3",
+   "to": "%%c{d3}"
+  },
+  {
+   "text": "M",
+   "to": "M{M}"
+  }
+ ],
+ "title_labels": [
+  {
+   "text": "DSJC-B(%%c8~%%c25)",
+   "to": "DSJC-B No.{No}-L{L}"
+  },
+  {
+   "text": "FREE",
+   "to": "1:1"
+  }
+ ],
+ "param_note_at": [
+  60,
+  96
+ ]
+}

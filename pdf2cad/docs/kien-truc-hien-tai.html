@@ -1,0 +1,172 @@
+<title>pdf2cad – Kiến trúc hiện tại</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: bản vẽ kỹ thuật — lưới 3 tầng như sơ đồ gốc (Input → Pipeline → Output, rồi 5 khối nền, rồi tổng kết) */
+:root{
+  --bg:#f3f6fa; --panel:#ffffff; --ink:#0f2238; --muted:#5a6b80; --line:#d4dde8;
+  --accent:#1662c4; --accent-soft:#e6effb;
+  --ok:#1f8a4c; --ok-soft:#e3f4ea; --part:#b7791f; --part-soft:#fbf1df; --no:#9aa5b4; --no-soft:#eef1f5;
+  --display:"Be Vietnam Pro",system-ui,"Segoe UI",sans-serif; --body:"Be Vietnam Pro",system-ui,"Segoe UI",sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#0c1522; --panel:#132033; --ink:#e4ecf6; --muted:#93a4b9; --line:#25364d;
+  --accent:#5ea0f5; --accent-soft:#16304f;
+  --ok:#4cc584; --ok-soft:#143326; --part:#e2a84b; --part-soft:#3a2c14; --no:#6c7a8d; --no-soft:#1a2738; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0c1522; --panel:#132033; --ink:#e4ecf6; --muted:#93a4b9; --line:#25364d;
+  --accent:#5ea0f5; --accent-soft:#16304f;
+  --ok:#4cc584; --ok-soft:#143326; --part:#e2a84b; --part-soft:#3a2c14; --no:#6c7a8d; --no-soft:#1a2738; color-scheme:dark}
+body{background:var(--bg);color:var(--ink);font-family:var(--body);font-size:13.5px;line-height:1.45;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:24px 40px}
+.wrap{max-width:1320px;margin:0 auto;display:flex;flex-direction:column;gap:18px}
+header{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:flex-end;gap:16px}
+h1{font-family:var(--display);font-size:28px;line-height:1.15;margin:0;text-wrap:balance;letter-spacing:-.01em}
+.sub{color:var(--muted);margin:4px 0 0}
+.overall{display:flex;align-items:center;gap:14px;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 16px}
+.overall b{font-family:var(--display);font-size:30px;color:var(--accent);font-variant-numeric:tabular-nums}
+.overall small{color:var(--muted);display:block;max-width:220px}
+.legend{display:flex;flex-wrap:wrap;gap:14px;color:var(--muted);font-size:12.5px}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.st{display:inline-grid;place-items:center;width:17px;height:17px;border-radius:50%;font-size:11px;font-weight:700;flex:none;margin-top:1px}
+.st.ok{background:var(--ok-soft);color:var(--ok)} .st.part{background:var(--part-soft);color:var(--part)} .st.no{background:var(--no-soft);color:var(--no)}
+.row1{display:grid;grid-template-columns:minmax(0,1fr) 28px minmax(0,3.4fr) 28px minmax(0,1fr);align-items:stretch}
+.row2{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px}
+.arrow{display:grid;place-items:center;color:var(--accent);font-size:20px}
+.blk{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px;display:flex;flex-direction:column;gap:8px;min-width:0}
+.blk h2,.blk h3{margin:0;font-family:var(--display);font-weight:600;color:var(--accent);font-size:15px}
+.blk h3{font-size:13.5px;color:var(--ink)}
+.pipe{background:var(--accent-soft);border:1px solid var(--line);border-radius:10px;padding:12px;display:flex;flex-direction:column;gap:10px;min-width:0}
+.pipe>h2{margin:0;font-family:var(--display);font-size:15px;color:var(--accent)}
+.stages{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+.stage{position:relative}
+.stage:not(:last-child)::after{content:"→";position:absolute;right:-10px;top:12px;color:var(--accent);font-size:14px;transform:translateX(50%)}
+ul{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:5px}
+li{display:flex;gap:7px;align-items:flex-start}
+li.no{color:var(--muted)}
+.bar{height:6px;background:var(--no-soft);border-radius:3px;overflow:hidden}
+.bar i{display:block;height:100%;background:var(--accent);border-radius:3px}
+.pct{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.pct em{font-style:normal;font-family:var(--mono);font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
+.tech{border-top:1px dashed var(--line);padding-top:7px;font-family:var(--mono);font-size:11.5px;color:var(--muted);margin-top:auto}
+.row3{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr) minmax(0,1.3fr);gap:12px}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{font-family:var(--mono);font-size:11.5px;background:var(--accent-soft);color:var(--ink);border-radius:5px;padding:3px 7px}
+ol{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:6px}
+ol li{display:list-item}
+.gaps li{display:list-item;list-style:disc;margin-left:16px}
+.gaps{display:block}
+.foot{color:var(--muted);font-size:12px}
+@media (max-width:1100px){
+  .row1{grid-template-columns:1fr;gap:10px}.arrow{transform:rotate(90deg);height:18px}
+  .stages{grid-template-columns:repeat(2,minmax(0,1fr))}.stage::after{display:none}
+  .row2{grid-template-columns:repeat(2,minmax(0,1fr))}.row3{grid-template-columns:1fr}}
+@media (max-width:560px){.stages,.row2{grid-template-columns:1fr}h1{font-size:23px}}
+</style>
+
+<div class="wrap">
+  <header>
+    <div>
+      <h1>pdf2cad – Kiến trúc hiện tại</h1>
+      <p class="sub">Đối chiếu code hiện có với sơ đồ “Local AI CAD Agent” | Chạy offline, CPU hoặc GPU (DirectML)</p>
+    </div>
+    <div class="overall"><b>~40%</b><small>Mức đáp ứng ước lượng so với toàn bộ sơ đồ mục tiêu (đánh giá định tính theo tính năng, không phải số đo)</small></div>
+  </header>
+  <div class="legend">
+    <span><i class="st ok">✓</i>Đã có</span><span><i class="st part">◐</i>Một phần</span><span><i class="st no">✕</i>Chưa có</span>
+  </div>
+
+  <section class="row1">
+    <div id="b1"></div><div class="arrow">➜</div>
+    <div class="pipe"><h2>2. Pipeline xử lý (pipeline.py — song song theo trang)</h2><div class="stages" id="stages"></div></div>
+    <div class="arrow">➜</div><div id="b3"></div>
+  </section>
+
+  <section class="row2" id="row2"></section>
+
+  <section class="row3">
+    <div class="blk"><h2>Công nghệ đang dùng</h2>
+      <div class="chips"><span class="chip">Python 3.10+</span><span class="chip">PyMuPDF</span><span class="chip">ezdxf</span><span class="chip">OpenCV</span><span class="chip">NumPy</span><span class="chip">RapidOCR (PP-OCR)</span><span class="chip">ONNX Runtime</span><span class="chip">DirectML</span><span class="chip">FastAPI</span><span class="chip">Uvicorn</span><span class="chip">PySide6</span><span class="chip">Docker</span></div>
+      <p class="foot" style="margin:0">Chưa dùng: PyTorch, Hugging Face, LLM/VLM, PostgreSQL, Vector DB, FreeCAD, CUDA.</p>
+    </div>
+    <div class="blk"><h2>Khoảng trống lớn nhất</h2>
+      <ul class="gaps">
+        <li>Chưa có 3D (STEP / FCStd)</li>
+        <li>Chưa có CSDL: kết quả tự xoá sau 24h</li>
+        <li>Chưa có LLM/VLM: bot chạy theo luật</li>
+        <li>Chưa thu thập feedback người dùng</li>
+        <li>Chưa đọc trực tiếp kho NAS</li>
+      </ul>
+    </div>
+    <div class="blk"><h2>Đề xuất bước tiếp theo</h2>
+      <ol>
+        <li><b>3D cho chi tiết tròn xoay</b>: gen.py đã có đủ tham số, chỉ cần revolve bằng CadQuery/FreeCAD → STEP.</li>
+        <li><b>Lưu lịch sử + feedback</b>: SQLite/PostgreSQL cho job, kết quả, đánh giá đúng/sai.</li>
+        <li><b>LLM cục bộ</b> (Ollama + Qwen) hiểu yêu cầu tự do, gọi bot/template hiện có làm công cụ.</li>
+        <li><b>Batch từ NAS</b>: quét thư mục mạng, chạy hàng loạt qua pipeline sẵn có.</li>
+      </ol>
+    </div>
+  </section>
+  <p class="foot">Nguồn: mã nguồn pdf2cad (src/pdf2cad, deploy/, templates/) tại thời điểm khảo sát. Tỷ lệ % là ước lượng định tính.</p>
+</div>
+
+<script>
+const B = (n, title, pct, items, tech) => ({n, title, pct, items, tech});
+const ok = t => ["ok", t], part = t => ["part", t], no = t => ["no", t];
+const block1 = B("1", "Input – Kho dữ liệu bản vẽ", 55, [
+  ok("PDF vector (lệnh vẽ gốc)"), ok("Scan TIFF/PNG/JPG/BMP, TIFF nhiều trang"),
+  ok("Kéo thả web (≤50 file, 200 MB), app desktop, CLI"),
+  no("Kết nối thư mục mạng / NAS"), no("Quét hàng loạt kho >10.000 bản vẽ")], "classify.py · cli.py · web/app.py");
+const stages = [
+  B("2.1", "Tiền xử lý & chuẩn hoá", 75, [
+    ok("Phân loại trang vector / scan"), ok("Render ảnh 300 dpi"),
+    ok("Đọc tỷ lệ “SCALE 1:2” từ khung tên, pt → mm"), ok("Tự xoay trang in nghiêng"),
+    ok("Xoá dấu mộc, nhận ký hiệu sửa đổi △n"), part("Deskew/denoise, tách từng hình chiếu")], "PyMuPDF · OpenCV · scale.py"),
+  B("2.2", "Nhận dạng & hiểu bản vẽ", 45, [
+    ok("OCR 4 lượt, chữ dọc, ký hiệu Ø ±"), ok("Chữ kém tin cậy → layer TEXT_CHECK"),
+    ok("Đọc khung tên + bảng tham số → JSON (Dạy bot)"),
+    part("Hiểu kích thước/dung sai: chỉ khi có mẫu"), no("VLM hiểu hình chiếu, kết cấu")], "RapidOCR (ONNX) · ocr.py · learn.py"),
+  B("2.3", "Tạo mô hình & xuất file", 45, [
+    ok("DXF từ PDF vector: đúng tuyệt đối"), part("DXF từ scan: sai số ~0.5 mm"),
+    ok("Vẽ lại theo mẫu tham số (co giãn hình)"), ok("Vẽ mới sạch, DIMENSION thật"),
+    no("Dựng 3D STEP / FCStd")], "ezdxf · template.py · gen.py"),
+  B("2.4", "Kiểm tra & trả kết quả", 50, [
+    ok("Đo lại từng kích thước sau khi vẽ"), ok("Ràng buộc bảng / NOTE, cảnh báo ngoài chuẩn"),
+    ok("Báo cáo JSON, log xoay vòng"),
+    no("So sánh tự động với bản gốc"), no("Lưu phiên bản")], "template.py · progress.py")];
+const block3 = B("3", "Output – File CAD", 40, [
+  ok("DXF 2D – AutoCAD 2007, mm 1:1, layer chuẩn"), no("STEP (3D)"), no("FCStd (3D)"),
+  ok("Xem trước PDF/DXF, bật/tắt layer"), ok("Tải từng file hoặc zip"),
+  part("Metadata khung tên: chỉ khi Dạy bot")], "dxf_writer.py · /api/jobs/{id}/zip");
+const row2 = [
+  B("4", "Cơ sở dữ liệu & quản lý dữ liệu", 15, [
+    part("File tạm theo job, tự xoá sau 24h"), part("Mẫu lưu dạng thư mục JSON"),
+    no("PostgreSQL (metadata, log, feedback)"), no("Vector DB tìm kiếm bản vẽ"), no("Quản lý phiên bản")], "~/.pdf2cad_web · templates/learned/"),
+  B("5", "Điều phối (Orchestration)", 40, [
+    ok("Hàng đợi job + chạy song song theo trang"), ok("API FastAPI: jobs, bot, templates"),
+    ok("Bot theo luật: nhớ ngữ cảnh, hỏi lại, “tăng L thêm 10”"),
+    no("LLM hiểu yêu cầu tự do"), no("LangChain / Ollama")], "pipeline.py · bot.py · FastAPI"),
+  B("6", "Model OCR / AI", 20, [
+    ok("PP-OCR nhúng sẵn, chạy offline"), part("GPU DirectML, tự quay về CPU"),
+    no("Server model riêng"), no("PaddleOCR-VL, Qwen-VL"), no("Model sinh CAD (CADFS, Pen2STEP)")], "rapidocr · onnxruntime(-directml)"),
+  B("7", "Hạ tầng & vận hành", 60, [
+    ok("Windows service (Task Scheduler), tự chạy lại"), ok("Firewall giới hạn mạng LAN"),
+    ok("Gói cài offline, Dockerfile"), ok("Script status / start / stop / update"),
+    part("GPU qua DirectML, chưa CUDA"), no("Giám sát tài nguyên, backup, đăng nhập")], "deploy/*.bat · Dockerfile"),
+  B("8", "Người dùng & feedback", 45, [
+    ok("Web nội bộ: tải lên, tiến độ, xem trước, tải về"), ok("App desktop kéo thả"),
+    ok("Trợ lý vẽ lại + Dạy bot bản vẽ mới"),
+    no("Đánh giá đúng/sai, ghi chú sửa lỗi"), no("Lịch sử lâu dài"), no("Tự học từ feedback")], "web/static · gui.py")];
+
+const sym = {ok:"✓", part:"◐", no:"✕"};
+const html = (b, tag="h2") => `<div class="blk${tag==="h3"?" stage":""}">
+  <${tag}>${b.n}. ${b.title}</${tag}>
+  <div class="pct"><div class="bar" style="flex:1"><i style="width:${b.pct}%"></i></div><em>~${b.pct}%</em></div>
+  <ul>${b.items.map(([s,t]) => `<li class="${s}"><i class="st ${s}">${sym[s]}</i><span>${t}</span></li>`).join("")}</ul>
+  <div class="tech">${b.tech}</div></div>`;
+document.getElementById("b1").outerHTML = html(block1);
+document.getElementById("b3").outerHTML = html(block3);
+document.getElementById("stages").innerHTML = stages.map(s => html(s, "h3")).join("");
+document.getElementById("row2").innerHTML = row2.map(b => html(b)).join("");
+</script>

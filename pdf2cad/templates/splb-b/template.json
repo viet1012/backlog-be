@@ -1,0 +1,173 @@
+{
+ "name": "splb-b",
+ "code": "SPLB-B",
+ "title": "SPLB-B Support pillar-tap type (Φ12~Φ60)",
+ "kind": "generator",
+ "source": "DR-TE-19344-01.tif (scan) — bảng nhập từ OCR + đối chiếu ảnh",
+ "table_key": "D",
+ "values_step": 10,
+ "params": {
+  "D": {
+   "desc": "Đường kính ngoài ΦD (0/-0.2, tham khảo)",
+   "desc_en": "Outer diameter ΦD (0/-0.2, reference)",
+   "desc_ja": "外径 ΦD (0/-0.2, 参考)"
+  },
+  "L": {
+   "desc": "Chiều dài cắt Lcut (+1.0/+0.6; L>200: +1.2/+0.6)",
+   "desc_en": "Cutting length Lcut (+1.0/+0.6; L>200: +1.2/+0.6)",
+   "desc_ja": "切断長 Lcut (+1.0/+0.6; L>200: +1.2/+0.6)",
+   "required": true,
+   "aliases": [
+    "Lcut"
+   ]
+  },
+  "MID": {
+   "desc": "Material ID",
+   "info": true
+  }
+ },
+ "params_show": [
+  "D",
+  "L"
+ ],
+ "table": [
+  {
+   "D": 12,
+   "L": "40/45/50/55/60/70/80/85/90/100",
+   "MID": "M0011561"
+  },
+  {
+   "D": 14,
+   "L": "40/45/50/55/60/70/80/85/90/100/110/120",
+   "MID": "M0011562"
+  },
+  {
+   "D": 16,
+   "L": "40/45/50/55/60/70/80/85/90/100/110/120",
+   "MID": "M0011563"
+  },
+  {
+   "D": 18,
+   "L": "40/45/50/55/60/70/80/85/90/100/110/120",
+   "MID": "M0011564"
+  },
+  {
+   "D": 20,
+   "L": "45/50/55/60/65/70/75/80/85/90~150",
+   "MID": "M0011565"
+  },
+  {
+   "D": 25,
+   "L": "45/50/55/60/65/70/75/80/85/90/95/100~150",
+   "MID": "M0011566"
+  },
+  {
+   "D": 30,
+   "L": "50/60/65/70/75/80/85/90/95/100/105/110/115/120~300",
+   "MID": "M0011567"
+  },
+  {
+   "D": 32,
+   "L": "50~80/85/90~300",
+   "MID": "M0011568"
+  },
+  {
+   "D": 35,
+   "L": "50/60/65/70/75/80/85/90/95/100~300",
+   "MID": "M0011569"
+  },
+  {
+   "D": 40,
+   "L": "50/60/65/70/75/80/85/90/95/100/105/110~130/135/140/145/150~300",
+   "MID": "M0011571"
+  },
+  {
+   "D": 45,
+   "L": "50~200",
+   "MID": "M0011572"
+  },
+  {
+   "D": 50,
+   "L": "50/60/65/70/75/80/90/95/100/105/110/115/120/125/130/140/145/150~400",
+   "MID": "M0011573"
+  },
+  {
+   "D": 55,
+   "L": "50~200",
+   "MID": "M0011574"
+  },
+  {
+   "D": 60,
+   "L": "70~400",
+   "MID": "M0011575"
+  }
+ ],
+ "examples": [
+  "D=30 L=120",
+  "D=12 L=50"
+ ],
+ "checks": [
+  {
+   "expr": "L > 0 and D > 0",
+   "msg": "Kích thước phải dương",
+   "msg_en": "Dimensions must be positive",
+   "msg_ja": "寸法は正の値にしてください"
+  }
+ ],
+ "naming": {
+  "parts_name": "SPLB-B D{D}-L{L}",
+  "info": "Material ID: {MID}",
+  "drawing_no": "DR-TE-19344-01 (D{D} L{L})"
+ },
+ "generator": {
+  "type": "cylinder",
+  "D": "D"
+ },
+ "drawing": {
+  "title1": "SUPPORT PILLAR-TAP TYPE",
+  "title2": "SPLB-B_BLANK (CUTTING)",
+  "material": "S45C",
+  "company": "SAIGON PRECISION Co.,Ltd.",
+  "roughness": "6.3a",
+  "notes": [
+   "MUST BE FREE OF VISIBLE SCRATCHES",
+   "THE DIMENSIONAL TOLERANCE IS REGULATED BY <JIS B 0405-m> WITHOUT NOTES"
+  ],
+  "dims": {
+   "L": {
+    "text": "<>",
+    "tol": [
+     [
+      "L<=200",
+      1.0,
+      0.6
+     ],
+     [
+      "L>200",
+      1.2,
+      0.6
+     ]
+    ]
+   },
+   "D": {
+    "text": "(%%c<>)",
+    "tol": [
+     0,
+     -0.2
+    ]
+   }
+  },
+  "gdt": [
+   {
+    "kind": "roundness",
+    "value": "0.2",
+    "stack": 0
+   },
+   {
+    "kind": "cylindricity",
+    "value": "0.2",
+    "stack": 1
+   }
+  ]
+ }
+}
