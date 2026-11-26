@@ -42,6 +42,36 @@
 		<appender-ref ref="ASSISTANT_AUDIT"/>
 	</logger>
 
+	<!--
+	  Nhật ký thao tác PDF -> CAD (logger "pdf2cad.audit", Pdf2cadAuditLogger): 1 dòng JSON / thao tác
+	  (ai, IP, action, job, kết quả). Thư mục pdf2cad.audit.dir (mặc định logs/pdf2cad), giữ 90 ngày, không vào log chung.
+	-->
+	<springProperty scope="context" name="PDF2CAD_AUDIT_DIR" source="pdf2cad.audit.dir" defaultValue="logs/pdf2cad"/>
+
+	<appender name="PDF2CAD_AUDIT_FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+		<lazy>true</lazy>
+		<rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+			<fileNamePattern>${PDF2CAD_AUDIT_DIR}/pdf2cad-audit-%d{yyyy-MM-dd}.jsonl</fileNamePattern>
+			<maxHistory>90</maxHistory>
+		</rollingPolicy>
+		<encoder>
+			<pattern>%msg%n</pattern>
+			<charset>UTF-8</charset>
+		</encoder>
+	</appender>
+
+	<appender name="PDF2CAD_AUDIT" class="ch.qos.logback.classic.AsyncAppender">
+		<appender-ref ref="PDF2CAD_AUDIT_FILE"/>
+		<queueSize>1024</queueSize>
+		<discardingThreshold>0</discardingThreshold>
+		<neverBlock>true</neverBlock>
+		<includeCallerData>false</includeCallerData>
+	</appender>
+
+	<logger name="pdf2cad.audit" level="INFO" additivity="false">
+		<appender-ref ref="PDF2CAD_AUDIT"/>
+	</logger>
+
 	<root level="INFO">
 		<appender-ref ref="CONSOLE"/>
 	</root>

@@ -29,6 +29,8 @@ public class ProductionControlAuthService {
 
 	private final ProductionControlAuthRepository repository;
 
+	private final AuthTokenService tokenService;
+
 	// =========================================================
 	// REGISTER
 	// =========================================================
@@ -157,8 +159,11 @@ public class ProductionControlAuthService {
 		);
 
 		// -----------------------------------------------------
-		// Response
+		// Response (+ token đăng nhập)
 		// -----------------------------------------------------
+
+		AuthTokenService.IssuedToken token =
+				tokenService.issue(employeeId);
 
 		return new ProductionControlLoginResponse(
 				null,
@@ -170,7 +175,9 @@ public class ProductionControlAuthService {
 				hr != null ? hr.line() : null,
 				hr != null ? hr.group() : null,
 				STATUS_ACTIVE,
-				roles
+				roles,
+				token.token(),
+				token.expiresAt().toString()
 		);
 	}
 

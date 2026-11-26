@@ -12,6 +12,10 @@ public record ProductionControlLoginResponse(
 		String line,
 		String group,
 		String status,
-		List<String> roles
+		List<String> roles,
+		// Token đăng nhập (AuthTokenService): gửi "Authorization: Bearer <token>" cho API cần danh tính thật
+		String token,
+		// Hạn token, ISO-8601 UTC
+		String tokenExpiresAt
 ) {
 }

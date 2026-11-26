@@ -197,6 +197,24 @@ Một filter: `{ "field": "...", "operator": "...", "value": "...", "values": []
 | POST | `/api/machine-locator/floors/{id}/bulk` | Ghi nhiều máy một lần | `X-Employee-Id` (ADMIN) |
 | POST | `/api/machine-locator/floors/{id}/import` | Import file layout | `X-Employee-Id` (ADMIN) |
 | GET | `/api/machine-monitor/hse` | Tình trạng lỗi an toàn (HSE Patrol) theo máy | – |
+| GET / POST / DELETE | `/api/pdf2cad/**` | PDF → CAD: proxy sang server pdf2cad (xem dưới) | `Authorization: Bearer <token login>` (`pdf2cad.allowed-roles`, mặc định ADMIN) |
+
+**PDF → CAD (`/api/pdf2cad`)** – `Pdf2cadController` → `Pdf2cadProxyService` (stream nguyên response của pdf2cad, kể cả lỗi `{"detail": "..."}`).
+Chỉ chuyển tiếp các endpoint FE dùng: `health`, `templates`, `bot`, `jobs` (multipart), `jobs/{id}` (GET/DELETE),
+`jobs/{id}/files/{name}`, `jobs/{id}/zip`, `jobs/{id}/preview/{name}`, `jobs/{id}/pdf/{idx}/{page}.png`, `jobs/{id}/learn/{name}`
+→ `<pdf2cad.base-url>/api/...`. Cấu hình `pdf2cad.*` trong `application.properties`.
+
+- **Xác thực** (`pdf2cad.auth-required`, **hiện tạm tắt = false**: không chặn, danh tính lấy từ token nếu có, không thì `X-Employee-Id` – chỉ cho nhật ký + chủ job):
+  `POST /api/production-control/auth/login` trả thêm `token` (JWT HS256, `AuthTokenService`) + `tokenExpiresAt`.
+  Khi `true`: `/api/pdf2cad/**` chỉ nhận `Authorization: Bearer <token>` (không tin `X-Employee-Id`), role tính lại từ DB mỗi request.
+  Khoá ký: biến môi trường `AUTH_TOKEN_SECRET` (≥ 32 ký tự; trống → khoá ngẫu nhiên mỗi lần khởi động), hạn `auth.token.ttl-hours` (12).
+  401 = đăng nhập lại, 403 = không có quyền.
+- **Chủ job**: chỉ người tạo job (upload hoặc bot vẽ) mới xem / tải / dừng / dạy bot được (`Pdf2cadJobOwners`, RAM, `pdf2cad.job-ttl-hours`); khác → 404.
+- **Upload**: body multipart stream thẳng sang pdf2cad (`MultipartConfig` bỏ parse cho `/api/pdf2cad/**`), giới hạn `pdf2cad.max-upload-mb` (200) → 413;
+  giới hạn chung `spring.servlet.multipart.*` (20 MB) của các API khác giữ nguyên.
+- **Nhật ký**: `logs/pdf2cad/pdf2cad-audit-yyyy-MM-dd.jsonl` (`Pdf2cadAuditLogger`, 1 dòng / thao tác: MSNV, IP, action, job, kết quả; 401/403 ghi `denied`).
+  BE gửi `X-Forwarded-For` + `X-Employee-Id` sang pdf2cad; pdf2cad chỉ dùng 2 header này khi IP của BE nằm trong `PDF2CAD_TRUSTED_PROXIES`.
+- Lỗi: không kết nối được pdf2cad → 502, quá `pdf2cad.read-timeout-sec` → 504.
 
 ---
 
