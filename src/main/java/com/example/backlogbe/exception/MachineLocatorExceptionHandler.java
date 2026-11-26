@@ -26,8 +26,9 @@ import java.util.Map;
 // Body: { "status": <code>, "message": "..." }
 //
 // - Validate (IllegalArgumentException)         -> 400
-// - Chưa đăng nhập / không phải ADMIN / không tìm thấy
-//   (ResponseStatusException)                   -> 401 / 403 / 404
+// - Thiếu mã NV / không tìm thấy
+//   (ResponseStatusException)                   -> 401 / 404
+//   (401 / 403 do token / quyền: ProductionControlAuthFilter, RequirePermInterceptor)
 // - ifVersion lệch                              -> 409 + "version" hiện tại
 // - Lỗi khác                                    -> 500, chi tiết chỉ ghi log
 // =========================================================

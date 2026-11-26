@@ -4,6 +4,8 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 public record FacConfirmProcessTimeRequest(
+		// Không dùng khi có phiên đăng nhập (lấy từ CurrentUser);
+		// chỉ dùng tạm khi auth.enforce=false và request không có token.
 		String employeeId,
 		List<ProcessTimeItem> changes,
 

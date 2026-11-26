@@ -480,7 +480,7 @@ Sai / thiếu → 400 `{status, message}`, vd "div must be one of PR, MO, Guide.
   job tự động `cost-monitoring.ot.share-cron` (mặc định `-` = tắt, file không đổi thì bỏ qua). Xem
   [Import OT từ share khi chạy Docker](#import-ot-từ-share-khi-chạy-docker).
 - `GET /ot/status?month=` – 4 dòng PR / MO / PG / MG: số ngày, ngày cuối, tổng K$, lúc nạp, nguồn.
-- Ghi cần header `X-Employee-Id` có role trong `cost-monitoring.ot.import-roles` (mặc định `ADMIN`); 401 / 403 / 503 dạng `{status, message}`.
+- Ghi cần quyền `COST_MONITORING` / `X` (`@RequirePerm`, token `Authorization: Bearer`; bỏ `cost-monitoring.ot.import-roles`); 401 / 403 / 503 dạng `{status, message}`.
 - Upload cần `spring.servlet.multipart.max-file-size` / `max-request-size` ≥ 20MB (mặc định Spring 1MB).
 
 #### Import OT từ share khi chạy Docker
@@ -623,9 +623,9 @@ Chỉ có ở profile `dev` (profile khác → 404). Xem [mục 10](#10-kiểm-t
 
 Code: `assistant/core/audit/admin/`. Đọc thẳng file audit JSONL ([mục 10 – Audit log](#audit-log)), không dùng DB.
 
-- **Quyền**: header `X-Employee-Id`; role tính như login (`ProductionControlAuthService.findAccountRoles`, tài khoản
-  `HSE_Patrol_Account` + HR). Thiếu header → 401; không có tài khoản / không phải `ADMIN` → 403.
-  Header do FE tự gửi, BE chưa xác thực (cùng hạn chế với Machine Locator, xem `docs/API_AUDIT.md`).
+- **Quyền**: `ASSISTANT_LOG` – list / `/{rid}` / `/stats` = `V`, `/export` = `X` (`@RequirePerm`, theo
+  `vw_F2_ProductionControl_EmpPerm`, token `Authorization: Bearer`). `auth.enforce=true`: thiếu / sai token → 401,
+  thiếu quyền → 403; `false`: chỉ log WARN "would-deny".
 - **Bộ lọc chung** (list / stats / export): `from`, `to` (`yyyy-MM-dd`, theo ngày trong `timestamp`; thiếu `to` → hôm nay,
   thiếu `from` → `to` − 6 ngày; khoảng ≤ 92 ngày), `userId` (khớp đúng, không phân biệt hoa thường),
   `q` (chứa trong câu hỏi hoặc câu trả lời, không phân biệt hoa thường, ≤ 200 ký tự), `ok` (`true`/`false`),
@@ -777,7 +777,7 @@ File riêng để tra lại từng câu hỏi (logger `assistant.audit`, cấu h
 - Mỗi request `/api/assistant/chat` đi vào `ChatOrchestrator` ghi **đúng 1 dòng** khi kết thúc, cả thành công lẫn lỗi
   (`AssistantAuditLogger`). Request bị chặn trước đó (rate limit 429, body JSON sai) không có dòng audit.
   Eval (`/api/assistant/eval`) cũng ghi, với `source = "eval"`, `userId = null`.
-- Tra cứu: API admin `GET /api/admin/assistant-logs` (list / chi tiết / thống kê / export, chỉ ADMIN – xem [mục 6](#6-api)),
+- Tra cứu: API admin `GET /api/admin/assistant-logs` (list / chi tiết / thống kê / export, quyền `ASSISTANT_LOG` – xem [mục 6](#6-api)),
   hoặc trên server: `grep '"rid":"ab12cd34"' logs/assistant/assistant-audit-2026-11-09.jsonl`, `jq` theo field.
 
 | Field | Nội dung |
@@ -786,7 +786,7 @@ File riêng để tra lại từng câu hỏi (logger `assistant.audit`, cấu h
 | `rid` | requestId, trùng `rid=` trong log chung (`RequestTimingFilter`); eval: `-` (filter không đo `/eval`) |
 | `source` | `"chat"` (`POST /api/assistant/chat`) hoặc `"eval"` (`POST /api/assistant/eval`, mỗi case 1 dòng) |
 | `screenKey`, `lang` | Màn hình, ngôn ngữ (lỗi validate: giá trị thô FE gửi) |
-| `userId` | Mã nhân viên từ header `X-Employee-Id` (`[A-Za-z0-9_-]{1,32}`, sai dạng / thiếu → `null`). Không ghi tên. FE tự gửi, BE chưa xác thực (cần xác nhận FE đã gửi header này) |
+| `userId` | Mã nhân viên của phiên đăng nhập (token). Khi `auth.enforce=false` và không có token: tạm lấy header `X-Employee-Id` (`[A-Za-z0-9_-]{1,32}`, chữ hoa; sai dạng / thiếu → `null`, chưa xác thực). Không ghi tên |
 | `params` | Tham số màn hình đã validate (vd `month`, `simuWeek`, ô drawer `factory` / `category` hoặc `div` / `cost`); lỗi validate → `null` |
 | `question` | Câu hỏi (đã trim; lỗi validate: bản thô, cắt 2000 ký tự) |
 | `answer` | Câu trả lời đầy đủ sau hậu xử lý; lỗi → `null` |
@@ -923,3 +923,4 @@ server hoặc ADMIN (qua API admin) đọc; không gửi ra ngoài.
 | 2026-11-18 | "So sánh 17 tháng này vs 17 tháng trước của PRESS T&SL" (ý: ngày 17) bị `multi_month` hiểu là "17 tháng gần đây" rồi cắt còn 6 tháng. `CostMonitoringManagerAnswers.monthsBack`: "N tháng này", "ngày N tháng này / trước" là mốc ngày → không phải số tháng; N > 12 cũng không nhận (giống giới hạn khoảng của core). `CostMonitoringLookupAnswers.prev_month`: bỏ cụm "N tháng này / trước" trước khi xét từ loại trừ "ngày"; chỉ dùng template khi N trùng ngày có actual của khung (prev_month so cùng kỳ 01–ngày actual), khác → LLM. Eval thêm 1 case (103; không ép `llmCallCount` vì phụ thuộc ngày actual khi chạy). |
 | 2026-11-18 | (1) "So sánh ngày 17 tháng này vs ngày 17 tháng trước": `prev_month` nhận mốc ngày N ≤ ngày actual của khung (trước chỉ khi N = ngày actual) và thêm dòng đầu "**Chi riêng ngày N**" của 2 tháng (hiệu Act MTD) trước khối lũy kế cùng kỳ (`withDayCompare`). (2) "PRESS T&SL mua những gì nhiều nhất và ngày nào là dùng tiền nhiều nhất?" chỉ trả lịch xuất 1 vật tư (`item_when`). `CostMonitoringAnswerGuide.itemAndTopDay`: tách tại "và ngày / hôm nào" (phần sau có "dùng / chi tiền…"), phần 1 -> `item_most_issued`, phần 2 -> `top_day` (mượn khung của phần 1), ghép 1 câu trả lời. `CostMonitoringItemAnswers`: "mua những gì / cái gì" được hiểu là hỏi vật tư. Eval thêm 2 case (105). |
 | 2026-11-19 | Bảng giao dịch drawer: tìm / lọc dropdown / sắp xếp chuyển sang server-side (FE trước phải tải đủ ~51 trang × 200 dòng rồi xử lý ở trình duyệt). `/detail/transactions` thêm `q`, `sort`, `date` / `category` / `costCenter` / `machine` (lặp lại được, `""` = ô trống) → `CostTransactionFilter`; có bộ lọc thì 1 truy vấn `findFilteredPage` (trang + `COUNT/SUM OVER ()`), không thì giữ đường cũ (cache `countRows` / `findTotal`). Thêm `/detail/transactions/facets` (giá trị + số dòng cho dropdown, bỏ bộ lọc của chính cột). Export nhận cùng bộ lọc / thứ tự. `/detail` không đổi. Tìm không dấu dùng `COLLATE Latin1_General_CI_AI` trên chuỗi ghép (cần xác nhận không lỗi xung đột collation trên DB thật). |
+| 2026-11-23 | Xác thực / phân quyền chung `F2_ProductionControl_*` (toàn BE, không chỉ trợ lý): login trả `token` (32 byte, DB chỉ lưu SHA-256 trong `F2_ProductionControl_Session`, hết hạn trượt 12h, tối đa 7 ngày) + `expiresAt`; `roles` lấy từ `vw_F2_ProductionControl_EmpPerm` (bỏ `determineRoles` / `findAccountRoles`). Thêm `/auth/logout`, `/auth/me`; login sai 5 lần / 5 phút / (MSNV + IP) → 429; `auth.register.enabled` (mặc định false). `ProductionControlAuthFilter` (Bearer → `CurrentUser`) + `@RequirePerm` (`RequirePermInterceptor`, cache quyền 60s). `auth.enforce` (mặc định false: chỉ log WARN "would-deny", tạm nhận `X-Employee-Id`). Trợ lý: `/api/assistant/*` chỉ cần đăng nhập, `userId` audit log + khóa rate limit lấy từ phiên; `/api/admin/assistant-logs` = `ASSISTANT_LOG` V (export X), bỏ `AssistantLogAdminGuard`. Cost Monitoring: bỏ `cost-monitoring.ot.import-roles`, import = `COST_MONITORING` X. CORS global `app.cors.allowed-origins` (bỏ `@CrossOrigin("*")`). |

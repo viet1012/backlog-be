@@ -1,7 +1,6 @@
 package com.example.backlogbe.repository.auth;
 
 import com.example.backlogbe.model.PatrolAccount;
-import com.example.backlogbe.model.ProductionControlHrProfile;
 import lombok.RequiredArgsConstructor;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
@@ -16,44 +15,68 @@ public class ProductionControlAuthRepository {
 	private final JdbcTemplate jdbcTemplate;
 
 	// =========================================================
-	// HR
+	// NHÂN VIÊN ĐANG LÀM (vw_F2_ProductionControl_Employee, IsActive = 1) – register kiểm tra MSNV
 	// =========================================================
 
-	public Optional<ProductionControlHrProfile> findHrByEmployeeId(
-			String employeeId
-	) {
+	public boolean existsActiveEmployee(String empCode) {
 
 		String sql = """
-				SELECT TOP 1
-				    LTRIM(RTRIM(CAST(Code AS VARCHAR(50)))) AS EmployeeId,
-				    Name,
-				    Fac,
-				    Dept,
-				    Section,
-				    Line,
-				    [Group]
-				FROM dbo.F2_HR_Data
-				WHERE LTRIM(RTRIM(CAST(Code AS VARCHAR(50)))) = ?
-				ORDER BY id DESC
+				SELECT CASE
+				    WHEN EXISTS (
+				        SELECT 1
+				        FROM dbo.vw_F2_ProductionControl_Employee
+				        WHERE EmpCode = CAST(? AS VARCHAR(50))
+				          AND IsActive = 1
+				    )
+				    THEN 1
+				    ELSE 0
+				END
 				""";
 
-		List<ProductionControlHrProfile> rows =
-				jdbcTemplate.query(
-						sql,
-						(rs, rowNum) ->
-								new ProductionControlHrProfile(
-										rs.getString("EmployeeId"),
-										rs.getString("Name"),
-										rs.getString("Fac"),
-										rs.getString("Dept"),
-										rs.getString("Section"),
-										rs.getString("Line"),
-										rs.getString("Group")
-								),
-						employeeId
-				);
+		Integer result = jdbcTemplate.queryForObject(
+				sql,
+				Integer.class,
+				empCode
+		);
 
-		return rows.stream().findFirst();
+		return result != null && result == 1;
+	}
+
+	// =========================================================
+	// TÊN + TỔ CHỨC (vw_F2_ProductionControl_Employee, tra theo EmpCode; cột Grp -> group)
+	// Dùng cho login response và /me.
+	// =========================================================
+
+	public record EmployeeOrg(
+			String name,
+			String fac,
+			String dept,
+			String section,
+			String line,
+			String group
+	) {
+	}
+
+	public Optional<EmployeeOrg> findEmployeeOrg(String empCode) {
+
+		String sql = """
+				SELECT TOP 1 Name, Fac, Dept, Section, Line, Grp
+				FROM dbo.vw_F2_ProductionControl_Employee
+				WHERE EmpCode = CAST(? AS VARCHAR(50))
+				""";
+
+		return jdbcTemplate.query(
+				sql,
+				(rs, rowNum) -> new EmployeeOrg(
+						rs.getString("Name"),
+						rs.getString("Fac"),
+						rs.getString("Dept"),
+						rs.getString("Section"),
+						rs.getString("Line"),
+						rs.getString("Grp")
+				),
+				empCode
+		).stream().findFirst();
 	}
 
 	// =========================================================

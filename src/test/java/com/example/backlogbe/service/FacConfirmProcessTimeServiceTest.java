@@ -51,7 +51,7 @@ class FacConfirmProcessTimeServiceTest {
 		IllegalArgumentException ex =
 				assertThrows(
 						IllegalArgumentException.class,
-						() -> service.save(request("toDrill", PAST), "PC")
+						() -> service.save(request("toDrill", PAST), "PC", "E1")
 				);
 
 		assertTrue(ex.getMessage().startsWith("Ô đã có dữ liệu từ Backlog"));
@@ -72,7 +72,7 @@ class FacConfirmProcessTimeServiceTest {
 		when(repository.upsert(anyString(), anyString(), any(), anyString()))
 				.thenReturn(1);
 
-		assertEquals(1, service.save(request("toDrill", PAST), "PC"));
+		assertEquals(1, service.save(request("toDrill", PAST), "PC", "E1"));
 		verify(repository).upsert(eq("A1"), eq("To Drill"), eq(PAST), eq("PC_E1"));
 	}
 

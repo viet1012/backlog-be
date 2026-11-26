@@ -1,5 +1,8 @@
 package com.example.backlogbe.controller;
 
+import com.example.backlogbe.auth.CurrentUser;
+import com.example.backlogbe.auth.Perm;
+import com.example.backlogbe.auth.RequirePerm;
 import com.example.backlogbe.assistant.screens.costmonitoring.CostChartForecasts;
 import com.example.backlogbe.assistant.screens.costmonitoring.CostMonitoringSnapshotLoader;
 import com.example.backlogbe.assistant.screens.costmonitoring.repository.CostTransactionFilter;
@@ -21,10 +24,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestPart;
@@ -38,11 +39,12 @@ import java.time.format.DateTimeFormatter;
 import java.util.Arrays;
 import java.util.List;
 
-// Đọc: không cần đăng nhập. Ghi (/ot/import*): cần X-Employee-Id có quyền (CostOtImportService).
-@CrossOrigin(origins = "*")
+// Quyền: COST_MONITORING – đọc (chart, detail, transactions, facets, pl-weeks, months, ot/status) = V;
+// export transactions và /ot/import* = X. Mã NV ghi vào dữ liệu OT lấy từ phiên đăng nhập (CurrentUser).
 @RestController
 @RequestMapping("/api/cost-monitoring")
 @RequiredArgsConstructor
+@RequirePerm(feature = Perm.COST_MONITORING, action = Perm.VIEW)
 public class CostMonitoringController {
 
 	private final CostMonitoringService service;
@@ -50,9 +52,6 @@ public class CostMonitoringController {
 	private final CostMonitoringTransactionExcelService transactionExcelService;
 	private final CostMonitoringSnapshotLoader snapshotLoader;
 	private final CostOtImportService otImportService;
-
-	// Mã nhân viên do FE gửi (cùng cách Machine Locator / assistant logs)
-	static final String EMPLOYEE_HEADER = "X-Employee-Id";
 
 	private static final String EXCEL_CONTENT_TYPE =
 			"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
@@ -176,6 +175,7 @@ public class CostMonitoringController {
 	// Cùng params (không page / size) -> .xlsx theo bộ lọc / thứ tự của bảng (mặc định thành tiền giảm dần),
 	// tối đa MAX_EXPORT_ROWS dòng
 	@GetMapping("/detail/transactions/export")
+	@RequirePerm(feature = Perm.COST_MONITORING, action = Perm.EXPORT_IMPORT)
 	public ResponseEntity<StreamingResponseBody> exportTransactions(
 			@RequestParam(required = false) String div,
 			@RequestParam(required = false) String chart,
@@ -269,33 +269,35 @@ public class CostMonitoringController {
 
 	// =========================================================
 	// ACTUAL OT (nạp từ file "FY.. Daily Cost monitoning.xlsx")
-	// Ghi dữ liệu: cần header X-Employee-Id có role trong cost-monitoring.ot.import-roles (mặc định ADMIN)
+	// Ghi dữ liệu: COST_MONITORING / X (kể cả dryRun)
 	// =========================================================
 
 	// multipart/form-data: file=<.xlsx>; month=yyyy-MM (bỏ trống = mọi tháng trong file); dryRun=true chỉ xem trước
 	@PostMapping(value = "/ot/import", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+	@RequirePerm(feature = Perm.COST_MONITORING, action = Perm.EXPORT_IMPORT)
 	public ResponseEntity<CostOtImportResult> importOt(
-			@RequestHeader(value = EMPLOYEE_HEADER, required = false) String employeeId,
 			@RequestPart(value = "file", required = false) MultipartFile file,
 			@RequestParam(required = false) String month,
-			@RequestParam(required = false, defaultValue = "false") boolean dryRun
+			@RequestParam(required = false, defaultValue = "false") boolean dryRun,
+			HttpServletRequest httpRequest
 	) {
 
 		return ResponseEntity.ok(
-				otImportService.importUpload(file, month, dryRun, employeeId)
+				otImportService.importUpload(file, month, dryRun, CurrentUser.empCodeOrNull(httpRequest))
 		);
 	}
 
 	// BE tự đọc file trên share (cost-monitoring.ot.share-path); cùng params / kết quả với /ot/import
 	@PostMapping("/ot/import-from-share")
+	@RequirePerm(feature = Perm.COST_MONITORING, action = Perm.EXPORT_IMPORT)
 	public ResponseEntity<CostOtImportResult> importOtFromShare(
-			@RequestHeader(value = EMPLOYEE_HEADER, required = false) String employeeId,
 			@RequestParam(required = false) String month,
-			@RequestParam(required = false, defaultValue = "false") boolean dryRun
+			@RequestParam(required = false, defaultValue = "false") boolean dryRun,
+			HttpServletRequest httpRequest
 	) {
 
 		return ResponseEntity.ok(
-				otImportService.importFromShare(month, dryRun, employeeId)
+				otImportService.importFromShare(month, dryRun, CurrentUser.empCodeOrNull(httpRequest))
 		);
 	}
 

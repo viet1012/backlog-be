@@ -3,7 +3,6 @@ package com.example.backlogbe.controller;
 import java.util.Map;
 
 import org.springframework.context.annotation.Profile;
-import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -20,8 +19,8 @@ import lombok.RequiredArgsConstructor;
 // Profile khác (production) không đăng ký controller này
 // nên /api/fac-confirm/debug-client trả 404.
 // =========================================================
+// Không gắn feature: chỉ cần đã đăng nhập.
 @Profile("dev")
-@CrossOrigin(origins = "*")
 @RestController
 @RequestMapping("/api/fac-confirm")
 @RequiredArgsConstructor

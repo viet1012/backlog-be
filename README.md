@@ -204,13 +204,15 @@ Một filter: `{ "field": "...", "operator": "...", "value": "...", "values": []
 
 Base path: `/api/production-control/auth`. Code: `ProductionControlAuthController` → `ProductionControlAuthService` → `ProductionControlAuthRepository`.
 
-Tài khoản dùng chung với hệ thống S-Patrol (bảng `HSE_Patrol_Account`). Thông tin nhân sự lấy từ `F2_HR_Data`. Mã nhân viên được `trim` và viết hoa trước khi xử lý.
+Tài khoản dùng chung với hệ thống S-Patrol (bảng `HSE_Patrol_Account`). Tên và tổ chức (`name`, `fac`, `dept`, `section`, `line`, `group` ← cột `Grp`) lấy từ `vw_F2_ProductionControl_Employee` theo `EmpCode`. Mã nhân viên được `trim` và viết hoa trước khi xử lý.
 
 ### 6.1. `POST /register`
 
+Chỉ chạy khi `auth.register.enabled=true`; không thì trả 403 `Đăng ký tạm khóa, liên hệ IT`.
+
 Body: `{ "employeeId": "12345", "password": "..." }`
 
-1. `employeeId` phải tồn tại trong `F2_HR_Data`.
+1. `employeeId` phải có trong `vw_F2_ProductionControl_Employee` với `IsActive = 1` (không có hoặc đã nghỉ → lỗi 400 bên dưới).
 2. Chưa có tài khoản trong `HSE_Patrol_Account`.
 3. Ghi `Account`, `Pass`, `NewDT`, `UpdDT`.
 
@@ -226,29 +228,28 @@ Body: `{ "employeeId": "12345", "password": "..." }`
 
 ### 6.2. `POST /login`
 
-Body: `{ "employeeId": "12345", "password": "..." }`. Thành công thì cập nhật `Last_Login`.
+Body: `{ "employeeId": "12345", "password": "..." }`. Thành công thì tạo session và cập nhật `Last_Login`.
+Không tìm thấy NV trong view vẫn cho login; các field tên / tổ chức = `null`.
 
 ```json
 {
   "accountId": null, "employeeId": "12345", "name": "...", "fac": "...", "dept": "...",
-  "section": "...", "line": "...", "group": "...", "status": "ACTIVE", "roles": ["PC"]
+  "section": "...", "line": "...", "group": "...", "status": "ACTIVE", "roles": ["PC"],
+  "token": "...", "expiresAt": "..."
 }
 ```
 
 Lỗi 400: `Employee ID and password are required.`, `Invalid Employee ID or password.`
+Lỗi 429: sai quá 5 lần / 5 phút (theo mã NV + IP).
 
-### 6.3. Quy tắc role
+### 6.3. `POST /logout`, `GET /me`
 
-Role được tính lại mỗi lần (không lưu DB), từ `Dept`, `Section`, `Line`, `Group` của `F2_HR_Data` (bản ghi `id` lớn nhất):
+- `/logout`: thu hồi session của token trong `Authorization: Bearer <token>`.
+- `/me`: cần token hợp lệ; trả `employeeId`, `name`, `fac`, `dept`, `section`, `line`, `group`, `roles`, `perms` (Feature → [ActionCode]).
 
-| Role | Điều kiện |
-|---|---|
-| `ADMIN` | `Dept = 'K COMMON'` và Section/Line/Group chứa `PE IT` (chỉ trả mỗi `ADMIN`) |
-| `PC` | Section/Line/Group chứa `PC` |
-| `PRO` | Section/Line/Group chứa `PRO` |
-| `USER` | Không khớp role nào, hoặc không có dữ liệu HR |
+### 6.4. Role / quyền
 
-Một người có thể vừa `PC` vừa `PRO`. Machine Locator dùng cùng logic này (`findAccountRoles`) để kiểm tra quyền ADMIN.
+Role và quyền đọc từ `vw_F2_ProductionControl_EmpPerm` (AppCode `PCW`), không tự suy từ dữ liệu nhân sự.
 
 ---
 

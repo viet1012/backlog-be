@@ -12,7 +12,6 @@ import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -22,6 +21,10 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
 
+import com.example.backlogbe.auth.AuthProperties;
+import com.example.backlogbe.auth.CurrentUser;
+import com.example.backlogbe.auth.Perm;
+import com.example.backlogbe.auth.RequirePerm;
 import com.example.backlogbe.dto.PageResponse;
 import com.example.backlogbe.dto.facconfirm.FacConfirmDailySummaryDto;
 import com.example.backlogbe.dto.facconfirm.FacConfirmDto;
@@ -40,10 +43,12 @@ import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 
 
-@CrossOrigin(origins = "*")
+// Quyền: FAC_CONFIRM – đọc (GET + POST search / filter-options / process-groups / confirmed-processes) = V,
+// PATCH process-times = E, export = X.
 @RestController
 @RequestMapping("/api/fac-confirm")
 @RequiredArgsConstructor
+@RequirePerm(feature = Perm.FAC_CONFIRM, action = Perm.VIEW)
 public class FacConfirmController {
 
 	private final FacConfirmService service;
@@ -54,6 +59,8 @@ public class FacConfirmController {
 	private final ClientMachineService clientMachineService;
 
 	private final FacConfirmExcelService excelService;
+
+	private final AuthProperties authProperties;
 
 
 	private static final String EXCEL_CONTENT_TYPE =
@@ -243,6 +250,7 @@ public class FacConfirmController {
 	// =========================================================
 
 	@PatchMapping("/process-times")
+	@RequirePerm(feature = Perm.FAC_CONFIRM, action = Perm.EDIT)
 	public ResponseEntity<Map<String, Object>> saveProcessTimes(
 			@RequestBody FacConfirmProcessTimeRequest request,
 			HttpServletRequest httpRequest
@@ -256,10 +264,19 @@ public class FacConfirmController {
 						clientIp
 				);
 
+		// Mã NV từ phiên đăng nhập; employeeId trong body chỉ dùng tạm khi auth.enforce=false và không có token
+		String employeeId =
+				CurrentUser.empCodeOrNull(httpRequest);
+
+		if (employeeId == null && !authProperties.enforce() && request != null) {
+			employeeId = request.employeeId();
+		}
+
 		int updated =
 				processTimeService.save(
 						request,
-						machineName
+						machineName,
+						employeeId
 				);
 
 		return ResponseEntity.ok(
@@ -282,6 +299,7 @@ public class FacConfirmController {
         value = "/export/excel",
         consumes = MediaType.APPLICATION_JSON_VALUE
 )
+@RequirePerm(feature = Perm.FAC_CONFIRM, action = Perm.EXPORT_IMPORT)
 public ResponseEntity<StreamingResponseBody> exportExcel(
 
         @RequestBody(required = false)

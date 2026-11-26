@@ -8,7 +8,6 @@ import com.example.backlogbe.logging.RequestTiming;
 import com.example.backlogbe.repository.costmonitoring.CostOtRepository;
 import com.example.backlogbe.repository.costmonitoring.CostOtRepository.OtRow;
 import com.example.backlogbe.repository.costmonitoring.CostOtRepository.StatusRow;
-import com.example.backlogbe.service.auth.ProductionControlAuthService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
@@ -30,11 +29,9 @@ import java.time.LocalDateTime;
 import java.time.YearMonth;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.Set;
 import java.util.TreeMap;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -51,8 +48,7 @@ import java.util.stream.Collectors;
 //
 // Ghi: thay toàn bộ dòng của (tháng, SubDiv) có trong file (1 transaction), rồi xóa cache snapshot
 // để /chart, /detail, trợ lý AI thấy số mới ngay.
-// Quyền: role trong cost-monitoring.ot.import-roles (mặc định ADMIN), mã NV từ header X-Employee-Id
-// (header do FE gửi, BE chưa xác thực – xem docs/API_AUDIT.md).
+// Quyền: COST_MONITORING / X (@RequirePerm ở CostMonitoringController); mã NV từ phiên đăng nhập (CurrentUser).
 // Log: chỉ nguồn (upload / share), số dòng, thời gian – không ghi tên file, mã NV.
 // =========================================================
 @Slf4j
@@ -70,11 +66,9 @@ public class CostOtImportService {
 
 	private final CostOtRepository repository;
 	private final CostMonitoringSnapshotLoader snapshotLoader;
-	private final ProductionControlAuthService authService;
 	private final TransactionTemplate tx;
 
 	private final String sharePath;
-	private final Set<String> importRoles;
 
 	// 1 lần import tại 1 thời điểm (upload / share / job)
 	private final Object importLock = new Object();
@@ -85,21 +79,14 @@ public class CostOtImportService {
 	public CostOtImportService(
 			CostOtRepository repository,
 			CostMonitoringSnapshotLoader snapshotLoader,
-			ProductionControlAuthService authService,
 			PlatformTransactionManager transactionManager,
 			// vd //192.168.0.6/dtp/9_Daily Costmonitoring/FY26 Daily Cost monitoning_FY26.xlsx (trống = tắt)
-			@Value("${cost-monitoring.ot.share-path:}") String sharePath,
-			@Value("${cost-monitoring.ot.import-roles:ADMIN}") String importRoles
+			@Value("${cost-monitoring.ot.share-path:}") String sharePath
 	) {
 		this.repository = repository;
 		this.snapshotLoader = snapshotLoader;
-		this.authService = authService;
 		this.tx = new TransactionTemplate(transactionManager);
 		this.sharePath = sharePath == null ? "" : sharePath.trim();
-		this.importRoles = Arrays.stream(importRoles.split(","))
-				.map(s -> s.trim().toUpperCase(Locale.ROOT))
-				.filter(s -> !s.isEmpty())
-				.collect(Collectors.toUnmodifiableSet());
 	}
 
 
@@ -313,20 +300,11 @@ public class CostOtImportService {
 	// QUYỀN / THAM SỐ
 	// =========================================================
 
+	// Quyền kiểm ở controller (COST_MONITORING / X); ở đây chỉ cần mã NV để ghi vào dữ liệu nạp
 	private void requireImporter(String employeeId) {
 
 		if (employeeId == null || employeeId.isBlank()) {
 			throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Login is required.");
-		}
-
-		List<String> roles = authService.findAccountRoles(employeeId.trim()).orElse(List.of());
-
-		boolean allowed = roles.stream()
-				.map(r -> r == null ? "" : r.trim().toUpperCase(Locale.ROOT))
-				.anyMatch(importRoles::contains);
-
-		if (!allowed) {
-			throw new ResponseStatusException(HttpStatus.FORBIDDEN, "You are not allowed to import OT data.");
 		}
 	}
 

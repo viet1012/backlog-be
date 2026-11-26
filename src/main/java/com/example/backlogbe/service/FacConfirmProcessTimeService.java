@@ -41,13 +41,15 @@ public class FacConfirmProcessTimeService {
 	// SAVE
 	// =========================================================
 
+	// employeeId: mã NV đăng nhập (controller lấy từ CurrentUser), không lấy từ body
 	@Transactional
 	public int save(
 			FacConfirmProcessTimeRequest request,
-			String machineName
+			String machineName,
+			String employeeId
 	) {
 
-		validateRequest(request);
+		validateRequest(request, employeeId);
 
 		String procGrp =
 				normalizeProcessGroup(
@@ -56,7 +58,7 @@ public class FacConfirmProcessTimeService {
 
 		String updater = buildUpdater(
 				machineName,
-				request.employeeId()
+				employeeId
 		);
 
 		for (var change : request.changes()) {
@@ -146,7 +148,8 @@ public class FacConfirmProcessTimeService {
 	// =========================================================
 
 	private void validateRequest(
-			FacConfirmProcessTimeRequest request
+			FacConfirmProcessTimeRequest request,
+			String employeeId
 	) {
 
 		if (request == null) {
@@ -156,8 +159,8 @@ public class FacConfirmProcessTimeService {
 		}
 
 		if (
-				request.employeeId() == null
-						|| request.employeeId().isBlank()
+				employeeId == null
+						|| employeeId.isBlank()
 		) {
 
 			throw new IllegalArgumentException(
