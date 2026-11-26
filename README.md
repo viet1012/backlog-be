@@ -197,21 +197,22 @@ Một filter: `{ "field": "...", "operator": "...", "value": "...", "values": []
 | POST | `/api/machine-locator/floors/{id}/bulk` | Ghi nhiều máy một lần | `X-Employee-Id` (ADMIN) |
 | POST | `/api/machine-locator/floors/{id}/import` | Import file layout | `X-Employee-Id` (ADMIN) |
 | GET | `/api/machine-monitor/hse` | Tình trạng lỗi an toàn (HSE Patrol) theo máy | – |
-| GET / POST / DELETE | `/api/pdf2cad/**` | PDF → CAD: proxy sang server pdf2cad (xem dưới) | `Authorization: Bearer <token login>` (`pdf2cad.allowed-roles`, mặc định ADMIN) |
+| GET / POST / DELETE | `/api/pdf2cad/**` | PDF → CAD: proxy sang server pdf2cad (xem dưới) | `Authorization: Bearer <token login>` + `@RequirePerm` `PDF2CAD` (V / C / D / X) |
 
 **PDF → CAD (`/api/pdf2cad`)** – `Pdf2cadController` → `Pdf2cadProxyService` (stream nguyên response của pdf2cad, kể cả lỗi `{"detail": "..."}`).
 Chỉ chuyển tiếp các endpoint FE dùng: `health`, `templates`, `bot`, `jobs` (multipart), `jobs/{id}` (GET/DELETE),
 `jobs/{id}/files/{name}`, `jobs/{id}/zip`, `jobs/{id}/preview/{name}`, `jobs/{id}/pdf/{idx}/{page}.png`, `jobs/{id}/learn/{name}`
 → `<pdf2cad.base-url>/api/...`. Cấu hình `pdf2cad.*` trong `application.properties`.
 
-- **Xác thực** (`pdf2cad.auth-required`, **hiện tạm tắt = false**: không chặn, danh tính lấy từ token nếu có, không thì `X-Employee-Id` – chỉ cho nhật ký + chủ job):
-  dùng chung `token` session của `POST /api/production-control/auth/login` (xem [mục 6](#6-auth-production-control)).
-  Khi `true`: `/api/pdf2cad/**` chỉ nhận `Authorization: Bearer <token>` (không tin `X-Employee-Id`), role đọc từ `vw_F2_ProductionControl_EmpPerm`.
-  401 = đăng nhập lại, 403 = không có quyền.
+- **Xác thực / quyền**: giống các API khác (xem [mục 6](#6-auth-production-control)) – token session của login,
+  `ProductionControlAuthFilter` + `@RequirePerm` feature `PDF2CAD`: `V` xem (health, templates, tiến độ, preview, ảnh trang),
+  `C` tạo job / bot / dạy bot, `D` dừng job, `X` tải DXF / zip. Seed: chỉ ADMIN (`'*','*'`).
+  `auth.enforce=true`: 401 = đăng nhập lại, 403 = không có quyền (body `{status, message}`).
+  `auth.enforce=false`: không chặn, log `would-deny`; danh tính (nhật ký + chủ job) = session nếu có, không thì `X-Employee-Id`, không có gì → `anonymous`.
 - **Chủ job**: chỉ người tạo job (upload hoặc bot vẽ) mới xem / tải / dừng / dạy bot được (`Pdf2cadJobOwners`, RAM, `pdf2cad.job-ttl-hours`); khác → 404.
 - **Upload**: body multipart stream thẳng sang pdf2cad (`MultipartConfig` bỏ parse cho `/api/pdf2cad/**`), giới hạn `pdf2cad.max-upload-mb` (200) → 413;
   giới hạn chung `spring.servlet.multipart.*` (20 MB) của các API khác giữ nguyên.
-- **Nhật ký**: `logs/pdf2cad/pdf2cad-audit-yyyy-MM-dd.jsonl` (`Pdf2cadAuditLogger`, 1 dòng / thao tác: MSNV, IP, action, job, kết quả; 401/403 ghi `denied`).
+- **Nhật ký**: `logs/pdf2cad/pdf2cad-audit-yyyy-MM-dd.jsonl` (`Pdf2cadAuditLogger`, 1 dòng / thao tác: MSNV, IP, action, job, kết quả).
   BE gửi `X-Forwarded-For` + `X-Employee-Id` sang pdf2cad; pdf2cad chỉ dùng 2 header này khi IP của BE nằm trong `PDF2CAD_TRUSTED_PROXIES`.
 - Lỗi: không kết nối được pdf2cad → 502, quá `pdf2cad.read-timeout-sec` → 504.
 

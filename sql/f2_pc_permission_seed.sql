@@ -151,6 +151,7 @@ WHEN NOT MATCHED THEN INSERT (AppCode, AppName) VALUES (s.AppCode, s.AppName);
 --   MACHINE_LOCATOR  C,E,D,X (ghi, xóa, import layout); xem không check
 --   ASSISTANT_LOG    V,X     (xem, export log)
 --   COST_MONITORING  X       (import OT); xem không check
+--   PDF2CAD          V,C,D,X (xem / tạo job, bot, dạy bot / dừng job / tải DXF) – chỉ ADMIN (qua '*','*')
 --   PC, PRO, USER: BE không check -> không có RolePerm (chỉ có Assign)
 -- =====================================================================================
 INSERT INTO dbo.F2_ProductionControl_RolePerm (AppCode, RoleCode, Feature, Actions) VALUES

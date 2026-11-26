@@ -17,6 +17,7 @@ public final class Perm {
 	public static final String MACHINE_LOCATOR = "MACHINE_LOCATOR";
 	public static final String ASSISTANT_LOG = "ASSISTANT_LOG";
 	public static final String GENERAL = "GENERAL";                 // SPH, Asakai, PC training, Sales status, Management, Machine Monitor
+	public static final String PDF2CAD = "PDF2CAD";                 // Setting › PDF → CAD (proxy /api/pdf2cad/**)
 
 	// ---- Action ----
 	public static final String VIEW = "V";

@@ -28,7 +28,8 @@ import java.util.Map;
 // Chỉ áp dụng cho /api/pdf2cad (Pdf2cadController), ưu tiên hơn GlobalExceptionHandler.
 // Body: { "detail": "..." } – cùng dạng lỗi của server pdf2cad để FE xử lý 1 kiểu.
 //
-// - Chưa đăng nhập / token hết hạn -> 401, không có quyền -> 403 (ghi nhật ký pdf2cad.audit, action "denied")
+// - 401 / 403 do ProductionControlAuthFilter / RequirePermInterceptor trả (AuthErrorWriter, body {status, message}),
+//   không qua handler này; nhánh 401 / 403 bên dưới chỉ còn cho ResponseStatusException nếu có.
 // - Job không có / của người khác -> 404
 // - Upload vượt pdf2cad.max-upload-mb -> 413
 // - Không kết nối được / quá thời gian chờ pdf2cad -> 502 / 504
