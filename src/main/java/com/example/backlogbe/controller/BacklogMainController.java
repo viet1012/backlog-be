@@ -1,5 +1,7 @@
 package com.example.backlogbe.controller;
 
+import com.example.backlogbe.auth.Perm;
+import com.example.backlogbe.auth.RequirePerm;
 import com.example.backlogbe.dto.PageResponse;
 import com.example.backlogbe.dto.backlog.BacklogExcelExportRequest;
 import com.example.backlogbe.dto.backlog.BacklogFilterOptionsRequest;
@@ -30,10 +32,11 @@ import java.time.format.DateTimeFormatter;
 import java.util.List;
 
 
+// Quyền: BACKLOG (màn Backlog, Remain PO, Sale follow) – đọc (POST search / filter-options / summary) = V, export = X
 @RestController
 @RequestMapping("/api/backlogs")
 @RequiredArgsConstructor
-@CrossOrigin(origins = "*")
+@RequirePerm(feature = Perm.BACKLOG, action = Perm.VIEW)
 public class BacklogMainController {
 
     private static final String EXCEL_CONTENT_TYPE =
@@ -132,6 +135,7 @@ public class BacklogMainController {
             consumes = MediaType.APPLICATION_JSON_VALUE,
             produces = EXCEL_CONTENT_TYPE
     )
+    @RequirePerm(feature = Perm.BACKLOG, action = Perm.EXPORT_IMPORT)
     public ResponseEntity<StreamingResponseBody> exportExcel(
 
             @RequestBody(required = false)

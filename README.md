@@ -205,9 +205,8 @@ Chỉ chuyển tiếp các endpoint FE dùng: `health`, `templates`, `bot`, `job
 → `<pdf2cad.base-url>/api/...`. Cấu hình `pdf2cad.*` trong `application.properties`.
 
 - **Xác thực** (`pdf2cad.auth-required`, **hiện tạm tắt = false**: không chặn, danh tính lấy từ token nếu có, không thì `X-Employee-Id` – chỉ cho nhật ký + chủ job):
-  `POST /api/production-control/auth/login` trả thêm `token` (JWT HS256, `AuthTokenService`) + `tokenExpiresAt`.
-  Khi `true`: `/api/pdf2cad/**` chỉ nhận `Authorization: Bearer <token>` (không tin `X-Employee-Id`), role tính lại từ DB mỗi request.
-  Khoá ký: biến môi trường `AUTH_TOKEN_SECRET` (≥ 32 ký tự; trống → khoá ngẫu nhiên mỗi lần khởi động), hạn `auth.token.ttl-hours` (12).
+  dùng chung `token` session của `POST /api/production-control/auth/login` (xem [mục 6](#6-auth-production-control)).
+  Khi `true`: `/api/pdf2cad/**` chỉ nhận `Authorization: Bearer <token>` (không tin `X-Employee-Id`), role đọc từ `vw_F2_ProductionControl_EmpPerm`.
   401 = đăng nhập lại, 403 = không có quyền.
 - **Chủ job**: chỉ người tạo job (upload hoặc bot vẽ) mới xem / tải / dừng / dạy bot được (`Pdf2cadJobOwners`, RAM, `pdf2cad.job-ttl-hours`); khác → 404.
 - **Upload**: body multipart stream thẳng sang pdf2cad (`MultipartConfig` bỏ parse cho `/api/pdf2cad/**`), giới hạn `pdf2cad.max-upload-mb` (200) → 413;
@@ -222,13 +221,15 @@ Chỉ chuyển tiếp các endpoint FE dùng: `health`, `templates`, `bot`, `job
 
 Base path: `/api/production-control/auth`. Code: `ProductionControlAuthController` → `ProductionControlAuthService` → `ProductionControlAuthRepository`.
 
-Tài khoản dùng chung với hệ thống S-Patrol (bảng `HSE_Patrol_Account`). Thông tin nhân sự lấy từ `F2_HR_Data`. Mã nhân viên được `trim` và viết hoa trước khi xử lý.
+Tài khoản dùng chung với hệ thống S-Patrol (bảng `HSE_Patrol_Account`). Tên và tổ chức (`name`, `fac`, `dept`, `section`, `line`, `group` ← cột `Grp`) lấy từ `vw_F2_ProductionControl_Employee` theo `EmpCode`. Mã nhân viên được `trim` và viết hoa trước khi xử lý.
 
 ### 6.1. `POST /register`
 
+Chỉ chạy khi `auth.register.enabled=true`; không thì trả 403 `Đăng ký tạm khóa, liên hệ IT`.
+
 Body: `{ "employeeId": "12345", "password": "..." }`
 
-1. `employeeId` phải tồn tại trong `F2_HR_Data`.
+1. `employeeId` phải có trong `vw_F2_ProductionControl_Employee` với `IsActive = 1` (không có hoặc đã nghỉ → lỗi 400 bên dưới).
 2. Chưa có tài khoản trong `HSE_Patrol_Account`.
 3. Ghi `Account`, `Pass`, `NewDT`, `UpdDT`.
 
@@ -244,29 +245,28 @@ Body: `{ "employeeId": "12345", "password": "..." }`
 
 ### 6.2. `POST /login`
 
-Body: `{ "employeeId": "12345", "password": "..." }`. Thành công thì cập nhật `Last_Login`.
+Body: `{ "employeeId": "12345", "password": "..." }`. Thành công thì tạo session và cập nhật `Last_Login`.
+Không tìm thấy NV trong view vẫn cho login; các field tên / tổ chức = `null`.
 
 ```json
 {
   "accountId": null, "employeeId": "12345", "name": "...", "fac": "...", "dept": "...",
-  "section": "...", "line": "...", "group": "...", "status": "ACTIVE", "roles": ["PC"]
+  "section": "...", "line": "...", "group": "...", "status": "ACTIVE", "roles": ["PC"],
+  "token": "...", "expiresAt": "..."
 }
 ```
 
 Lỗi 400: `Employee ID and password are required.`, `Invalid Employee ID or password.`
+Lỗi 429: sai quá 5 lần / 5 phút (theo mã NV + IP).
 
-### 6.3. Quy tắc role
+### 6.3. `POST /logout`, `GET /me`
 
-Role được tính lại mỗi lần (không lưu DB), từ `Dept`, `Section`, `Line`, `Group` của `F2_HR_Data` (bản ghi `id` lớn nhất):
+- `/logout`: thu hồi session của token trong `Authorization: Bearer <token>`.
+- `/me`: cần token hợp lệ; trả `employeeId`, `name`, `fac`, `dept`, `section`, `line`, `group`, `roles`, `perms` (Feature → [ActionCode]).
 
-| Role | Điều kiện |
-|---|---|
-| `ADMIN` | `Dept = 'K COMMON'` và Section/Line/Group chứa `PE IT` (chỉ trả mỗi `ADMIN`) |
-| `PC` | Section/Line/Group chứa `PC` |
-| `PRO` | Section/Line/Group chứa `PRO` |
-| `USER` | Không khớp role nào, hoặc không có dữ liệu HR |
+### 6.4. Role / quyền
 
-Một người có thể vừa `PC` vừa `PRO`. Machine Locator dùng cùng logic này (`findAccountRoles`) để kiểm tra quyền ADMIN.
+Role và quyền đọc từ `vw_F2_ProductionControl_EmpPerm` (AppCode `PCW`), không tự suy từ dữ liệu nhân sự.
 
 ---
 

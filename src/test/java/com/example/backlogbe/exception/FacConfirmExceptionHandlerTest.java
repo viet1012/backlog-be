@@ -20,6 +20,7 @@ import org.springframework.jdbc.BadSqlGrammarException;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
+import com.example.backlogbe.auth.AuthProperties;
 import com.example.backlogbe.controller.FacConfirmController;
 import com.example.backlogbe.service.ClientMachineService;
 import com.example.backlogbe.service.FacConfirmExcelService;
@@ -41,7 +42,8 @@ class FacConfirmExceptionHandlerTest {
 									service,
 									processTimeService,
 									mock(ClientMachineService.class),
-									mock(FacConfirmExcelService.class)
+									mock(FacConfirmExcelService.class),
+									new AuthProperties(false, false)
 							)
 					)
 					.setControllerAdvice(
@@ -54,7 +56,7 @@ class FacConfirmExceptionHandlerTest {
 	@Test
 	void editPermissionErrorReturns400WithMessage() throws Exception {
 
-		when(processTimeService.save(any(), any()))
+		when(processTimeService.save(any(), any(), any()))
 				.thenThrow(new IllegalArgumentException(
 						"Field not editable in Rough: 123456 (To Heat)"
 				));

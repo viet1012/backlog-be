@@ -1,35 +1,49 @@
 package com.example.backlogbe.service.auth;
 
+import com.example.backlogbe.auth.AuthProperties;
+import com.example.backlogbe.auth.LoginRateLimiter;
+import com.example.backlogbe.auth.ProductionControlPermissionService;
+import com.example.backlogbe.auth.ProductionControlPermissionService.EmpPerms;
+import com.example.backlogbe.auth.ProductionControlSessionService;
+import com.example.backlogbe.auth.ProductionControlSessionService.NewSession;
 import com.example.backlogbe.dto.auth.ProductionControlLoginRequest;
 import com.example.backlogbe.dto.auth.ProductionControlLoginResponse;
+import com.example.backlogbe.dto.auth.ProductionControlMeResponse;
 import com.example.backlogbe.dto.auth.ProductionControlRegisterRequest;
 import com.example.backlogbe.dto.auth.ProductionControlRegisterResponse;
 import com.example.backlogbe.model.PatrolAccount;
-import com.example.backlogbe.model.ProductionControlHrProfile;
 import com.example.backlogbe.repository.auth.ProductionControlAuthRepository;
+import com.example.backlogbe.repository.auth.ProductionControlAuthRepository.EmployeeOrg;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
 
-import java.util.ArrayList;
-import java.util.List;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.util.Locale;
-import java.util.Optional;
 
+// =========================================================
+// ĐĂNG NHẬP PRODUCTION CONTROL
+//
+// - Mật khẩu: HSE_Patrol_Account.Pass (chưa hash – dùng chung với S-Patrol), so bằng MessageDigest.isEqual.
+// - Đúng: tạo session (ProductionControlSessionService) -> token + expiresAt.
+// - Role / quyền: vw_F2_ProductionControl_EmpPerm (AppCode PCW), không tự suy từ HR nữa.
+// - Login sai: tối đa 5 lần / 5 phút cho mỗi (employeeId + IP) -> 429.
+// - Register: chỉ khi auth.register.enabled=true, không thì 403.
+// =========================================================
 @Service
 @RequiredArgsConstructor
 public class ProductionControlAuthService {
 
 	private static final String STATUS_ACTIVE = "ACTIVE";
 
-	private static final String ROLE_ADMIN = "ADMIN";
-	private static final String ROLE_USER = "USER";
-	private static final String ROLE_PC = "PC";
-	private static final String ROLE_PRO = "PRO";
-
 	private final ProductionControlAuthRepository repository;
-
-	private final AuthTokenService tokenService;
+	private final ProductionControlSessionService sessionService;
+	private final ProductionControlPermissionService permissionService;
+	private final LoginRateLimiter loginRateLimiter;
+	private final AuthProperties authProperties;
 
 	// =========================================================
 	// REGISTER
@@ -39,6 +53,13 @@ public class ProductionControlAuthService {
 	public ProductionControlRegisterResponse register(
 			ProductionControlRegisterRequest request
 	) {
+
+		if (!authProperties.registerEnabled()) {
+			throw new ResponseStatusException(
+					HttpStatus.FORBIDDEN,
+					"Đăng ký tạm khóa, liên hệ IT"
+			);
+		}
 
 		String employeeId =
 				normalizeEmployeeId(
@@ -55,17 +76,14 @@ public class ProductionControlAuthService {
 
 
 		// =====================================================
-		// HR
+		// NHÂN VIÊN ĐANG LÀM (vw_F2_ProductionControl_Employee, IsActive = 1)
 		// =====================================================
 
-		repository.findHrByEmployeeId(
-						employeeId
-				)
-				.orElseThrow(() ->
-						new IllegalArgumentException(
-								"Employee ID does not exist in company HR data."
-						)
-				);
+		if (!repository.existsActiveEmployee(employeeId)) {
+			throw new IllegalArgumentException(
+					"Employee ID does not exist in company HR data."
+			);
+		}
 
 
 		// =====================================================
@@ -108,7 +126,8 @@ public class ProductionControlAuthService {
 
 	@Transactional
 	public ProductionControlLoginResponse login(
-			ProductionControlLoginRequest request
+			ProductionControlLoginRequest request,
+			String clientIp
 	) {
 		String employeeId = normalizeEmployeeId(
 				request.employeeId()
@@ -122,163 +141,112 @@ public class ProductionControlAuthService {
 		);
 
 		// -----------------------------------------------------
+		// Rate limit (employeeId + IP)
+		// -----------------------------------------------------
+
+		String limitKey = LoginRateLimiter.key(employeeId, clientIp);
+
+		if (loginRateLimiter.isBlocked(limitKey)) {
+			throw new ResponseStatusException(
+					HttpStatus.TOO_MANY_REQUESTS,
+					"Đăng nhập sai quá nhiều lần. Vui lòng thử lại sau 5 phút."
+			);
+		}
+
+		// -----------------------------------------------------
 		// Password (HSE_Patrol_Account)
 		// -----------------------------------------------------
 
 		PatrolAccount patrolAccount =
 				repository.findPatrolAccount(employeeId)
-						.orElseThrow(this::invalidCredentials);
+						.orElse(null);
 
-		if (!password.equals(patrolAccount.pass())) {
+		if (patrolAccount == null || !passwordMatches(password, patrolAccount.pass())) {
+			loginRateLimiter.recordFailure(limitKey);
 			throw invalidCredentials();
 		}
 
+		loginRateLimiter.reset(limitKey);
+
 		// -----------------------------------------------------
-		// HR + Roles (tính lại mỗi lần login, không lưu DB)
+		// Tên + tổ chức (vw_F2_ProductionControl_Employee; không thấy vẫn cho login, các field = null)
 		// -----------------------------------------------------
 
-		/*
-		 * Không có HR thì vẫn cho login,
-		 * tạm coi là USER.
-		 */
-		ProductionControlHrProfile hr =
-				repository.findHrByEmployeeId(employeeId)
+		EmployeeOrg org =
+				repository.findEmployeeOrg(employeeId)
 						.orElse(null);
 
-		List<String> roles =
-				hr != null
-						? determineRoles(hr)
-						: List.of(ROLE_USER);
+		// -----------------------------------------------------
+		// Roles: đọc mới từ view (bỏ cache cũ của NV này)
+		// -----------------------------------------------------
+
+		permissionService.evict(employeeId);
+
+		EmpPerms perms = permissionService.get(employeeId);
 
 		// -----------------------------------------------------
-		// Last Login
+		// Session + Last Login
 		// -----------------------------------------------------
+
+		NewSession session = sessionService.create(employeeId);
 
 		repository.updatePatrolLastLogin(
 				employeeId
 		);
 
 		// -----------------------------------------------------
-		// Response (+ token đăng nhập)
+		// Response
 		// -----------------------------------------------------
-
-		AuthTokenService.IssuedToken token =
-				tokenService.issue(employeeId);
 
 		return new ProductionControlLoginResponse(
 				null,
 				employeeId,
-				hr != null ? hr.name() : null,
-				hr != null ? hr.fac() : null,
-				hr != null ? hr.dept() : null,
-				hr != null ? hr.section() : null,
-				hr != null ? hr.line() : null,
-				hr != null ? hr.group() : null,
+				org != null ? org.name() : null,
+				org != null ? org.fac() : null,
+				org != null ? org.dept() : null,
+				org != null ? org.section() : null,
+				org != null ? org.line() : null,
+				org != null ? org.group() : null,
 				STATUS_ACTIVE,
-				roles,
-				token.token(),
-				token.expiresAt().toString()
+				perms.roles(),
+				session.token(),
+				session.expiresAt() != null ? session.expiresAt().toString() : null
 		);
 	}
 
 	// =========================================================
-	// ACCOUNT ROLES
-	//
-	// Cho API khác kiểm tra quyền: tính role giống login.
-	// Không có tài khoản HSE_Patrol_Account -> Optional.empty().
+	// LOGOUT
 	// =========================================================
 
-	public Optional<List<String>> findAccountRoles(
-			String employeeId
-	) {
-		String safeEmployeeId =
-				normalizeEmployeeId(employeeId);
+	public void logout(String token) {
+		sessionService.revoke(token);
+	}
 
-		if (
-				safeEmployeeId.isBlank()
-						|| !repository.existsPatrolAccount(safeEmployeeId)
-		) {
-			return Optional.empty();
-		}
+	// =========================================================
+	// ME
+	// =========================================================
 
-		ProductionControlHrProfile hr =
-				repository.findHrByEmployeeId(safeEmployeeId)
+	public ProductionControlMeResponse me(String employeeId) {
+
+		String safeEmployeeId = normalizeEmployeeId(employeeId);
+
+		EmployeeOrg org =
+				repository.findEmployeeOrg(safeEmployeeId)
 						.orElse(null);
 
-		return Optional.of(
-				hr != null
-						? determineRoles(hr)
-						: List.of(ROLE_USER)
+		EmpPerms perms = permissionService.get(safeEmployeeId);
+
+		return new ProductionControlMeResponse(
+				safeEmployeeId,
+				org != null ? org.name() : null,
+				org != null ? org.fac() : null,
+				org != null ? org.dept() : null,
+				org != null ? org.section() : null,
+				org != null ? org.line() : null,
+				org != null ? org.group() : null,
+				perms.roles(),
+				perms.perms()
 		);
-	}
-
-	// =========================================================
-	// DETERMINE ROLE
-	// =========================================================
-
-	private List<String> determineRoles(
-			ProductionControlHrProfile hr
-	) {
-		String dept =
-				normalizeHrValue(hr.dept());
-
-		String section =
-				normalizeHrValue(hr.section());
-
-		String line =
-				normalizeHrValue(hr.line());
-
-		String group =
-				normalizeHrValue(hr.group());
-
-		// IT => ADMIN
-		if (
-				equalsRole(dept, "K COMMON")
-						&& (
-						containsRole(section, "PE IT")
-								|| containsRole(line, "PE IT")
-								|| containsRole(group, "PE IT")
-				)
-		) {
-			return List.of(ROLE_ADMIN);
-		}
-
-		List<String> roles = new ArrayList<>();
-
-		// Guide PC / Mold PC / PC...
-		if (
-				containsRole(section, ROLE_PC)
-						|| containsRole(line, ROLE_PC)
-						|| containsRole(group, ROLE_PC)
-		) {
-			addRole(roles, ROLE_PC);
-		}
-
-		// KP Pro / KM Pro / Guide Pro...
-		if (
-				containsRole(section, ROLE_PRO)
-						|| containsRole(line, ROLE_PRO)
-						|| containsRole(group, ROLE_PRO)
-		) {
-			addRole(roles, ROLE_PRO);
-		}
-
-		// Không map được => USER
-		if (roles.isEmpty()) {
-			addRole(roles, ROLE_USER);
-		}
-
-		return roles;
-	}
-
-
-	private void addRole(
-			List<String> roles,
-			String role
-	) {
-		if (!roles.contains(role)) {
-			roles.add(role);
-		}
 	}
 
 	// =========================================================
@@ -323,22 +291,17 @@ public class ProductionControlAuthService {
 		);
 	}
 
-	// =========================================================
-	// ROLE MATCH
-	// =========================================================
+	// So sánh thời gian hằng (không lộ độ dài khớp qua thời gian phản hồi)
+	private static boolean passwordMatches(String input, String stored) {
 
-	private boolean equalsRole(
-			String value,
-			String role
-	) {
-		return value.equals(role);
-	}
+		if (stored == null) {
+			return false;
+		}
 
-	private boolean containsRole(
-			String value,
-			String role
-	) {
-		return value.contains(role);
+		return MessageDigest.isEqual(
+				input.getBytes(StandardCharsets.UTF_8),
+				stored.getBytes(StandardCharsets.UTF_8)
+		);
 	}
 
 	// =========================================================
@@ -353,18 +316,6 @@ public class ProductionControlAuthService {
 		}
 
 		return employeeId
-				.trim()
-				.toUpperCase(Locale.ROOT);
-	}
-
-	private String normalizeHrValue(
-			String value
-	) {
-		if (value == null) {
-			return "";
-		}
-
-		return value
 				.trim()
 				.toUpperCase(Locale.ROOT);
 	}

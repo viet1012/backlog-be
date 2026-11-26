@@ -1,20 +1,21 @@
 package com.example.backlogbe.controller;
 
+import com.example.backlogbe.auth.Perm;
+import com.example.backlogbe.auth.RequirePerm;
 import com.example.backlogbe.dto.machinemonitor.MachineMonitorHseDto;
 import com.example.backlogbe.service.MachineMonitorService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-// Chỉ đọc, không cần đăng nhập.
-@CrossOrigin(origins = "*")
+// Chỉ đọc. Quyền: GENERAL / V.
 @RestController
 @RequestMapping("/api/machine-monitor")
 @RequiredArgsConstructor
+@RequirePerm(feature = Perm.GENERAL, action = Perm.VIEW)
 public class MachineMonitorController {
 
 	private final MachineMonitorService service;

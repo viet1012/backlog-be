@@ -13,7 +13,6 @@ import com.example.backlogbe.exception.MachineLocatorConflictException;
 import com.example.backlogbe.model.MachineLocatorFloorRow;
 import com.example.backlogbe.model.MachineLocatorMachineRow;
 import com.example.backlogbe.repository.machinelocator.MachineLocatorRepository;
-import com.example.backlogbe.service.auth.ProductionControlAuthService;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -46,8 +45,8 @@ import java.util.stream.Collectors;
 //
 // Port từ vite-plugins/machineLocatorDevStore.ts (FE) sang SQL Server.
 //
-// - Đọc: không cần đăng nhập.
-// - Ghi: chỉ ADMIN; mỗi request kiểm tra ifVersion (lệch -> 409),
+// - Quyền: @RequirePerm MACHINE_LOCATOR ở MachineLocatorController (V / E / D / X).
+// - Ghi: mỗi request kiểm tra ifVersion (lệch -> 409),
 //   thành công thì version + 1 (1 lần / request) và ghi
 //   dbo.F2_MachineLocator_History cho từng máy thay đổi.
 //   Mọi lệnh ghi trả về floor đầy đủ (giống GET /floors/{id}).
@@ -83,8 +82,6 @@ public class MachineLocatorService {
 	private static final String ACTION_REVERT = "REVERT";
 	private static final String ACTION_IMPORT = "IMPORT";
 
-	private static final String ROLE_ADMIN = "ADMIN";
-
 	// Số chữ số thập phân khi làm tròn tọa độ
 	private static final int BOX_SCALE = 1;
 	private static final int POLY_SCALE = 2;
@@ -99,8 +96,6 @@ public class MachineLocatorService {
 
 
 	private final MachineLocatorRepository repository;
-
-	private final ProductionControlAuthService authService;
 
 	private final ObjectMapper objectMapper;
 
@@ -155,7 +150,7 @@ public class MachineLocatorService {
 			MachineLocatorSaveRequest request,
 			String employeeId
 	) {
-		String user = requireAdmin(employeeId);
+		String user = requireUser(employeeId);
 
 		requireBody(request);
 
@@ -192,7 +187,7 @@ public class MachineLocatorService {
 			Integer ifVersion,
 			String employeeId
 	) {
-		String user = requireAdmin(employeeId);
+		String user = requireUser(employeeId);
 
 		String safeCode = normalizeCode(code);
 
@@ -230,7 +225,7 @@ public class MachineLocatorService {
 			MachineLocatorRenameRequest request,
 			String employeeId
 	) {
-		String user = requireAdmin(employeeId);
+		String user = requireUser(employeeId);
 
 		requireBody(request);
 
@@ -283,7 +278,7 @@ public class MachineLocatorService {
 			MachineLocatorVersionRequest request,
 			String employeeId
 	) {
-		String user = requireAdmin(employeeId);
+		String user = requireUser(employeeId);
 
 		requireBody(request);
 
@@ -326,7 +321,7 @@ public class MachineLocatorService {
 			MachineLocatorVersionRequest request,
 			String employeeId
 	) {
-		String user = requireAdmin(employeeId);
+		String user = requireUser(employeeId);
 
 		requireBody(request);
 
@@ -381,7 +376,7 @@ public class MachineLocatorService {
 			MachineLocatorBulkRequest request,
 			String employeeId
 	) {
-		String user = requireAdmin(employeeId);
+		String user = requireUser(employeeId);
 
 		requireBody(request);
 
@@ -474,7 +469,7 @@ public class MachineLocatorService {
 			Integer ifVersion,
 			String employeeId
 	) {
-		String user = requireAdmin(employeeId);
+		String user = requireUser(employeeId);
 
 		requireBody(request);
 
@@ -653,7 +648,8 @@ public class MachineLocatorService {
 	// AUTH
 	// =========================================================
 
-	private String requireAdmin(String employeeId) {
+	// Quyền kiểm ở controller (@RequirePerm MACHINE_LOCATOR); ở đây chỉ cần mã NV để ghi history.
+	private String requireUser(String employeeId) {
 
 		String user =
 				employeeId == null
@@ -664,22 +660,6 @@ public class MachineLocatorService {
 			throw new ResponseStatusException(
 					HttpStatus.UNAUTHORIZED,
 					"Login is required."
-			);
-		}
-
-		List<String> roles =
-				authService.findAccountRoles(user)
-						.orElseThrow(() ->
-								new ResponseStatusException(
-										HttpStatus.UNAUTHORIZED,
-										"Account does not exist."
-								)
-						);
-
-		if (!roles.contains(ROLE_ADMIN)) {
-			throw new ResponseStatusException(
-					HttpStatus.FORBIDDEN,
-					"Only ADMIN can edit Machine Locator."
 			);
 		}
 

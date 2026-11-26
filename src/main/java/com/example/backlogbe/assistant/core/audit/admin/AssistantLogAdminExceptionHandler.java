@@ -17,7 +17,8 @@ import java.util.Map;
 // =========================================================
 // Lỗi của /api/admin/assistant-logs. Body: { "status": <http>, "message": "..." }
 // - Tham số sai (IllegalArgumentException, sai kiểu)  -> 400
-// - Thiếu X-Employee-Id / không phải ADMIN / không thấy -> 401 / 403 / 404
+// - Không thấy bản ghi                                   -> 404
+//   (401 / 403 do token / quyền ASSISTANT_LOG: ProductionControlAuthFilter, RequirePermInterceptor)
 // - Lỗi khác (vd đọc file)                             -> 500, chi tiết chỉ ghi log (không kèm nội dung log)
 // =========================================================
 @Slf4j

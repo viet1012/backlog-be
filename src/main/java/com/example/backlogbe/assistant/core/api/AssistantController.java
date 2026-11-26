@@ -10,10 +10,10 @@ import com.example.backlogbe.assistant.core.screen.ParamSpec;
 import com.example.backlogbe.assistant.core.screen.ScreenModule;
 import com.example.backlogbe.assistant.core.screen.ScreenRegistry;
 import com.example.backlogbe.assistant.core.suggestion.SuggestionEngine;
+import com.example.backlogbe.auth.CurrentUser;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -26,10 +26,9 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-// Cùng cơ chế với các API hiện có: không yêu cầu token.
-// /chat: rate limit theo IP client (remoteAddr), 10 request / phút.
+// Chỉ cần đã đăng nhập (token, ProductionControlAuthFilter), không gắn feature.
+// /chat: rate limit theo mã NV đăng nhập (không có thì IP client – remoteAddr), 10 request / phút.
 // /suggestions, /config: không rate limit (không gọi LLM).
-@CrossOrigin(origins = "*")
 @RestController
 @RequestMapping("/api/assistant")
 @RequiredArgsConstructor
@@ -54,30 +53,15 @@ public class AssistantController {
 	) {
 
 		// Khóa = mã nhân viên nếu có, không thì remoteAddr (không tin X-Forwarded-For – client tự đặt được)
-		String employeeId = employeeId(httpRequest);
+		// Mã NV (cho audit log + rate limit) từ phiên đăng nhập; khi auth.enforce=false và không có token,
+		// filter tạm lấy từ header X-Employee-Id (đã kiểm dạng [A-Za-z0-9_-]{1,32}).
+		String employeeId = CurrentUser.empCodeOrNull(httpRequest);
 		String clientKey = AssistantRateLimiter.clientKey(employeeId, httpRequest.getRemoteAddr());
 		rateLimiter.check(clientKey);
 
 		return ResponseEntity.ok(
 				chatOrchestrator.chat(request, employeeId, clientKey)
 		);
-	}
-
-	// Mã nhân viên cho audit log: header X-Employee-Id (cùng cách các API khác trong repo; FE tự gửi, chưa xác thực).
-	// Chỉ nhận [A-Za-z0-9_-]{1,32}; thiếu / sai dạng -> null. Không dùng để phân quyền.
-	private static final java.util.regex.Pattern EMPLOYEE_ID = java.util.regex.Pattern.compile("^[A-Za-z0-9_-]{1,32}$");
-
-	private static String employeeId(HttpServletRequest httpRequest) {
-
-		String value = httpRequest.getHeader("X-Employee-Id");
-
-		if (value == null) {
-			return null;
-		}
-
-		String trimmed = value.trim();
-
-		return EMPLOYEE_ID.matcher(trimmed).matches() ? trimmed : null;
 	}
 
 	// GET /api/assistant/suggestions?screenKey=<key>&<tham số màn hình>&lang=vi&count=4&exclude=...&exclude=...

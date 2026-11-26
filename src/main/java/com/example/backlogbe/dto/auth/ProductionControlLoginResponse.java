@@ -2,6 +2,8 @@ package com.example.backlogbe.dto.auth;
 
 import java.util.List;
 
+// roles: DISTINCT RoleCode trong vw_F2_ProductionControl_EmpPerm (AppCode PCW)
+// token: gửi lại ở header "Authorization: Bearer <token>"; expiresAt: ISO-8601 UTC (gia hạn trượt khi dùng)
 public record ProductionControlLoginResponse(
 		Long accountId,
 		String employeeId,
@@ -13,9 +15,7 @@ public record ProductionControlLoginResponse(
 		String group,
 		String status,
 		List<String> roles,
-		// Token đăng nhập (AuthTokenService): gửi "Authorization: Bearer <token>" cho API cần danh tính thật
 		String token,
-		// Hạn token, ISO-8601 UTC
-		String tokenExpiresAt
+		String expiresAt
 ) {
 }
